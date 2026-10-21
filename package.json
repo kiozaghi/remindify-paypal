@@ -1,0 +1,28 @@
+{
+  "name": "remindify",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Remindify \u2014 the autonomy layer for everything that comes back.",
+  "scripts": {
+    "dev": "node server/dev.mjs",
+    "build": "vite build",
+    "start": "node server/index.mjs",
+    "preview": "npm run build && npm start",
+    "mcp": "node mcp/server.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && vite build",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

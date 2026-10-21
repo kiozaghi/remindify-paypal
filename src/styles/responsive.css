@@ -1,0 +1,224 @@
+@media (max-width: 1280px) {
+  .app { grid-template-columns: 222px minmax(0, 1fr); }
+  .content { padding: 24px 22px 30px; }
+  .topbar { padding: 0 22px; }
+  .hero { grid-template-columns: minmax(0, 1.45fr) minmax(270px, 0.72fr); padding: 26px; gap: 24px; }
+  .hero h1 { font-size: 36px; }
+  .today-grid { grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.8fr); gap: 18px; }
+  .provider-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .table-head, .table-row { grid-template-columns: minmax(0, 2fr) 125px 100px 155px 105px 92px; gap: 11px; }
+}
+
+@media (max-width: 1140px) {
+  .today-grid { grid-template-columns: 1fr; }
+  .today-rail { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .today-rail .failsafe-card { grid-column: 1 / -1; }
+  .approval-grid { grid-template-columns: 1fr 1fr; }
+  .agent-metrics { grid-template-columns: repeat(2, 1fr); }
+  .agent-grid { grid-template-columns: 1fr 1fr; }
+  .capture-grid { grid-template-columns: minmax(0, 1.4fr) minmax(270px, 0.7fr); }
+  .draft-grid { grid-template-columns: 1fr; }
+  .draft-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .activity-layout { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.75fr); }
+  .access-layout { grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr); }
+  .hero-stats strong { font-size: 19px; }
+  .table-head, .table-row { grid-template-columns: minmax(0, 2.1fr) 100px 160px 105px 90px; }
+  .table-head span:nth-child(2) { display: none; }
+  .row-risk { display: none; }
+}
+
+@media (max-width: 960px) {
+  .app { grid-template-columns: 1fr; }
+  .rail { display: none; }
+  .mobile-menu {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
+    background: transparent; color: var(--ink); cursor: pointer; flex: none;
+  }
+  .topbar { height: 58px; padding: 0 16px; }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+  .crumb { font-size: 10.5px; }
+  .mobile-nav-panel {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line);
+    background: var(--paper); animation: fadeUp 0.2s ease;
+  }
+  .mobile-nav-panel button { display: flex; align-items: center; gap: 7px; padding: 9px 10px; border-radius: 8px; border: 0; background: transparent; font-size: 12px; cursor: pointer; text-align: left; }
+  .mobile-nav-panel button.on { background: var(--ink); color: var(--paper); }
+  .content { padding: 18px 16px 28px; }
+  .view-head { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .view-head h1 { font-size: 33px; }
+  .view-head-actions { width: 100%; flex-wrap: wrap; }
+  .hero { grid-template-columns: 1fr; padding: 24px; gap: 20px; }
+  .hero-side { border-left: 0; border-top: 1px solid rgba(251, 249, 243, 0.12); padding-left: 0; padding-top: 18px; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .hero-stats { flex: 1; min-width: 280px; border-top: 0; padding-top: 0; }
+  .coverage { flex: 1; }
+  .hero h1 { font-size: 34px; }
+  .topbar-sub { display: none; }
+  .search-trigger span, .search-trigger kbd { display: none; }
+  .search-trigger { width: 32px; justify-content: center; padding: 0; }
+  .draft-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .market-hero { flex-direction: column; align-items: flex-start; gap: 18px; }
+  .market-hero-stats { gap: 16px; }
+  .market-compare { grid-template-columns: 1fr; }
+  .activity-layout { grid-template-columns: 1fr; }
+  .activity-side { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .access-layout { grid-template-columns: 1fr; }
+  .access-side { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .access-side .security-panel { grid-column: 1 / -1; }
+  .register-note { display: none; }
+  .app-foot { flex-wrap: wrap; gap: 8px; }
+  .app-foot > span:nth-child(2) { display: none; }
+}
+
+@media (max-width: 780px) {
+  .today-rail { grid-template-columns: 1fr; }
+  .today-rail .failsafe-card { grid-column: auto; }
+  .approval-grid { grid-template-columns: 1fr; }
+  .due-row { grid-template-columns: 38px minmax(0, 1fr) 76px 26px 12px; }
+  .due-risk { display: none; }
+  .agent-grid { grid-template-columns: 1fr; }
+  .agent-metrics { grid-template-columns: 1fr 1fr; }
+  .partner-agent-grid { grid-template-columns: 1fr; }
+  .capture-grid { grid-template-columns: 1fr; }
+  .capture-side { display: grid; grid-template-columns: 1fr 1fr; }
+  .provider-grid { grid-template-columns: 1fr; }
+  .activity-side { grid-template-columns: 1fr; }
+  .access-side { grid-template-columns: 1fr; }
+  .register-strip { gap: 10px 0; }
+  .register-stat { padding-right: 12px; margin-right: 12px; }
+  .register-stat strong { font-size: 15px; }
+  .toolbar { gap: 8px; }
+  .search-box { width: 100%; }
+  .toolbar .sort-select { margin-left: 0; }
+  .table-head { display: none; }
+  .table-row { grid-template-columns: minmax(0, 1fr) 82px 30px; padding: 11px 13px; gap: 10px; }
+  .row-autonomy, .row-owner { display: none; }
+  .row-actions .risk-pill { display: inline-flex; }
+  .row-check { opacity: 1; }
+  .row-due { text-align: right; }
+  .row-actions { gap: 3px; }
+  .row-chev { display: none; }
+  .draft-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .draft-foot .draft-proof { margin-left: 0; }
+  .view-head h1 { font-size: 30px; }
+  .hero h1 { font-size: 30px; }
+  .hero-stats { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .hero-stats > div { padding-right: 8px; }
+  .coverage { min-width: 100%; }
+  .market-hero h2 { font-size: 26px; }
+  .api-hero { flex-direction: column; align-items: flex-start; gap: 14px; padding: 22px; }
+  .api-hero-stat { text-align: left; }
+  .api-hero-stat strong { font-size: 28px; }
+  .activity-summary > div { padding-right: 12px; margin-right: 12px; }
+  .activity-streak { margin-left: 0; margin-top: 8px; }
+  .booking-row { flex-wrap: wrap; }
+  .booking-proof { display: none; }
+  .market-footnote { flex-direction: column; align-items: flex-start; }
+  .risk-panel { grid-template-columns: 96px minmax(0, 1fr); }
+  .risk-panel-due { display: none; }
+  .risk-panel-score > strong { font-size: 32px; }
+  .drawer { width: 100vw; }
+  .modal { max-height: calc(100vh - 32px); }
+  .overlay { padding: 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .key-scopes { display: none; }
+  .key-used { display: none; }
+  .endpoint { grid-template-columns: 40px minmax(0, 1fr); }
+  .endpoint em { display: none; }
+  .security-foot { grid-template-columns: 1fr; }
+  .security-foot strong { text-align: left; }
+}
+
+@media (max-width: 560px) {
+  .content { padding: 14px 12px 24px; }
+  .topbar { padding: 0 12px; gap: 8px; }
+  .crumb span, .crumb svg { display: none; }
+  .clock-chip span { display: none; }
+  .top-live { width: 32px; justify-content: center; padding: 0; font-size: 0; gap: 0; }
+  .top-live i { width: 6px; height: 6px; }
+  .topbar-right { gap: 5px; }
+  .topbar-right > .mono-gram { display: none; }
+  .top-bell { width: 32px; }
+  .view-head h1 { font-size: 28px; }
+  .view-head p { font-size: 12px; }
+  .hero { padding: 20px; border-radius: 18px; }
+  .hero h1 { font-size: 27px; margin-top: 14px; }
+  .hero p { font-size: 12px; }
+  .hero-actions .btn { width: 100%; }
+  .hero-note { font-size: 10.5px; }
+  .hero-side { flex-direction: column; align-items: stretch; }
+  .hero-stats { min-width: 0; }
+  .hero-stats strong { font-size: 17px; }
+  .coverage { min-width: 0; }
+  .coverage .ring { width: 96px !important; height: 96px !important; }
+  .coverage .ring svg { width: 96px; height: 96px; }
+  .due-row { grid-template-columns: 34px minmax(0, 1fr) 64px 12px; padding: 10px 11px; gap: 9px; }
+  .due-row .mono-gram { display: none; }
+  .due-when em { display: none; }
+  .block-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .block-sub { text-align: left; }
+  .section-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .section-note { text-align: left; }
+  .panel { padding: 14px; border-radius: 15px; }
+  .approval-card { padding: 14px; }
+  .approval-foot { flex-wrap: wrap; }
+  .capture-side { grid-template-columns: 1fr; }
+  .draft-fields { grid-template-columns: 1fr 1fr; }
+  .draft-top { flex-wrap: wrap; }
+  .confidence { order: 4; }
+  .composer textarea { min-height: 200px; padding: 14px; font-size: 13px; }
+  .composer-samples { padding: 0 14px 12px; }
+  .sample-chips button { font-size: 9.5px; }
+  .composer-tabs span:nth-child(n+2) { display: none; }
+  .composer-foot { flex-wrap: wrap; }
+  .composer-foot .btn { width: 100%; }
+  .agent-metrics { grid-template-columns: 1fr; }
+  .metric-card { padding: 11px 12px; }
+  .register-stat { border: 0; padding-right: 10px; margin-right: 10px; }
+  .register-stat strong { font-size: 14px; }
+  .filter-chip { height: 27px; font-size: 10px; padding: 0 8px; }
+  .category-rail { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
+  .cat-chip { flex: none; }
+  .market-hero { padding: 20px; }
+  .market-hero-stats { flex-wrap: wrap; gap: 12px; }
+  .market-hero-stats strong { font-size: 18px; }
+  .market-toolbar { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .timeline-card { padding: 11px; }
+  .timeline-toolbar { flex-direction: column; align-items: flex-start; }
+  .timeline-time { display: none; }
+  .timeline-body p { font-size: 10.5px; }
+  .timeline-body em { font-size: 9px; }
+  .booking-price { margin-left: auto; }
+  .api-hero { padding: 18px; }
+  .api-hero-meta { gap: 8px; }
+  .key-row { flex-wrap: wrap; }
+  .key-used { display: none; }
+  .new-key-banner { flex-wrap: wrap; }
+  .endpoint code { font-size: 8.5px; }
+  .webhook-events span { font-size: 6px; }
+  .drawer-head { padding: 14px; }
+  .drawer-title h2 { font-size: 17px; }
+  .drawer-body { padding: 13px 14px 20px; }
+  .drawer-foot { padding: 10px 14px; }
+  .drawer-foot-hint { display: none; }
+  .risk-panel { grid-template-columns: 86px minmax(0, 1fr); gap: 10px; padding: 12px; }
+  .risk-panel-score > strong { font-size: 29px; }
+  .risk-panel-detail p { font-size: 9px; }
+  .drawer-section-head h3 { font-size: 12px; }
+  .modal-head { padding: 14px 15px 11px; }
+  .modal-head h2 { font-size: 19px; }
+  .modal-body { padding: 13px 15px; }
+  .modal-foot { padding: 10px 15px; }
+  .hire-summary { grid-template-columns: 1fr; }
+  .passport-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .passport-stats div:nth-child(2) { border-right: 0; }
+  .assigned-row .risk-meter { width: 84px; }
+  .palette-overlay { padding-top: 6vh; }
+  .palette-input input { font-size: 14px; }
+  .palette-foot { gap: 8px; }
+  .palette-brand { display: none !important; }
+  .toast-stack { right: 12px; bottom: 12px; width: calc(100vw - 24px); }
+  .app-foot { font-size: 7.5px; }
+  .app-foot button { display: none; }
+}
