@@ -1,4 +1,5 @@
 import { loadAll, put, getMeta, setMeta, remove } from "./db.mjs";
+import { fileReceiptForCompletion, trustSnapshot } from "./trust.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -99,6 +100,8 @@ export function buildState() {
     streak_weeks: getMeta("streak_weeks", 14),
   };
 
+  const trust = trustSnapshot(data);
+
   return {
     now: new Date(now).toISOString(),
     clock_offset_days: getMeta("clock_offset_days", 0) || 0,
@@ -113,6 +116,13 @@ export function buildState() {
     providers: data.providers,
     events: data.events.slice(0, 60),
     keys: data.keys,
+    receipts: trust.receipts,
+    escrows: trust.escrows,
+    trust: {
+      networks: trust.networks,
+      stats: trust.stats,
+      guardrails: trust.guardrails,
+    },
     stats,
     api_calls: getMeta("api_calls", 0),
   };
@@ -184,7 +194,13 @@ export function completeObligation(id, { proof, note, by = "Solomon Tigabu", aut
       detail: `${proof || "No proof attached"} · next due ${new Date(ob.due_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
       kind: "proof",
     });
-    return { ok: true, obligation: enrichObligation(ob, now), next_due: ob.due_at };
+    const filed = fileReceiptForCompletion({ obligation: ob, proof: ob.last_proof, by, auto });
+    return {
+      ok: true,
+      obligation: enrichObligation(ob, now),
+      next_due: ob.due_at,
+      receipt: filed.ok ? filed.receipt : null,
+    };
   }
 
   ob.status = "done";
@@ -201,7 +217,14 @@ export function completeObligation(id, { proof, note, by = "Solomon Tigabu", aut
     detail: proof || "Completed",
     kind: "proof",
   });
-  return { ok: true, obligation: enrichObligation(ob, now), archived: true, was_due: wasDue };
+  const filed = fileReceiptForCompletion({ obligation: ob, proof: ob.last_proof, by, auto });
+  return {
+    ok: true,
+    obligation: enrichObligation(ob, now),
+    archived: true,
+    was_due: wasDue,
+    receipt: filed.ok ? filed.receipt : null,
+  };
 }
 
 export function autonomyRank(a) {

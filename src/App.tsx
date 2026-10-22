@@ -8,6 +8,7 @@ import Capture from "./views/Capture";
 import Agents from "./views/Agents";
 import Market from "./views/Market";
 import Activity from "./views/Activity";
+import Trust from "./views/Trust";
 import Access from "./views/Access";
 import ObligationDrawer from "./components/ObligationDrawer";
 import AgentDrawer from "./components/AgentDrawer";
@@ -35,7 +36,10 @@ const NAV = [
   },
   {
     label: "Machine",
-    items: [{ id: "access", label: "Agent access", icon: "key" }],
+    items: [
+      { id: "trust", label: "Trust layer", icon: "shield" },
+      { id: "access", label: "Agent access", icon: "key" },
+    ],
   },
 ];
 
@@ -46,6 +50,7 @@ const TITLES: Record<string, { title: string; sub: string }> = {
   agents: { title: "The bench", sub: "Agents and automations with a paper trail" },
   market: { title: "Marketplace", sub: "Humans and agents, on the same bench" },
   activity: { title: "Proof", sub: "What happened, who did it, what's on file" },
+  trust: { title: "Trust layer", sub: "Proof receipts and USDC escrow, anchored when needed" },
   access: { title: "Agent access", sub: "Obligations as a protocol" },
 };
 
@@ -209,6 +214,7 @@ function Shell() {
           {route === "agents" && <Agents />}
           {route === "market" && <Market />}
           {route === "activity" && <Activity />}
+          {route === "trust" && <Trust />}
           {route === "access" && <Access />}
           <footer className="app-foot">
             <span><Logo small /> Remindify OS · v1.0</span>

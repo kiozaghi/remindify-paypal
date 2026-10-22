@@ -36,7 +36,7 @@ type Ctx = {
 
 const AppCtx = createContext<Ctx | null>(null);
 
-const ROUTES = ["today", "obligations", "capture", "agents", "market", "activity", "access"];
+const ROUTES = ["today", "obligations", "capture", "agents", "market", "activity", "trust", "access"];
 
 function currentRoute() {
   const hash = window.location.hash.replace(/^#\/?/, "").split("?")[0];
@@ -197,6 +197,48 @@ function makeActions(
       run(async () => {
         const res = await api.setLive(live);
         toast(live ? "Agents are live" : "Agents paused", live ? "They'll propose actions as risk moves." : "No new proposals will be generated.", "default");
+        return res;
+      }),
+    createReceipt: (payload: any) =>
+      run(async () => {
+        const res = await api.createReceipt(payload);
+        toast("Proof receipt filed", "The EIP-712 payload is ready to sign or anchor.", "success");
+        return res;
+      }),
+    signReceipt: (id: string, signature: string, signer: string) =>
+      run(async () => {
+        const res = await api.signReceipt(id, signature, signer);
+        toast("Receipt signed", "The signature is verified against the EIP-712 digest.", "success");
+        return res;
+      }),
+    anchorReceipt: (id: string, tx_hash: string) =>
+      run(async () => {
+        const res = await api.anchorReceipt(id, tx_hash);
+        toast("Receipt anchored", `${res?.receipt?.network_label || "Chain"} now holds the proof hash.`, "success");
+        return res;
+      }),
+    createEscrow: (payload: any) =>
+      run(async () => {
+        const res = await api.createEscrow(payload);
+        toast("Escrow intent opened", "Commit it offchain or fund it when a contract is configured.", "success");
+        return res;
+      }),
+    commitEscrow: (id: string) =>
+      run(async () => {
+        const res = await api.commitEscrow(id);
+        toast("Escrow committed", "Release now requires a signed proof receipt.", "default");
+        return res;
+      }),
+    fundEscrow: (id: string, tx_hash: string) =>
+      run(async () => {
+        const res = await api.fundEscrow(id, tx_hash);
+        toast("Escrow funded", "USDC funding recorded onchain.", "success");
+        return res;
+      }),
+    releaseEscrow: (id: string, proof_receipt_id?: string | null, tx_hash?: string) =>
+      run(async () => {
+        const res = await api.releaseEscrow(id, proof_receipt_id, tx_hash);
+        toast("Escrow released", "A signed receipt satisfied the release condition.", "success");
         return res;
       }),
   };

@@ -31,6 +31,7 @@ export function CommandPalette() {
       ["agents", "Agents", "bot", "roster automations"],
       ["market", "Marketplace", "store", "hire humans providers"],
       ["activity", "Activity & proof", "pulse", "audit log"],
+      ["trust", "Trust layer", "shield", "receipts escrow base celo"],
       ["access", "Agent access", "key", "api keys mcp"],
     ].map(([route, label, icon, detail]) => ({
       id: `nav_${route}`,

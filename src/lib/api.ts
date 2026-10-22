@@ -32,4 +32,17 @@ export const api = {
   advance: (days: number) => request("/api/demo/advance", "POST", { days }),
   reset: () => request("/api/demo/reset", "POST", {}),
   setLive: (live: boolean) => request("/api/meta", "PATCH", { live }),
+  trust: () => request("/api/trust"),
+  createReceipt: (payload: any) => request("/api/trust/receipts", "POST", payload),
+  signReceipt: (id: string, signature: string, signer: string) =>
+    request(`/api/trust/receipts/${id}/sign`, "POST", { signature, signer }),
+  anchorReceipt: (id: string, tx_hash: string) =>
+    request(`/api/trust/receipts/${id}/anchor`, "POST", { tx_hash }),
+  receiptCalldata: (id: string) => request(`/api/trust/receipts/${id}/calldata`),
+  createEscrow: (payload: any) => request("/api/trust/escrows", "POST", payload),
+  commitEscrow: (id: string) => request(`/api/trust/escrows/${id}/commit`, "POST", {}),
+  fundEscrow: (id: string, tx_hash: string) =>
+    request(`/api/trust/escrows/${id}/fund`, "POST", { tx_hash }),
+  releaseEscrow: (id: string, proof_receipt_id?: string | null, tx_hash?: string) =>
+    request(`/api/trust/escrows/${id}/release`, "POST", { proof_receipt_id, tx_hash }),
 };

@@ -137,6 +137,145 @@ export interface ApiKey {
   last_used: string | null;
 }
 
+export interface TrustNetwork {
+  key: string;
+  label: string;
+  role: string;
+  description: string;
+  chain_id: number;
+  caip2: string;
+  currency: string;
+  usdc: string;
+  usdc_decimals: number;
+  explorer: string;
+  rpc_configured: boolean;
+  attestation_contract: string | null;
+  escrow_contract: string | null;
+  ready: boolean;
+  preview: boolean;
+  status: "configured" | "preview";
+  tone: string;
+  testnet: boolean;
+  guardrail: string | null;
+  env: { rpc: string; attestation: string; escrow: string };
+}
+
+export interface TrustStats {
+  receipts: number;
+  prepared: number;
+  signed: number;
+  anchored: number;
+  escrows: number;
+  open_escrows: number;
+  released_escrows: number;
+  escrow_value: number;
+  released_value: number;
+}
+
+export interface TrustGuardrails {
+  ethiopia_offchain: boolean;
+  note: string;
+  disclosure: string;
+}
+
+export interface TrustSummary {
+  networks: TrustNetwork[];
+  stats: TrustStats;
+  guardrails: TrustGuardrails;
+}
+
+export interface TypedDataPayload {
+  domain: {
+    name: string;
+    version: string;
+    chainId: number;
+    verifyingContract: string;
+  };
+  types: Record<string, { name: string; type: string }[]>;
+  primaryType: string;
+  message: {
+    obligationId: string;
+    proofHash: string;
+    evidenceHash: string;
+    agentId: string;
+    issuedAt: number;
+    nonce: string;
+  };
+}
+
+export interface ProofReceipt {
+  id: string;
+  obligation_id: string;
+  obligation_title: string;
+  agent_id: string | null;
+  agent_name: string | null;
+  chain: string;
+  chain_id: number;
+  network_label: string;
+  network_role: string;
+  explorer: string;
+  explorer_url: string | null;
+  contract: string | null;
+  contract_url: string | null;
+  proof_label: string;
+  proof_hash: string;
+  evidence_hash: string;
+  short_hash: string;
+  short_proof: string;
+  issued_at: string;
+  issued_at_unix: number;
+  nonce: string;
+  digest: string;
+  typed_data: TypedDataPayload;
+  wallet_payload: TypedDataPayload;
+  status: "prepared" | "signed" | "anchored";
+  signer: string | null;
+  signature: string | null;
+  signed_at: string | null;
+  tx_hash: string | null;
+  block_number: number | null;
+  anchored_at: string | null;
+  anchor_mode: string;
+  source: string;
+  demo: boolean;
+  created_at: string;
+  usdc: string;
+  mode: "preview" | "live";
+}
+
+export interface Escrow {
+  id: string;
+  obligation_id: string;
+  obligation_title: string;
+  provider_id: string | null;
+  provider_name: string | null;
+  provider_kind: string | null;
+  chain: string;
+  chain_id: number;
+  network_label: string;
+  network_role: string;
+  explorer: string;
+  explorer_url: string | null;
+  release_url: string | null;
+  contract: string | null;
+  contract_url: string | null;
+  currency: string;
+  amount: number;
+  amount_base: string;
+  mode: string;
+  jurisdiction_ack: boolean;
+  status: "draft" | "committed" | "funded" | "released";
+  proof_receipt_id: string | null;
+  note: string;
+  short_id: string;
+  tx_hash: string | null;
+  release_tx_hash: string | null;
+  created_at: string;
+  committed_at: string | null;
+  funded_at: string | null;
+  released_at: string | null;
+}
+
 export interface Stats {
   active: number;
   due_week: number;
@@ -167,6 +306,9 @@ export interface AppState {
   providers: Provider[];
   events: EventItem[];
   keys: ApiKey[];
+  receipts: ProofReceipt[];
+  escrows: Escrow[];
+  trust: TrustSummary;
   stats: Stats;
   api_calls: number;
 }

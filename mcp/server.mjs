@@ -90,6 +90,19 @@ const TOOLS = [
     description: "Discover the agent roster, their scopes, trust and autonomy ceilings. Use this to decide which agent should own a new obligation.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "list_trust",
+    description:
+      "Read proof receipts and escrow intents across Base and Celo. Check status, signer, proof hash and whether a chain is in preview or configured mode before claiming a proof is anchored.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["prepared", "signed", "anchored"], description: "Filter receipts by status." },
+        obligation_id: { type: "string", description: "Only receipts for this obligation." },
+        limit: { type: "number", description: "Max receipts. Default 20, max 100." },
+      },
+    },
+  },
 ];
 
 async function api(path, init = {}) {
@@ -180,6 +193,40 @@ async function callTool(name, args = {}) {
 
   if (name === "list_agents") {
     return api("/api/v1/agents");
+  }
+
+  if (name === "list_trust") {
+    const data = await api("/api/v1/trust");
+    const limit = Math.min(100, Math.max(1, Number(args.limit) || 20));
+    let receipts = data.receipts || [];
+    if (args.status) receipts = receipts.filter((receipt) => receipt.status === args.status);
+    if (args.obligation_id) {
+      receipts = receipts.filter((receipt) => receipt.obligation_id === args.obligation_id);
+    }
+    return {
+      stats: data.stats,
+      guardrails: data.guardrails,
+      networks: (data.networks || []).map((network) => ({
+        key: network.key,
+        label: network.label,
+        chain_id: network.chain_id,
+        status: network.status,
+        guardrail: network.guardrail,
+      })),
+      receipts: receipts.slice(0, limit).map((receipt) => ({
+        id: receipt.id,
+        obligation_id: receipt.obligation_id,
+        obligation_title: receipt.obligation_title,
+        chain: receipt.chain,
+        network_label: receipt.network_label,
+        status: receipt.status,
+        signer: receipt.signer,
+        digest: receipt.digest,
+        tx_hash: receipt.tx_hash,
+        explorer_url: receipt.explorer_url,
+      })),
+      escrows: data.escrows || [],
+    };
   }
 
   throw new Error(`Unknown tool: ${name}`);

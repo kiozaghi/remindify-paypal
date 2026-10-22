@@ -10,6 +10,12 @@ import {
 } from "./engine.mjs";
 import { loadAll, put, putMany, getMeta, setMeta, seedDatabase } from "./db.mjs";
 import { parseCapture } from "./parse.mjs";
+import {
+  anchorReceipt, commitEscrow, createEscrow, createReceipt, ensureTrustDemo,
+  fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
+} from "./trust.mjs";
+
+ensureTrustDemo();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -213,6 +219,36 @@ const server = createServer(async (req, res) => {
             .slice(0, 8)
             .map((o) => ({ id: o.id, title: o.title, risk: o.risk, penalty: o.penalty })),
         });
+      }
+
+      if (path === "/api/v1/trust" && req.method === "GET") {
+        const trust = trustSnapshot();
+        logEvent({
+          actor_type: "automation", actor: key.name, actor_id: key.id,
+          verb: "read the trust layer", object: "Proof receipts",
+          detail: "GET /v1/trust · receipts, escrows and chain status",
+          kind: "api", channel: "api",
+        });
+        return send(res, 200, {
+          networks: trust.networks,
+          receipts: trust.receipts,
+          escrows: trust.escrows,
+          stats: trust.stats,
+          guardrails: trust.guardrails,
+        });
+      }
+
+      if (path === "/api/v1/trust/receipts" && req.method === "POST") {
+        const input = await body(req);
+        if (!input.obligation_id) return send(res, 422, { error: "obligation_id_required" });
+        const result = createReceipt({
+          ...input,
+          source: "api",
+          actor: { type: "automation", id: key.id, name: key.name },
+          channel: "api",
+        });
+        if (!result.ok) return send(res, 422, result);
+        return send(res, 201, { receipt: result.receipt });
       }
 
       if (path === "/api/v1/agents" && req.method === "GET") {
@@ -472,7 +508,69 @@ const server = createServer(async (req, res) => {
 
     if (path === "/api/demo/reset" && req.method === "POST") {
       seedDatabase(true);
+      ensureTrustDemo();
       return send(res, 200, { state: buildState() });
+    }
+
+    // ---------- Trust layer ----------
+    if (path === "/api/trust" && req.method === "GET") {
+      return send(res, 200, { trust: trustSnapshot(), state: buildState() });
+    }
+
+    if (path === "/api/trust/receipts" && req.method === "POST") {
+      const input = await body(req);
+      const result = createReceipt(input);
+      return send(res, result.ok ? 201 : 422, { ...result, state: buildState() });
+    }
+
+    const receiptSignMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/sign$/);
+    if (receiptSignMatch && req.method === "POST") {
+      const { signature, signer } = await body(req);
+      const result = await signReceipt({ id: receiptSignMatch[1], signature, signer });
+      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    }
+
+    const receiptAnchorMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/anchor$/);
+    if (receiptAnchorMatch && req.method === "POST") {
+      const { tx_hash } = await body(req);
+      const result = await anchorReceipt({ id: receiptAnchorMatch[1], tx_hash });
+      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    }
+
+    const receiptCalldataMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/calldata$/);
+    if (receiptCalldataMatch && req.method === "GET") {
+      const result = receiptCalldata(receiptCalldataMatch[1]);
+      return send(res, result.ok ? 200 : 422, result);
+    }
+
+    if (path === "/api/trust/escrows" && req.method === "POST") {
+      const input = await body(req);
+      const result = createEscrow(input);
+      return send(res, result.ok ? 201 : 422, { ...result, state: buildState() });
+    }
+
+    const escrowCommitMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/commit$/);
+    if (escrowCommitMatch && req.method === "POST") {
+      const result = commitEscrow({ id: escrowCommitMatch[1] });
+      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    }
+
+    const escrowFundMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/fund$/);
+    if (escrowFundMatch && req.method === "POST") {
+      const { tx_hash } = await body(req);
+      const result = await fundEscrow({ id: escrowFundMatch[1], tx_hash });
+      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    }
+
+    const escrowReleaseMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/release$/);
+    if (escrowReleaseMatch && req.method === "POST") {
+      const { proof_receipt_id, tx_hash } = await body(req);
+      const result = await releaseEscrow({
+        id: escrowReleaseMatch[1],
+        proof_receipt_id,
+        tx_hash,
+      });
+      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
     }
 
     if (path === "/api/export" && req.method === "GET") {

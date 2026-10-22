@@ -1170,6 +1170,8 @@ export function buildSeed(now = Date.now()) {
     providers,
     events,
     keys,
+    receipts: [],
+    escrows: [],
     meta: {
       workspace: "Exopya Studio",
       user: "Solomon Tigabu",

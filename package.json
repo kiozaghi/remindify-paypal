@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Remindify \u2014 the autonomy layer for everything that comes back.",
+  "description": "Remindify — the autonomy layer for everything that comes back.",
   "scripts": {
     "dev": "node server/dev.mjs",
     "build": "vite build",
@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "viem": "^2.57.7"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
