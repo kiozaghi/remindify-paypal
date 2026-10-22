@@ -187,6 +187,8 @@ DEPLOYER_PRIVATE_KEY=0x... npm run contracts:deploy -- base-sepolia
 
 The script prints the `*_RPC_URL`, `*_ATTESTATION_CONTRACT` and `*_ESCROW_CONTRACT` values for the server, and records the addresses and transaction hashes in `contracts/deployments/<network>.json`. Supported network keys: `base`, `base-sepolia`, `celo`, `celo-sepolia`.
 
+Verify both contracts on Basescan or Celoscan after deployment. Use `solc 0.8.24` with the optimizer enabled at 200 runs, matching `contracts/compile.mjs`.
+
 After deploying, set the env vars, restart the server, and rehearse the full flow: file a receipt, sign it, anchor it, then fund and release an escrow. The product works without a deployment in preview mode.
 
 ### Trust API
