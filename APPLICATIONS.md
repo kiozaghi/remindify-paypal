@@ -381,7 +381,7 @@ Celo card, label it “planned pilot.”
 
 ## 9. Decisions only the founder can make
 
-1. **Public demo hosting.** The app is a Node server with SQLite, not a static site. Options: Render/Railway/Fly with a persistent volume, or a short-lived tunnel for the demo video. A public URL is required by all three applications.
+1. **Public demo hosting.** The app is a Node server with SQLite, not a static site. The repo now includes a `Dockerfile`; deploy it to Render/Railway/Fly with a persistent volume at `/app/data`, or use a short-lived tunnel for the demo video. A public URL is required by all three applications.
 2. **Repo visibility.** MIT is already chosen. Celo prefers open source; Base does not require it. The safest sequence is to make the repo public after the Base testnet rehearsal and before the Celo submission, not before.
 3. **Registered entity and KYC country.** Celo asks for the country of registration and a lead applicant for KYC. This must be accurate.
 4. **Fundraising number.** The pitch says $400k for 10%. Base Ecosystem Fund may invest a different amount. Confirm the number before submitting.

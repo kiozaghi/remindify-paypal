@@ -298,6 +298,23 @@ Requires **Node 22.5+** for `node:sqlite` (tested on Node 24). No native modules
 
 ---
 
+## Deploy a public demo
+
+The included `Dockerfile` builds the Vite client and serves it from the Node API. SQLite lives under `/app/data`, so mount a volume to keep the workspace across restarts:
+
+```bash
+docker build -t remindify .
+docker run --rm -p 4178:4178 -v remindify-data:/app/data remindify
+```
+
+Open `http://localhost:4178`. The database is created and seeded on first boot.
+
+For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it. Public demos should use a fresh API key and should not expose the seeded demo key.
+
+This is still a single-tenant prototype. Do not run it as a public multi-tenant service until authentication, workspace isolation and key hashing are added.
+
+---
+
 ## Production notes / honest limits
 
 This is a complete product prototype, not a hardened multi-tenant service. Before charging money:
