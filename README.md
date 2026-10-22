@@ -283,13 +283,15 @@ The default key is the seeded demo key. Issue a fresh one in **Agent access** an
 ## Scripts
 
 ```bash
-npm run dev        # API + Vite with proxy
-npm run build      # production bundle
-npm start          # serve dist + API on :4178
-npm run mcp        # MCP stdio server
-npm test           # parser + trust regression tests (node:test)
-npm run typecheck  # tsc --noEmit
-npm run check      # typecheck + production build
+npm run dev              # API + Vite with proxy
+npm run build            # production bundle
+npm start                # serve dist + API on :4178
+npm run mcp              # MCP stdio server
+npm test                 # parser, trust and contract regression tests (node:test)
+npm run typecheck        # tsc --noEmit
+npm run check            # typecheck + production build
+npm run contracts:compile # compile reference contracts to contracts/artifacts/
+npm run contracts:deploy -- base-sepolia --dry-run
 ```
 
 Requires **Node 22.5+** for `node:sqlite` (tested on Node 24). No native modules. `viem` is server-side only; it is not shipped to the client bundle.
@@ -311,6 +313,15 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - add sanctions/geo checks to enforcement, not just the `jurisdiction_ack` boundary.
 
 The design decisions that matter — autonomy ceilings, proof requirements, audit trail, human/agent parity — are already in the data model.
+
+---
+
+## Funding and applications
+
+- [FUNDING.md](./FUNDING.md) — scored shortlist, exclusions, deadlines and recommended sequencing.
+- [APPLICATIONS.md](./APPLICATIONS.md) — working drafts for SXSW Pitch 2027, Base Ecosystem Fund and Celo Prezenti Frontier, plus a demo script and the missing-information checklist.
+
+These are working documents. Verify every deadline and requirement on the official program page before submitting.
 
 ---
 

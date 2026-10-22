@@ -2,6 +2,8 @@
 
 **As of October 21, 2026.** This is a working document, not a promise of eligibility. Deadlines and terms move; verify each program on its official page before submitting.
 
+Application drafts, form answers and the missing-information checklist live in [APPLICATIONS.md](./APPLICATIONS.md).
+
 ## How to read this
 
 - **Fit** (1–5): how directly the program matches Remindify's obligation register, proof-of-done, agent passports, and marketplace.
@@ -19,7 +21,7 @@ The honest starting point: a working prototype with no paying users is early for
 | --- | --- | --- | --- | --- | --- | --- |
 | **[Celo Prezenti Season 3 — Frontier](https://frontier.prezenti.xyz/)** | Direct grant for AI/agent-economy infrastructure on Celo: agent identity, reputation, verification and trust, escrow and settlement, accountability. | Open Aug 12 – **Dec 29, 2026** | 5/5 | High | **Medium** | **Best fit-to-criteria.** Apply after a minimal Celo mainnet deployment, ERC-8004 registration, and Self Protocol Agent ID. |
 | **[Stellar Community Fund #46](https://communityfund.stellar.org/)** | Up to **$150,000 in XLM** for teams building on Stellar/Soroban. New teams start with the interest form; selected teams are invited to submit. | Interest form ASAP; **Nov 8, 2026** submission deadline | 4/5 | High | **Medium-low** | **Only open, high-size, non-dilutive check.** Requires a real Stellar/Soroban build; do not apply with a paper integration. |
-| **[SXSW Pitch 2027](https://sxsw.com/pitch/)** | Pitch competition across eight tracks, including SaaS/Enterprise/Developer Platforms and Smart Data, Security & FinTech. Investor judges; 64 startups selected. | Open through **Nov 13, 2026**; **$225** fee | 4/5 | Medium | **Low-medium** | **Best low-cost credibility play.** No confirmed cash prize; the value is investor access and a forcing function for the narrative. |
+| **[SXSW Pitch 2027](https://sxsw.com/pitch/)** | Pitch competition across eight tracks, including SaaS/Enterprise/Developer Platforms and Smart Data, Security & FinTech. Investor judges; 64 startups selected. | Official page says **Nov 13, 2026**; FAQ says **Nov 11, 2026, 11:59pm PT** — use Nov 11. **$225** fee | 4/5 | Medium | **Low-medium** | **Best low-cost credibility play.** No confirmed cash prize; the value is investor access and a forcing function for the narrative. |
 | **[Base Ecosystem Fund](https://www.base.org/ecosystem-fund/apply)** | Pre-seed/seed investment from Base and Coinbase Ventures for teams building onchain businesses on Base. Thesis includes **AI agents** and **stablecoin distribution in emerging markets**. | Rolling | 5/5 | Medium | **Low-medium** | **Best long-term strategic partner.** Apply after a minimal Base deployment so the “why Base” answer is concrete. |
 | **[Vultr: Agent Rush Hackathon](https://lablab.ai/ai-hackathons/vultr-hackathon)** | Online/hybrid hackathon: build an agent that does real work inside a Vultr sandbox. Challenge 2 is an enterprise workflow with a production-style web app. | **Nov 3–8, 2026**; submissions close Nov 9 | 4/5 | Medium-high | **Low-medium** | **Optional sprint.** $9,000 cash + $5,000 Vultr credits; public repo and deployed demo required. Good forcing function, not core capital. |
 | **[Base Builder Grants](https://gitcoin.co/apps/base-builder-grants)** | Retroactive grants to Base builders, typically **1–5 ETH**. Discovery/nomination-based rather than a formal application. | Rolling | 5/5 | Low (after shipping) | **Low until shipped** | **Do after the Base module is live.** Not a first check; a reward for visible shipping. |
@@ -108,7 +110,7 @@ These are equity, not free money. Do not let them substitute for the grant short
 
 ### Next 7 days
 1. **Decide the chain fork**: EVM (Base + Celo) or Stellar-only sprint.
-2. **Apply to SXSW Pitch 2027** (deadline Nov 13; $225). It is chain-agnostic and the narrative work is reusable.
+2. **Apply to SXSW Pitch 2027** (use the Nov 11, 11:59pm PT deadline from the FAQ; $225). It is chain-agnostic and the narrative work is reusable. Draft in [APPLICATIONS.md](./APPLICATIONS.md).
 3. **Submit the Stellar SCF #46 interest form** if the Stellar fork is chosen; do not wait for the Nov 8 submission deadline.
 4. **Start the Celo Prezenti application** if the EVM path is chosen; read the Frontier criteria and map each requirement to an existing Remindify surface.
 
