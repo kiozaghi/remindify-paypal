@@ -1,6 +1,22 @@
 export type Band = "critical" | "high" | "guarded" | "low";
 export type Autonomy = "notify" | "prepare" | "approve" | "autopilot";
 
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string | null;
+  avatar_url: string | null;
+  wallet_address: string | null;
+  providers: Array<"email" | "google" | "wallet">;
+  created_at: string;
+}
+
+export interface AuthConfig {
+  email: boolean;
+  google: boolean;
+  wallet: boolean;
+}
+
 export interface Risk {
   score: number;
   band: Band;

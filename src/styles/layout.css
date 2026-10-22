@@ -259,7 +259,7 @@
 }
 .boot h1 { font-size: 30px; margin-top: 10px; letter-spacing: -0.06em; }
 .boot p { font-size: 13px; color: var(--muted); }
-.boot em { font-style: normal; font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--faint); margin-top: 6px; }
+.boot em { font-style: normal; font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-top: 6px; }
 .boot-bar { width: 160px; height: 3px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 6px 0; }
 .boot-bar span { display: block; height: 100%; width: 40%; background: var(--ink); border-radius: 99px; animation: bootSlide 1.1s ease-in-out infinite; }
 @keyframes bootSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }

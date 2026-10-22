@@ -1,18 +1,53 @@
+import type { AuthConfig, AuthUser } from "../types";
+
+export interface ApiFailure extends Error {
+  status?: number;
+  code?: string;
+  payload?: any;
+}
+
 export async function request<T = any>(path: string, method = "GET", payload?: any): Promise<T> {
   const res = await fetch(path, {
     method,
+    credentials: "same-origin",
     headers: payload ? { "content-type": "application/json" } : undefined,
     body: payload ? JSON.stringify(payload) : undefined,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || data.message || `Request failed (${res.status})`);
+    const error = new Error(
+      data.message || data.error || `Request failed (${res.status})`
+    ) as ApiFailure;
+    error.status = res.status;
+    error.code = data.error;
+    error.payload = data;
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      window.dispatchEvent(new CustomEvent("remindify:unauthorized"));
+    }
+    throw error;
   }
   return data as T;
 }
 
 export const api = {
   state: () => request("/api/state"),
+
+  authConfig: () => request<AuthConfig>("/api/auth/config"),
+  authSession: () => request<{ user: AuthUser | null }>("/api/auth/session"),
+  authSignup: (payload: { name?: string; email: string; password: string }) =>
+    request<{ user: AuthUser }>("/api/auth/signup", "POST", payload),
+  authLogin: (payload: { email: string; password: string }) =>
+    request<{ user: AuthUser }>("/api/auth/login", "POST", payload),
+  authLogout: () => request<{ ok: true }>("/api/auth/logout", "POST", {}),
+  walletChallenge: (address: string) =>
+    request<{ address: string; nonce: string; message: string; expires_at: string }>(
+      "/api/auth/wallet/challenge",
+      "POST",
+      { address }
+    ),
+  walletVerify: (payload: { address: string; nonce: string; signature: string }) =>
+    request<{ user: AuthUser }>("/api/auth/wallet/verify", "POST", payload),
+
   capture: (text: string) => request("/api/capture", "POST", { text }),
   addObligations: (items: any[]) => request("/api/obligations/bulk", "POST", { items }),
   createObligation: (item: any) => request("/api/obligations", "POST", item),

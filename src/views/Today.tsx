@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useAuth } from "../auth";
 import { useApp } from "../store";
 import { Icon } from "../components/Icon";
 import {
@@ -125,10 +126,12 @@ function Horizon({ obligations, nowMs }: { obligations: any[]; nowMs: number }) 
 
 export default function Today() {
   const { state, nowMs, navigate, actions, openObligation, setOverlays } = useApp();
+  const { user } = useAuth();
   const [sweeping, setSweeping] = useState(false);
   const [stepping, setStepping] = useState(false);
   if (!state) return null;
 
+  const firstName = (user?.name || state.user || "there").trim().split(/\s+/)[0] || "there";
   const pending = state.approvals.filter((a) => a.status === "pending");
   const active = state.obligations.filter((o) => o.status === "active" || o.status === "waiting");
   const focus = [...active]
@@ -161,7 +164,7 @@ export default function Today() {
             <span>{clockLabel(state.now)} · {state.workspace}</span>
           </div>
           <h1>
-            {greeting(nowMs)}, Solomon.<br />
+            {greeting(nowMs)}, {firstName}.<br />
             <em>
               {state.stats.pending_approvals
                 ? `${state.stats.pending_approvals} ${state.stats.pending_approvals === 1 ? "thing needs" : "things need"} you.`

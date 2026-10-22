@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
+import { AuthProvider, useAuth } from "./auth";
 import { AppProvider, useApp } from "./store";
 import { Icon } from "./components/Icon";
+import { Logo } from "./components/Logo";
 import { Monogram } from "./components/ui";
+import Landing from "./landing/Landing";
+import AuthPage from "./landing/AuthPage";
+import { isAppRoute, isAuthRoute, navigateTo, readLocation } from "./lib/router";
 import Today from "./views/Today";
 import Obligations from "./views/Obligations";
 import Capture from "./views/Capture";
@@ -54,24 +59,21 @@ const TITLES: Record<string, { title: string; sub: string }> = {
   access: { title: "Agent access", sub: "Obligations as a protocol" },
 };
 
-function Logo({ small = false }: { small?: boolean }) {
-  return (
-    <span className={`logo ${small ? "logo-small" : ""}`}>
-      <svg width={small ? 24 : 28} height={small ? 24 : 28} viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="9" fill="#14140F" />
-        <path d="M8 18.5c0-4.5 3.4-8 8-8 3.4 0 6.2 1.8 7.4 4.7" stroke="#D9F26A" strokeWidth="2.6" fill="none" strokeLinecap="round" />
-        <circle cx="23.4" cy="15.2" r="2" fill="#D9F26A" />
-        <path d="M24 21.5c0 4.5-3.4 8-8 8-3.4 0-6.2-1.8-7.4-4.7" stroke="#FBF9F3" strokeWidth="2.6" fill="none" strokeLinecap="round" />
-        <circle cx="8.6" cy="24.8" r="2" fill="#FBF9F3" />
-      </svg>
-    </span>
-  );
-}
-
 function Shell() {
   const { state, loading, route, navigate, overlays, setOverlays, actions } = useApp();
+  const { user, logout } = useAuth();
   const [mobileNav, setMobileNav] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const displayUser = user?.name || state?.user || "Operator";
+  const displayDetail = user?.email || user?.wallet_address || "Signed in";
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    await logout();
+    navigateTo("home");
+  };
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -79,13 +81,13 @@ function Shell() {
 
   if (loading || !state) {
     return (
-      <div className="boot">
+      <main className="boot" aria-busy="true">
         <Logo />
         <h1>remindify</h1>
         <p>Loading your register…</p>
         <div className="boot-bar"><span /></div>
-        <em>Local-first · your data stays on this machine</em>
-      </div>
+        <em>Private by default · proof when it matters</em>
+      </main>
     );
   }
 
@@ -145,9 +147,18 @@ function Shell() {
             <Icon name="chevronDown" size={14} />
           </div>
           <div className="user-row">
-            <Monogram name={state.user} tone="ink" size="xs" />
-            <span>{state.user}</span>
-            <span className="user-status" title="Solo builder"><i /></span>
+            <Monogram name={displayUser} tone="ink" size="xs" />
+            <span>{displayUser.split(/\s+/)[0]}</span>
+            <span className="user-status" title="Signed in"><i /></span>
+            <button
+              className="tiny-icon user-signout"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <Icon name="power" size={13} />
+            </button>
           </div>
         </div>
       </aside>
@@ -189,7 +200,20 @@ function Shell() {
               <Icon name="inbox" size={17} />
               {pending > 0 && <span className="bell-badge">{pending}</span>}
             </button>
-            <Monogram name={state.user} tone="ink" size="sm" />
+            <div className="top-user">
+              <button className="top-user-trigger" aria-label="Account menu" aria-haspopup="menu">
+                <Monogram name={displayUser} tone="ink" size="sm" />
+              </button>
+              <div className="top-user-menu" role="menu">
+                <span className="eyebrow">Signed in</span>
+                <strong>{displayUser}</strong>
+                <em>{displayDetail}</em>
+                <button onClick={handleSignOut} disabled={signingOut} role="menuitem">
+                  <Icon name="power" size={13} />
+                  {signingOut ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -236,10 +260,92 @@ function Shell() {
   );
 }
 
+function BootScreen() {
+  return (
+    <main className="boot" aria-busy="true">
+      <Logo />
+      <h1>remindify</h1>
+      <p>Opening your register…</p>
+      <div className="boot-bar"><span /></div>
+      <em>Private by default · proof when it matters</em>
+    </main>
+  );
+}
+
+function Root() {
+  const { user, loading } = useAuth();
+  const [location, setLocation] = useState(readLocation);
+
+  useEffect(() => {
+    const sync = () => setLocation(readLocation());
+    window.addEventListener("hashchange", sync);
+    window.addEventListener("popstate", sync);
+    return () => {
+      window.removeEventListener("hashchange", sync);
+      window.removeEventListener("popstate", sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    const section = location.params.get("section");
+    if (location.page === "home" && section) {
+      const timer = window.setTimeout(() => {
+        document.getElementById(section)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+      return () => window.clearTimeout(timer);
+    }
+    window.scrollTo({ top: 0 });
+  }, [location]);
+
+  useEffect(() => {
+    if (user && isAuthRoute(location.page)) navigateTo("today");
+  }, [user, location.page]);
+
+  if (loading) return <BootScreen />;
+
+  if (!user) {
+    if (isAppRoute(location.page)) {
+      return (
+        <AuthPage
+          mode="login"
+          next={location.page}
+          notice={location.params.get("notice")}
+          onNavigate={navigateTo}
+        />
+      );
+    }
+    if (isAuthRoute(location.page)) {
+      return (
+        <AuthPage
+          mode={location.page === "signup" ? "signup" : "login"}
+          next={location.params.get("next") || undefined}
+          notice={location.params.get("notice")}
+          onNavigate={navigateTo}
+        />
+      );
+    }
+    return <Landing page={location.page} onNavigate={navigateTo} />;
+  }
+
+  if (isAuthRoute(location.page)) {
+    return <BootScreen />;
+  }
+
+  if (isAppRoute(location.page)) {
+    return (
+      <AppProvider>
+        <Shell />
+      </AppProvider>
+    );
+  }
+
+  return <Landing page={location.page} onNavigate={navigateTo} user={user} />;
+}
+
 export default function App() {
   return (
-    <AppProvider>
-      <Shell />
-    </AppProvider>
+    <AuthProvider>
+      <Root />
+    </AuthProvider>
   );
 }

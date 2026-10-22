@@ -4,16 +4,19 @@
 
 Remindify turns recurring obligations — renewals, filings, maintenance, birthdays, payroll — into an owned, risk-scored, proof-backed register. Humans and agents share the same work surface. Every action is scoped, every outcome needs evidence, and every decision is auditable.
 
+The repo now includes a public, story-led site and a real account gate. Anyone can read the story, pricing, security model, legal pages and manifesto. The register itself is private: email, Google or wallet sign-in is required, while the product wallet remains optional for ordinary obligations.
+
 Built from the original Remindify pitch, modernised for a world where agents are first-class operators, not just notifications.
 
 ```bash
 npm install
-npm run dev          # API on :4178, app on :5173
+cp .env.example .env         # optional; the defaults work locally
+npm run dev                  # API on :4178, app on :5173
 # or
 npm run build && npm start   # production build on :4178
 ```
 
-Open **http://localhost:5173** (dev) or **http://localhost:4178** (built).
+Open **http://localhost:5173** (dev) or **http://localhost:4178** (built). Create an account on the first visit. Google sign-in explains what is missing until OAuth credentials are configured; email and wallet sign-in work without Google.
 
 ---
 
@@ -21,6 +24,8 @@ Open **http://localhost:5173** (dev) or **http://localhost:4178** (built).
 
 | Surface | What it does |
 | --- | --- |
+| **Public site** | Story-led landing page, pricing, security model, about, privacy, terms and auth screens, all in the same warm editorial system. |
+| **Accounts** | Email/password, Google OAuth and wallet sign-in; 30-day HttpOnly sessions; every app API route is gated. |
 | **Today** | Greeting, live approvals, closest-to-the-edge obligations, portfolio pulse, agent wire, failsafe policy. |
 | **Obligations** | The register. Search, filter by risk/owner/autonomy, inline autonomy control, risk meters, due dates, backups. |
 | **Capture** | Paste a letter, email or messy note. A deterministic on-device parser extracts obligations, dates, amounts, recurrence, provider and category — then asks you to review before scheduling. |
@@ -74,11 +79,15 @@ That structure is what makes it safe to hand recurring work to software. It is a
 ```
 src/                 React 19 + Vite + TypeScript (no UI framework)
   views/             Today, Obligations, Capture, Agents, Market, Activity, Trust, Access
+  landing/           public story, pricing, security, about, legal and auth pages
+  auth.tsx           session context, email/Google/wallet flows, 401 handling
+  lib/router.ts      hash routing for public and authenticated surfaces
   components/        drawers, modals, command palette, icons, shared UI
   styles/            custom warm-editorial design system (Instrument Sans/Serif, JetBrains Mono)
 server/
   index.mjs          zero-framework HTTP API + static serving
-  db.mjs             node:sqlite store (JSON row documents, WAL)
+  auth.mjs           scrypt passwords, hashed sessions, Google OAuth, wallet verification
+  db.mjs             node:sqlite store (JSON row documents, WAL), auth tables
   seed.mjs           rich demo workspace: 16 obligations, 7 agents, 8 providers, events, keys
   engine.mjs         risk scoring, recurrence, approvals, sweep, autopilot, virtual clock
   parse.mjs          deterministic on-device capture parser
@@ -94,11 +103,76 @@ public/fonts/        self-hosted fonts
 - **Risk** = `severity × 15 × urgency(days) × autonomyFactor × confidenceFactor`, clamped to 2–97 and banded critical/high/guarded/low.
 - **Recurrence** advances from the current due date, preserving the original day-of-month where possible.
 - **Virtual clock** is a persisted offset (`clock_offset_days`), so time-machine demos are consistent across API, UI and seeded relative dates.
-- **No cloud, no keys, no tracking.** The capture parser runs locally and is covered by `npm test`.
+- **No blockchain keys, no document upload, no tracking.** The capture parser runs locally and is covered by `npm test`; authentication is the only place the product stores identity data.
 
 ### Data
 
 SQLite lives at `data/remindify.db`. Use **Reset demo** (clock chip, after time travel) or `POST /api/demo/reset` to restore the seeded workspace. Export everything with `GET /api/export`. Point the store elsewhere with `REMINDIFY_DATA_DIR` or `REMINDIFY_DB`.
+
+Accounts and sessions live in separate `users`, `auth_sessions` and `auth_challenges` tables. A demo reset never deletes users or signs anyone out.
+
+---
+
+## Public site and authentication
+
+The public site is story-first rather than a feature grid. It explains the product through a leak, a letter, a desk, a proof receipt and a day line, then moves into product, trust, pricing and FAQ sections.
+
+Public routes use hash navigation so the same build works on any static host or behind the Node server:
+
+| Route | Page |
+| --- | --- |
+| `/` or `#/home` | Story landing page |
+| `#/pricing` | Plans and the preview promise |
+| `#/security` | Security and trust model |
+| `#/about` | Why Remindify exists |
+| `#/privacy`, `#/terms` | Legal preview |
+| `#/login`, `#/signup` | Account access |
+
+App routes (`#/today`, `#/obligations`, `#/capture`, `#/agents`, `#/market`, `#/activity`, `#/trust`, `#/access`) require a session. Visiting one while signed out opens the auth page with a `next` target, so email and wallet sign-in return to the requested surface.
+
+### Sign-in methods
+
+- **Email and password** — scrypt hashes with a per-user salt. Passwords are never stored in plain text.
+- **Google OAuth** — authorization code flow with a one-time state cookie and verified profile email. If credentials are absent, the button shows a short configuration notice and email/wallet remain available.
+- **Wallet** — `personal_sign` over a one-time, ten-minute nonce. The server verifies the signature with viem; no transaction, gas or private key is involved. The signed message names chain ID 8453 because the trust layer is Base-first, but signing in does not touch a chain.
+
+Sessions last 30 days. The cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` when served over HTTPS. Only a SHA-256 hash of the session token is stored. The browser wallet remains optional: an email-only account can use the full register, capture, agents, proof and export. Ethiopian obligations stay offchain.
+
+### Auth configuration
+
+Defaults work locally with no third-party credentials:
+
+```bash
+cp .env.example .env
+npm run dev
+```
+
+For a public deployment, set the canonical origin and secure cookies:
+
+```bash
+PUBLIC_ORIGIN=https://your-domain.example
+COOKIE_SECURE=true
+```
+
+For Google sign-in, create an OAuth web client and register this exact redirect URI:
+
+```
+https://your-domain.example/api/auth/google/callback
+```
+
+Then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Use `GOOGLE_REDIRECT_URI` if the callback differs from `${PUBLIC_ORIGIN}/api/auth/google/callback`. Without credentials, the Google button shows a short configuration notice and email/wallet remain available.
+
+### API protection
+
+`/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
+
+The server currently gates one shared demo workspace. Accounts do not yet partition obligations, agents or proof between tenants; add workspace ownership before treating the auth gate as multi-tenant isolation.
+
+### Status hints
+
+- Google: requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and a registered redirect URI.
+- Wallet: requires a browser wallet for manual testing. The server flow is verified with viem-generated accounts.
+- Contacts: `hello@remindify.app` and `security@remindify.app` are placeholders until monitored inboxes are confirmed.
 
 ---
 
@@ -242,7 +316,7 @@ All machine endpoints require `Authorization: Bearer rfy_live_...`.
 | `GET` | `/api/v1/trust` | Receipts, escrows, networks and trust stats. |
 | `POST` | `/api/v1/trust/receipts` | File a proof receipt from an agent. |
 
-App endpoints (no auth, local demo only): `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/{sweep,advance,reset}`.
+App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
 
 ```bash
 curl http://localhost:4178/api/v1/risk \
@@ -306,14 +380,16 @@ The included `Dockerfile` builds the Vite client and serves it from the Node API
 
 ```bash
 docker build -t remindify .
-docker run --rm -p 4178:4178 -v remindify-data:/app/data remindify
+docker run --rm -p 4178:4178 \
+  -e PUBLIC_ORIGIN=http://localhost:4178 \
+  -v remindify-data:/app/data remindify
 ```
 
-Open `http://localhost:4178`. The database is created and seeded on first boot.
+Open `http://localhost:4178`. The database is created, seeded and protected by the auth gate on first boot.
 
-For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it. Public demos should use a fresh API key and should not expose the seeded demo key.
+For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it, and set `PUBLIC_ORIGIN=https://your-domain.example` plus `COOKIE_SECURE=true` behind HTTPS. Public demos should use a fresh API key and should not expose the seeded demo key.
 
-This is still a single-tenant prototype. Do not run it as a public multi-tenant service until authentication, workspace isolation and key hashing are added.
+This is still a single-workspace prototype with an account gate. Do not run it as a public multi-tenant service until workspace isolation, key hashing, shared rate limiting and password reset are added.
 
 ---
 
@@ -321,15 +397,17 @@ This is still a single-tenant prototype. Do not run it as a public multi-tenant 
 
 This is a complete product prototype, not a hardened multi-tenant service. Before charging money:
 
-- add authentication, per-workspace data isolation and key hashing (only prefixes are shown now);
+- add per-workspace data isolation; accounts currently gate one shared demo workspace;
 - move the JSON-per-row store to Postgres with row-level security;
+- add key hashing, shared rate limiting, idempotency keys and per-scope enforcement on the machine API;
+- add email verification and a password-reset flow;
 - make webhooks signed and retryable, and add an outbox;
-- add rate limits, idempotency keys and per-scope enforcement on the machine API;
 - encrypt proof documents at rest and add retention/deletion controls;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
 - add billing and tax handling;
 - take the reference contracts through an audit, add upgrade/ops procedures, and test anchor/fund/release against a deployed contract on Base Sepolia before mainnet;
-- add sanctions/geo checks to enforcement, not just the `jurisdiction_ack` boundary.
+- add sanctions/geo checks to enforcement, not just the `jurisdiction_ack` boundary;
+- confirm or replace the placeholder `hello@remindify.app` and `security@remindify.app` inboxes.
 
 The design decisions that matter — autonomy ceilings, proof requirements, audit trail, human/agent parity — are already in the data model.
 

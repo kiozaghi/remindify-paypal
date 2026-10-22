@@ -2,6 +2,7 @@ import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from "react";
 import { api } from "./lib/api";
+import { isAppRoute, navigateTo, readLocation } from "./lib/router";
 import type { AppState } from "./types";
 
 type Toast = { id: number; title: string; detail?: string; tone?: "default" | "success" | "warn" | "agent" };
@@ -36,11 +37,9 @@ type Ctx = {
 
 const AppCtx = createContext<Ctx | null>(null);
 
-const ROUTES = ["today", "obligations", "capture", "agents", "market", "activity", "trust", "access"];
-
 function currentRoute() {
-  const hash = window.location.hash.replace(/^#\/?/, "").split("?")[0];
-  return ROUTES.includes(hash) ? hash : "today";
+  const { page } = readLocation();
+  return isAppRoute(page) ? page : "today";
 }
 
 function makeActions(
@@ -274,8 +273,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await api.state();
       setState(data.state);
-    } catch {
-      /* keep last known state */
+    } catch (error: any) {
+      if (error?.status === 401) setState(null);
+      /* otherwise keep the last known state */
     } finally {
       setLoading(false);
     }
@@ -292,7 +292,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onHash = () => setRoute(currentRoute());
     window.addEventListener("hashchange", onHash);
-    if (!window.location.hash) window.history.replaceState(null, "", "#/today");
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
@@ -311,7 +310,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const navigate = useCallback((next: string) => {
-    window.location.hash = `#/${next}`;
+    if (!isAppRoute(next)) return;
+    navigateTo(next);
     setRoute(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
     setOverlays((o) => ({ ...o, palette: false }));

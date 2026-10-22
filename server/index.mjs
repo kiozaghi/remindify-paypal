@@ -14,6 +14,7 @@ import {
   anchorReceipt, commitEscrow, createEscrow, createReceipt, ensureTrustDemo,
   fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
 } from "./trust.mjs";
+import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
 
 ensureTrustDemo();
 
@@ -34,13 +35,16 @@ const MIME = {
 };
 
 function send(res, status, payload, type = "application/json; charset=utf-8") {
-  res.writeHead(status, {
+  const headers = {
     "content-type": type,
     "cache-control": "no-store",
     "access-control-allow-origin": "*",
     "access-control-allow-headers": "authorization, content-type",
     "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
-  });
+  };
+  const cookies = res.getHeader("Set-Cookie");
+  if (cookies) headers["set-cookie"] = cookies;
+  res.writeHead(status, headers);
   if (typeof payload === "string" || Buffer.isBuffer(payload)) return res.end(payload);
   res.end(JSON.stringify(payload));
 }
@@ -132,6 +136,9 @@ const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return send(res, 204, "");
 
   try {
+    // ---------- Authentication ----------
+    if (await handleAuthRoute(req, res, url, { send, body })) return;
+
     // ---------- Machine-native API (agent first) ----------
     if (path.startsWith("/api/v1/")) {
       const key = keyFromRequest(req);
@@ -272,6 +279,19 @@ const server = createServer(async (req, res) => {
 
     // ---------- App API ----------
     if (path === "/api/health") return send(res, 200, { ok: true, now: new Date().toISOString() });
+
+    // Everything below this line is the signed-in workspace. The machine API
+    // above keeps its own Bearer-key auth; auth routes and health stay public.
+    if (path.startsWith("/api/")) {
+      const session = getSessionFromRequest(req);
+      if (!session) {
+        return send(res, 401, {
+          error: "unauthorized",
+          message: "Sign in to open your workspace.",
+        });
+      }
+      req.auth = session;
+    }
 
     if (path === "/api/state" && req.method === "GET") return send(res, 200, { state: buildState() });
 
@@ -595,7 +615,7 @@ const server = createServer(async (req, res) => {
       return send(
         res,
         200,
-        "<!doctype html><title>Remindify</title><body style='font-family:system-ui;background:#f3f0e9;color:#151510;padding:60px'><h1>Remindify API is running.</h1><p>The app bundle isn't built yet. Run <code>npm run dev</code> (Vite on :5173) or <code>npm run build</code>.</p><p><a href='/api/health'>/api/health</a> · <a href='/api/state'>/api/state</a></p></body>",
+        "<!doctype html><title>Remindify</title><body style='font-family:system-ui;background:#f3f0e9;color:#151510;padding:60px'><h1>Remindify API is running.</h1><p>The app bundle isn't built yet. Run <code>npm run dev</code> (Vite on :5173) or <code>npm run build</code>.</p><p><a href='/api/health'>/api/health</a></p></body>",
         "text/html; charset=utf-8"
       );
     }
