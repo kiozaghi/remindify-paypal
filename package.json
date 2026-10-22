@@ -10,6 +10,8 @@
     "start": "node server/index.mjs",
     "preview": "npm run build && npm start",
     "mcp": "node mcp/server.mjs",
+    "contracts:compile": "node contracts/compile.mjs",
+    "contracts:deploy": "node contracts/deploy.mjs",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && vite build",
     "test": "node --test test/*.test.mjs"
@@ -23,7 +25,13 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "solc": "^0.8.24",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
+  },
+  "overrides": {
+    "solc": {
+      "tmp": "^0.2.5"
+    }
   }
 }

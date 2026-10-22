@@ -167,13 +167,27 @@ When an address is present, the server checks transaction receipts against the c
 
 `contracts/RemindifyAttestations.sol` verifies the EIP-712 signature onchain and stores `anchored[receiptId]`. `contracts/RemindifyEscrow.sol` is a minimal USDC escrow that releases only when the attestation registry says the proof receipt is anchored.
 
-Both are **reference implementations, unaudited and not deployed**. They compile with `solc 0.8.24`:
+Both are **reference implementations, unaudited and not deployed**. They compile with `solc 0.8.24`, which is pinned as a dev dependency:
 
 ```bash
-npx solc@0.8.24 --bin --abi contracts/RemindifyAttestations.sol contracts/RemindifyEscrow.sol
+npm run contracts:compile
 ```
 
-Deploy to Base Sepolia or Celo Sepolia first, set the env vars, then rehearse the full flow. The product works without them in preview mode.
+That writes ABI and bytecode to `contracts/artifacts/` (ignored by git) so the contracts can be inspected without a full Solidity toolchain.
+
+Deploy to a testnet first. The deploy script compiles in memory, checks the RPC chain ID, deploys the attestation registry, then deploys the escrow against the verified USDC address:
+
+```bash
+# Validate the RPC and deployer without sending a transaction
+npm run contracts:deploy -- base-sepolia --dry-run
+
+# Deploy (private key is read from the environment and never written to disk)
+DEPLOYER_PRIVATE_KEY=0x... npm run contracts:deploy -- base-sepolia
+```
+
+The script prints the `*_RPC_URL`, `*_ATTESTATION_CONTRACT` and `*_ESCROW_CONTRACT` values for the server, and records the addresses and transaction hashes in `contracts/deployments/<network>.json`. Supported network keys: `base`, `base-sepolia`, `celo`, `celo-sepolia`.
+
+After deploying, set the env vars, restart the server, and rehearse the full flow: file a receipt, sign it, anchor it, then fund and release an escrow. The product works without a deployment in preview mode.
 
 ### Trust API
 
