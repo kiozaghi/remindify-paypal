@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Remindify — the autonomy layer for everything that comes back.",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node server/dev.mjs",
     "build": "vite build",
@@ -17,11 +20,14 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "^6.4.299",
+    "pg": "^8.23.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "viem": "^2.57.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",

@@ -8,6 +8,8 @@ The repo now includes a public, story-led site and a real account gate. Anyone c
 
 Built from the original Remindify pitch, modernised for a world where agents are first-class operators, not just notifications.
 
+**Live preview:** https://remindify-xi.vercel.app
+
 ```bash
 npm install
 cp .env.example .env         # optional; the defaults work locally
@@ -17,6 +19,27 @@ npm run build && npm start   # production build on :4178
 ```
 
 Open **http://localhost:5173** (dev) or **http://localhost:4178** (built). Create an account on the first visit. Google sign-in explains what is missing until OAuth credentials are configured; email and wallet sign-in work without Google.
+
+## Deploy on Vercel
+
+Vercel functions do not have a persistent writable filesystem, so **SQLite cannot be the production database**. The repository is already wired for a single Vercel deployment with Postgres:
+
+1. Create a Postgres database with **Vercel Postgres**, **Neon** or **Supabase**.
+2. Import this repository into Vercel. The included `vercel.json` builds the Vite app into `dist` and deploys the single `api/index.js` function as the `/api/*` handler. A rewrite restores the original path (including nested routes and OAuth callback query strings) before the router runs.
+3. Add these environment variables in **Project → Settings → Environment Variables**:
+
+   ```bash
+   DATABASE_URL=postgres://...        # Vercel also injects POSTGRES_URL automatically
+   PUBLIC_ORIGIN=https://your-app.vercel.app
+   COOKIE_SECURE=true
+   ```
+
+4. Deploy. On the first API request the Postgres store creates its tables and seeds the demo workspace. Accounts, sessions and workspace data now survive redeploys and cold starts.
+5. If Google sign-in is enabled, register `https://your-app.vercel.app/api/auth/google/callback` as an authorized redirect URI and set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+Do **not** set `REMINDIFY_DB`, `DATABASE_SSL=false` or `PG_NO_LOCK=1` on Vercel. The Postgres store serializes writes with an advisory lock; this keeps the single shared demo workspace consistent, but it is not per-tenant isolation yet.
+
+If a CLI deployment is blocked because the latest Git commit author is not a member of the Vercel team, either add that email to the team or deploy from a clean copy without a `.git` directory. GitHub auto-deploy also requires the Vercel GitHub app to have access to this private repository.
 
 ---
 
@@ -28,7 +51,7 @@ Open **http://localhost:5173** (dev) or **http://localhost:4178** (built). Creat
 | **Accounts** | Email/password, Google OAuth and wallet sign-in; 30-day HttpOnly sessions; every app API route is gated. |
 | **Today** | Greeting, live approvals, closest-to-the-edge obligations, portfolio pulse, agent wire, failsafe policy. |
 | **Obligations** | The register. Search, filter by risk/owner/autonomy, inline autonomy control, risk meters, due dates, backups. |
-| **Capture** | Paste a letter, email or messy note. A deterministic on-device parser extracts obligations, dates, amounts, recurrence, provider and category — then asks you to review before scheduling. |
+| **Capture** | Paste a letter, email or messy note, or drop a text-based PDF. A deterministic parser extracts obligations, dates, amounts, recurrence, provider and category — then asks you to review before scheduling. No external AI API is called; text-based PDFs are read in the browser, while scanned PDFs need OCR or a vision service. |
 | **Agents** | Agent passports: role, scopes, trust, runs, success rate, autonomy ceiling, obligations on desk, recent runs, exportable passport JSON. |
 | **Marketplace** | Vetted humans and agents side by side. Fixed price, escrow on proof, scoped access, SLA. Attach a provider to an obligation or post a new job. |
 | **Activity & proof** | Immutable event stream, filterable by agents/humans/system/API/proof, exportable audit log, proof vault. |
@@ -48,7 +71,7 @@ Plus: **⌘K command palette**, obligation drawer with autonomy + checklist + pr
 7. **Agent access** — hit **Test live call**, create a key, or run the MCP server.
 8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Autopilot obligations execute and reschedule, approvals escalate, risk moves. Reset from the clock chip.
 
-Nothing here is a static mock: every button writes to SQLite and re-renders from the API.
+Nothing here is a static mock: every button writes to the active store — SQLite locally, Postgres on Vercel — and re-renders from the API.
 
 ---
 
@@ -85,17 +108,21 @@ src/                 React 19 + Vite + TypeScript (no UI framework)
   components/        drawers, modals, command palette, icons, shared UI
   styles/            custom warm-editorial design system (Instrument Sans/Serif, JetBrains Mono)
 server/
-  index.mjs          zero-framework HTTP API + static serving
+  index.mjs          shared HTTP handler for Node and Vercel, plus static serving
   auth.mjs           scrypt passwords, hashed sessions, Google OAuth, wallet verification
-  db.mjs             node:sqlite store (JSON row documents, WAL), auth tables
+  db.mjs             database facade: SQLite locally, Postgres on Vercel
+  db-sqlite.mjs      node:sqlite store (JSON row documents, WAL), auth tables
+  db-postgres.mjs    request-scoped Postgres snapshot, auth tables, advisory lock
   seed.mjs           rich demo workspace: 16 obligations, 7 agents, 8 providers, events, keys
   engine.mjs         risk scoring, recurrence, approvals, sweep, autopilot, virtual clock
-  parse.mjs          deterministic on-device capture parser
+  parse.mjs          deterministic capture parser (no external AI)
   trust.mjs          Base/Celo registry, EIP-712 receipts, anchoring, escrow intents
   dev.mjs            runs API + Vite together
+api/[...path].js     Vercel serverless entrypoint for /api/*
+vercel.json          Vercel build and function configuration
 contracts/           reference Solidity: attestations registry + USDC escrow
 mcp/server.mjs       zero-dependency MCP stdio server (tools + structured content)
-data/                SQLite database (created on first run)
+data/                local SQLite database (created on first run)
 public/fonts/        self-hosted fonts
 ```
 
@@ -103,13 +130,29 @@ public/fonts/        self-hosted fonts
 - **Risk** = `severity × 15 × urgency(days) × autonomyFactor × confidenceFactor`, clamped to 2–97 and banded critical/high/guarded/low.
 - **Recurrence** advances from the current due date, preserving the original day-of-month where possible.
 - **Virtual clock** is a persisted offset (`clock_offset_days`), so time-machine demos are consistent across API, UI and seeded relative dates.
-- **No blockchain keys, no document upload, no tracking.** The capture parser runs locally and is covered by `npm test`; authentication is the only place the product stores identity data.
+- **No blockchain keys, no document upload, no tracking.** The capture parser is deterministic, calls no external AI service and is covered by `npm test`. Text-based PDFs are read in the browser; only the extracted text is sent to the workspace API. Scanned PDFs need OCR or a vision service. Authentication is the only place the product stores identity data.
 
 ### Data
 
-SQLite lives at `data/remindify.db`. Use **Reset demo** (clock chip, after time travel) or `POST /api/demo/reset` to restore the seeded workspace. Export everything with `GET /api/export`. Point the store elsewhere with `REMINDIFY_DATA_DIR` or `REMINDIFY_DB`.
+**Local development and Docker** use SQLite at `data/remindify.db`. Use **Reset demo** (clock chip, after time travel) or `POST /api/demo/reset` to restore the seeded workspace. Export everything with `GET /api/export`. Point the store elsewhere with `REMINDIFY_DATA_DIR` or `REMINDIFY_DB`.
 
-Accounts and sessions live in separate `users`, `auth_sessions` and `auth_challenges` tables. A demo reset never deletes users or signs anyone out.
+**Vercel** uses Postgres. Set `DATABASE_URL` (or one of Vercel's `POSTGRES_*` variables) and the server switches stores automatically. The Postgres store creates its tables on first use, loads a request-scoped snapshot inside a transaction, and flushes it before the response ends. Writes are serialized with a Postgres advisory lock so the single shared demo workspace stays consistent across serverless instances.
+
+Accounts and sessions live in separate `users`, `auth_sessions` and `auth_challenges` tables in both stores. A demo reset never deletes users or signs anyone out.
+
+To run against a local Postgres instead of SQLite:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/remindify \
+DATABASE_SSL=false \
+npm run dev
+```
+
+The Postgres tests use an embedded PGlite database and need no external service:
+
+```bash
+npm test
+```
 
 ---
 

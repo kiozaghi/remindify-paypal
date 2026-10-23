@@ -8,15 +8,16 @@ import {
   runObligation, advanceClock, deleteObligation, logEvent, uid, virtualNow,
   riskFor, enrichObligation,
 } from "./engine.mjs";
-import { loadAll, put, putMany, getMeta, setMeta, seedDatabase } from "./db.mjs";
+import {
+  loadAll, put, putMany, getMeta, setMeta, seedDatabase, pruneAuth,
+  beginRequest, runWithStore, endRequest, abortRequest, isPostgres,
+} from "./db.mjs";
 import { parseCapture } from "./parse.mjs";
 import {
   anchorReceipt, commitEscrow, createEscrow, createReceipt, ensureTrustDemo,
   fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
 } from "./trust.mjs";
 import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
-
-ensureTrustDemo();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -25,6 +26,7 @@ const PORT = process.env.PORT || 4178;
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
@@ -129,7 +131,7 @@ function machineObligations() {
     }));
 }
 
-const server = createServer(async (req, res) => {
+async function handleRequest(req, res) {
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
 
@@ -623,24 +625,124 @@ const server = createServer(async (req, res) => {
     console.error(error);
     return send(res, 500, { error: "server_error", message: error.message });
   }
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`→ Remindify API  http://localhost:${PORT}`);
-});
+function needsDatabase(path) {
+  return path.startsWith("/api/")
+    && path !== "/api/health"
+    && path !== "/api/auth/config"
+    && path !== "/api/auth/google";
+}
 
-// Ambient heartbeat: keeps agents' presence alive without mutating obligations.
-setInterval(() => {
+// Vercel rewrites every /api/* request to the single api/index function and
+// passes the original path in __path. Restore the URL before the router sees
+// it, keeping query parameters such as the Google OAuth state and code.
+function normalizedPath(req) {
   try {
-    const data = loadAll();
-    const now = new Date().toISOString();
-    for (const agent of data.agents) {
-      if (agent.status === "active") {
-        agent.last_active = now;
-        put("agents", agent);
-      }
-    }
+    const url = new URL(req.url, "http://localhost");
+    if (!url.searchParams.has("__path")) return url.pathname;
+    const inner = String(url.searchParams.get("__path") || "").replace(/^\/+/, "");
+    url.searchParams.delete("__path");
+    const path = `/api/${inner}`;
+    const query = url.searchParams.toString();
+    req.url = query ? `${path}?${query}` : path;
+    return path;
   } catch {
-    /* ignore */
+    return "/";
   }
-}, 45_000).unref();
+}
+
+// Vercel and the local Node server both enter through this handler. With
+// Postgres, a request-scoped snapshot is loaded under a transaction and
+// flushed before the response ends. With SQLite, the lifecycle hooks are
+// no-ops and the existing synchronous store is used directly.
+export async function handle(req, res) {
+  const path = normalizedPath(req);
+
+  if (!isPostgres) {
+    if (needsDatabase(path)) ensureTrustDemo();
+    return handleRequest(req, res);
+  }
+
+  if (!needsDatabase(path)) return handleRequest(req, res);
+
+  let store;
+  try {
+    store = await beginRequest();
+  } catch (error) {
+    console.error("Postgres request start failed:", error);
+    return send(res, 500, { error: "database_unavailable", message: "The workspace database is unavailable." });
+  }
+
+  try {
+    return await runWithStore(store, async () => {
+      try {
+        seedDatabase();
+        pruneAuth();
+        ensureTrustDemo();
+      } catch (error) {
+        await abortRequest(store);
+        console.error("Postgres request setup failed:", error);
+        return send(res, 500, {
+          error: "database_unavailable",
+          message: "The workspace database is unavailable.",
+        });
+      }
+
+      let flush = null;
+      const originalEnd = res.end.bind(res);
+      res.end = (...args) => {
+        if (!flush) {
+          flush = endRequest(store)
+            .catch((error) => {
+              console.error("Postgres request flush failed:", error);
+            })
+            .then(() => originalEnd(...args));
+        }
+        return res;
+      };
+
+      try {
+        await handleRequest(req, res);
+        if (flush) await flush;
+        else await endRequest(store);
+      } catch (error) {
+        if (!flush) await abortRequest(store);
+        throw error;
+      }
+    });
+  } catch (error) {
+    console.error("Postgres request failed:", error);
+    if (!res.headersSent) {
+      return send(res, 500, { error: "server_error", message: error.message });
+    }
+    if (!res.writableEnded) res.end();
+  }
+}
+
+if (!process.env.VERCEL) {
+  const server = createServer(handle);
+  server.listen(PORT, () => {
+    console.log(`→ Remindify API  http://localhost:${PORT}`);
+  });
+
+  // Ambient heartbeat: keep agents' presence alive without mutating obligations.
+  if (!isPostgres) {
+    setInterval(() => {
+      try {
+        const data = loadAll();
+        const now = new Date().toISOString();
+        for (const agent of data.agents) {
+          if (agent.status === "active") {
+            agent.last_active = now;
+            put("agents", agent);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 45_000).unref();
+  }
+}
+
+export default handle;

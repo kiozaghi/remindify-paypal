@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useApp } from "../store";
 import { Icon } from "../components/Icon";
 import { CategoryTile, Field } from "../components/ui";
@@ -65,6 +66,37 @@ const decodeRec = (value: string) => {
   const [unit, interval] = value.split(":");
   return { unit, interval: Number(interval) };
 };
+
+const MAX_PDF_PAGES = 30;
+
+async function extractPdfText(file: File) {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+  const data = new Uint8Array(await file.arrayBuffer());
+  const loadingTask = pdfjs.getDocument({ data });
+  const document = await loadingTask.promise;
+  const pages = document.numPages;
+  const readablePages = Math.min(pages, MAX_PDF_PAGES);
+  const parts: string[] = [];
+  try {
+    for (let pageNumber = 1; pageNumber <= readablePages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      parts.push(
+        content.items
+          .map((item) => ("str" in item ? item.str : ""))
+          .join(" "),
+      );
+      page.cleanup();
+    }
+  } finally {
+    await loadingTask.destroy();
+  }
+  return {
+    pages,
+    text: parts.join("\n\n").replace(/[ \t]+/g, " ").trim(),
+  };
+}
 
 function DraftCard({
   draft, onChange, onRemove, agents,
@@ -212,17 +244,46 @@ export default function Capture() {
   };
 
   const readFile = async (file: File) => {
-    if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-      toast("PDFs need the document agent", "This demo parses text. Paste the letter body, or try a sample.", "warn");
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const limit = isPdf ? 8_000_000 : 400_000;
+    if (file.size > limit) {
+      toast(
+        "That file is a little large",
+        isPdf ? "Try a PDF under 8 MB, or paste the page you need." : "Try the text you actually need.",
+        "warn",
+      );
       return;
     }
-    if (file.size > 400_000) {
-      toast("That file is a little large", "Try the text you actually need.", "warn");
+
+    if (!isPdf) {
+      const content = await file.text();
+      setText(content);
+      toast("Document loaded", "Ready to structure without an AI key.", "default");
       return;
     }
-    const content = await file.text();
-    setText(content);
-    toast("Document loaded", "Ready to structure locally.", "default");
+
+    setParsing(true);
+    try {
+      const { text: extracted, pages } = await extractPdfText(file);
+      if (!extracted) {
+        toast(
+          "This PDF looks scanned",
+          "Text PDFs are read on this device. Scanned pages need OCR or a vision AI service.",
+          "warn",
+        );
+        return;
+      }
+      setText(extracted);
+      toast(
+        "PDF text loaded",
+        `${pages} page${pages === 1 ? "" : "s"} read on this device${pages > MAX_PDF_PAGES ? ` (first ${MAX_PDF_PAGES})` : ""}.`,
+        "default",
+      );
+    } catch {
+      toast("Could not read that PDF", "Try a text-based PDF, or paste the letter body.", "warn");
+    } finally {
+      setParsing(false);
+    }
   };
 
   return (
@@ -236,8 +297,8 @@ export default function Capture() {
         <div className="parser-badge">
           <span className="parser-badge-icon"><Icon name="shield" size={16} /></span>
           <div>
-            <strong>Local parser</strong>
-            <em>No cloud · no key · 0.4s</em>
+            <strong>Deterministic parser</strong>
+            <em>No AI key · no third-party model</em>
           </div>
         </div>
       </header>
@@ -250,7 +311,7 @@ export default function Capture() {
               <span><Icon name="mail" size={13} /> Forward an email</span>
               <span><Icon name="phone" size={13} /> Voice note</span>
             </div>
-            <span className="composer-secure"><Icon name="lock" size={11} /> stays on device</span>
+            <span className="composer-secure"><Icon name="lock" size={11} /> no third-party AI</span>
           </div>
 
           <textarea
@@ -281,16 +342,22 @@ export default function Capture() {
           <footer className="composer-foot">
             <div className="composer-tools">
               <button className="tool-btn" onClick={() => fileRef.current?.click()}>
-                <Icon name="file" size={14} /> Upload .txt
+                <Icon name="file" size={14} /> Upload file
               </button>
               <input
                 ref={fileRef}
                 type="file"
                 hidden
-                accept=".txt,.md,.csv,text/plain"
-                onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])}
+                accept=".txt,.md,.csv,.pdf,text/plain,application/pdf"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) readFile(file);
+                  e.target.value = "";
+                }}
               />
-              <span className="composer-count">{text.length.toLocaleString()} chars</span>
+              <span className="composer-count">
+                {text.length.toLocaleString()} chars · PDF text stays on device
+              </span>
             </div>
             <button className="btn btn-ink" onClick={parse} disabled={parsing}>
               {parsing ? <span className="spinner" /> : <Icon name="sparkle" size={16} />}
@@ -371,7 +438,7 @@ export default function Capture() {
           </div>
           <p className="draft-note">
             <Icon name="info" size={12} />
-            Dates are parsed in your local timezone. Nothing is scheduled until you confirm.
+            Dates are parsed from the source text. Nothing is scheduled until you confirm.
           </p>
         </section>
       )}

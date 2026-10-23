@@ -9,3 +9,4 @@ data/*.db-wal
 !.env.example
 .DS_Store
 *.log
+.vercel
