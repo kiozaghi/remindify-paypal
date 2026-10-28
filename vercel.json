@@ -26,6 +26,7 @@
     { "source": "/capture", "destination": "/capture/index.html" },
     { "source": "/agents", "destination": "/agents/index.html" },
     { "source": "/market", "destination": "/market/index.html" },
+    { "source": "/seller", "destination": "/seller/index.html" },
     { "source": "/activity", "destination": "/activity/index.html" },
     { "source": "/trust", "destination": "/trust/index.html" },
     { "source": "/access", "destination": "/access/index.html" },

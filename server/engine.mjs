@@ -4,6 +4,7 @@ import { publicKey } from "./keys.mjs";
 import { planForWorkspace, usage } from "./billing.mjs";
 import { connectorConfigured, executeWithConnector, publicAgent } from "./executors.mjs";
 import { dueOutboxJobs, enqueueConnectorRetry, outboxBackoff, outboxLeaseMs } from "./outbox.mjs";
+import { sellerSnapshot } from "./seller.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -143,6 +144,7 @@ export function buildState() {
   };
 
   const trust = trustSnapshot(data);
+  const seller = sellerSnapshot(now);
 
   return {
     now: new Date(now).toISOString(),
@@ -165,6 +167,7 @@ export function buildState() {
       stats: trust.stats,
       guardrails: trust.guardrails,
     },
+    seller,
     stats,
     api_calls: usage().calls,
     api_calls_limit: planForWorkspace().call_limit,

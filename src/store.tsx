@@ -267,6 +267,56 @@ function makeActions(
         toast("Escrow released", "A signed receipt satisfied the release condition.", "success");
         return res;
       }),
+    saveSeller: (patch: any) =>
+      run(async () => {
+        const res = await api.sellerSave(patch);
+        toast("Storefront saved", "Buyers see the same profile you do.", "success");
+        return res;
+      }),
+    bookingAction: (
+      id: string,
+      action: "accept" | "decline" | "start" | "proof",
+      payload: any = {}
+    ) =>
+      run(async () => {
+        const res = await api.sellerBooking(id, action, payload);
+        const title = res?.booking?.title || "Booking";
+        if (action === "accept") {
+          toast("Booking accepted", `${title} is yours. Start when the scope is clear.`, "success");
+        } else if (action === "decline") {
+          toast("Booking declined", "The buyer keeps the brief and can book elsewhere.", "default");
+        } else if (action === "start") {
+          toast("Work started", `${title} is in progress.`, "agent");
+        } else {
+          const release = res?.earning?.release_at
+            ? new Date(res.earning.release_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+            : null;
+          toast(
+            "Proof filed, receipt issued",
+            release
+              ? `$${Number(res.earning.amount).toFixed(2)} clears the hold on ${release}.`
+              : "The receipt is on file.",
+            "success"
+          );
+        }
+        return res;
+      }),
+    requestSellerPayout: () =>
+      run(async () => {
+        const res = await api.sellerPayout();
+        toast(
+          "Payout requested",
+          `${res?.payout?.ref || "The payout"} is recorded. Confirm receipt once the money lands.`,
+          "success"
+        );
+        return res;
+      }),
+    confirmSellerPayout: (id: string) =>
+      run(async () => {
+        const res = await api.sellerPayoutReceived(id);
+        toast("Payout confirmed", "The ledger now shows it as paid.", "success");
+        return res;
+      }),
   };
 }
 

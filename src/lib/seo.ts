@@ -11,7 +11,7 @@ export const CONTENT_PAGES: Route[] = [
 
 export const SHELL_PAGES: Route[] = [
   "login", "signup", "today", "obligations", "capture", "agents",
-  "market", "activity", "trust", "access",
+  "market", "seller", "activity", "trust", "access",
 ];
 
 export type PageMeta = {
@@ -90,6 +90,7 @@ export const PAGE_META: Record<Route, PageMeta> = {
   capture: { label: "Capture", title: "Capture — Remindify", description: APP_DESCRIPTION, index: false },
   agents: { label: "Agents", title: "Agents — Remindify", description: APP_DESCRIPTION, index: false },
   market: { label: "Marketplace", title: "Marketplace — Remindify", description: APP_DESCRIPTION, index: false },
+  seller: { label: "Seller desk", title: "Seller desk — Remindify", description: APP_DESCRIPTION, index: false },
   activity: { label: "Activity", title: "Activity — Remindify", description: APP_DESCRIPTION, index: false },
   trust: { label: "Trust layer", title: "Trust layer — Remindify", description: APP_DESCRIPTION, index: false },
   access: { label: "Agent access", title: "Agent access — Remindify", description: APP_DESCRIPTION, index: false },

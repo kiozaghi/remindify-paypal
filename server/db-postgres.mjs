@@ -45,6 +45,7 @@ const USER_COLUMNS_SQL = USER_COLUMNS.join(", ");
 const ITEM_KINDS = [
   "obligations", "agents", "approvals", "runs", "providers", "events",
   "keys", "receipts", "escrows",
+  "seller_profile", "bookings", "seller_receipts", "earnings", "payouts",
 ];
 
 // One serialized writer per database. Requests from different workspaces still
@@ -484,6 +485,7 @@ export function loadAll() {
   const out = {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
     receipts: [], escrows: [], outbox: [],
+    seller_profile: [], bookings: [], seller_receipts: [], earnings: [], payouts: [],
   };
   for (const row of store.items.values()) {
     if (row.workspace_id !== workspaceId) continue;

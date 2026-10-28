@@ -1,5 +1,5 @@
 export const APP_ROUTES = [
-  "today", "obligations", "capture", "agents", "market", "activity", "trust", "access",
+  "today", "obligations", "capture", "agents", "market", "seller", "activity", "trust", "access",
 ] as const;
 
 export const PUBLIC_ROUTES = [
@@ -32,6 +32,7 @@ const ROUTE_PATHS: Record<Route, string> = {
   capture: "/capture",
   agents: "/agents",
   market: "/market",
+  seller: "/seller",
   activity: "/activity",
   trust: "/trust",
   access: "/access",

@@ -15,6 +15,7 @@ import Obligations from "./views/Obligations";
 import Capture from "./views/Capture";
 import Agents from "./views/Agents";
 import Market from "./views/Market";
+import Seller from "./views/Seller";
 import Activity from "./views/Activity";
 import Trust from "./views/Trust";
 import Access from "./views/Access";
@@ -40,6 +41,7 @@ const NAV = [
     items: [
       { id: "agents", label: "Agents", icon: "bot" },
       { id: "market", label: "Marketplace", icon: "store" },
+      { id: "seller", label: "Seller desk", icon: "briefcase" },
       { id: "activity", label: "Activity", icon: "pulse" },
     ],
   },
@@ -58,6 +60,7 @@ const TITLES: Record<string, { title: string; sub: string }> = {
   capture: { title: "Capture", sub: "Turn prose into obligations" },
   agents: { title: "The bench", sub: "Agents and automations with a paper trail" },
   market: { title: "Marketplace", sub: "Humans and agents, on the same bench" },
+  seller: { title: "Seller desk", sub: "Bookings, proof and earnings in one ledger" },
   activity: { title: "Proof", sub: "What happened, who did it, what's on file" },
   trust: { title: "Trust layer", sub: "Proof receipts and USDC escrow, anchored when needed" },
   access: { title: "Agent access", sub: "Obligations as a protocol" },
@@ -293,6 +296,7 @@ function Shell() {
           {route === "capture" && <Capture />}
           {route === "agents" && <Agents />}
           {route === "market" && <Market />}
+          {route === "seller" && <Seller />}
           {route === "activity" && <Activity />}
           {route === "trust" && <Trust />}
           {route === "access" && <Access />}

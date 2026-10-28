@@ -5,7 +5,7 @@ import { Monogram, Segmented } from "../components/ui";
 import { money, timeAgo } from "../lib/format";
 
 export default function Market() {
-  const { state, openHire, setOverlays, nowMs } = useApp();
+  const { state, openHire, setOverlays, nowMs, navigate } = useApp();
   const [kind, setKind] = useState("all");
   const [sort, setSort] = useState("rating");
   if (!state) return null;
@@ -30,6 +30,9 @@ export default function Market() {
           <p>Hire a human or an agent for the thing you keep not doing. Fixed price. Proof of done.</p>
         </div>
         <div className="view-head-actions">
+          <button className="btn btn-ghost" onClick={() => navigate("seller")}>
+            <Icon name="briefcase" size={16} /> Seller desk
+          </button>
           <button className="btn btn-ghost" onClick={() => document.getElementById("providers")?.scrollIntoView({ behavior: "smooth" })}>
             <Icon name="search" size={16} /> Browse the bench
           </button>

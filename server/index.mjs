@@ -33,6 +33,10 @@ import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
 import {
   billingSummary, canSwitchPlans, keyLimitReached, meterApiCall, PLANS, setPlan,
 } from "./billing.mjs";
+import {
+  acceptBooking, confirmPayoutReceived, declineBooking, requestPayout,
+  startBooking, submitBookingProof, updateSellerProfile,
+} from "./seller.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -916,6 +920,42 @@ async function handleRequest(req, res) {
 
     if (path === "/api/account/delete" && req.method === "POST") {
       return handleAccountDelete(req, res, { send, body });
+    }
+
+    if (path === "/api/seller" && req.method === "PATCH") {
+      const input = await body(req);
+      const profile = updateSellerProfile(input, virtualNow());
+      return send(res, 200, { profile, state: buildState() });
+    }
+
+    const sellerBookingMatch = path.match(/^\/api\/seller\/bookings\/([^/]+)\/(accept|decline|start|proof)$/);
+    if (sellerBookingMatch && req.method === "POST") {
+      const id = sellerBookingMatch[1];
+      const action = sellerBookingMatch[2];
+      let result;
+      if (action === "accept") {
+        result = acceptBooking(id, virtualNow());
+      } else if (action === "decline") {
+        const { reason } = await body(req);
+        result = declineBooking(id, reason, virtualNow());
+      } else if (action === "start") {
+        result = startBooking(id, virtualNow());
+      } else {
+        result = submitBookingProof(id, await body(req), virtualNow());
+      }
+      return send(res, result.ok ? 200 : result.status || 422, { ...result, state: buildState() });
+    }
+
+    if (path === "/api/seller/payouts" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      const result = requestPayout(virtualNow());
+      return send(res, result.ok ? 201 : result.status || 422, { ...result, state: buildState() });
+    }
+
+    const sellerPayoutMatch = path.match(/^\/api\/seller\/payouts\/([^/]+)\/receive$/);
+    if (sellerPayoutMatch && req.method === "POST") {
+      const result = confirmPayoutReceived(sellerPayoutMatch[1], virtualNow());
+      return send(res, result.ok ? 200 : result.status || 422, { ...result, state: buildState() });
     }
 
     if (path === "/api/export" && req.method === "GET") {

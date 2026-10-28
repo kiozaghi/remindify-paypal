@@ -101,4 +101,11 @@ export const api = {
     request(`/api/trust/escrows/${id}/fund`, "POST", { tx_hash }),
   releaseEscrow: (id: string, proof_receipt_id?: string | null, tx_hash?: string) =>
     request(`/api/trust/escrows/${id}/release`, "POST", { proof_receipt_id, tx_hash }),
+
+  sellerSave: (payload: any) => request("/api/seller", "PATCH", payload),
+  sellerBooking: (id: string, action: "accept" | "decline" | "start" | "proof", payload: any = {}) =>
+    request(`/api/seller/bookings/${id}/${action}`, "POST", payload),
+  sellerPayout: () => request("/api/seller/payouts", "POST", {}),
+  sellerPayoutReceived: (id: string) =>
+    request(`/api/seller/payouts/${id}/receive`, "POST", {}),
 };

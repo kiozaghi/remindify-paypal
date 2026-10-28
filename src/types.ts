@@ -320,6 +320,168 @@ export interface Stats {
   agent_proofs_30d: number;
 }
 
+export type SellerBookingStatus =
+  | "requested"
+  | "accepted"
+  | "in_progress"
+  | "delivered"
+  | "completed"
+  | "declined";
+
+export type PayoutMethod = "none" | "bank" | "wallet" | "usdc";
+
+export interface SellerPayoutAccount {
+  method: PayoutMethod;
+  label: string;
+  account_last4: string;
+  currency: string;
+  country: string;
+  connected: boolean;
+  updated_at: string | null;
+}
+
+export interface SellerProfile {
+  id: string;
+  name: string;
+  headline: string;
+  kind: "human" | "agent";
+  specialty: string;
+  description: string;
+  rating: number | null;
+  jobs: number;
+  price: number;
+  price_unit: string;
+  sla: string;
+  response_min: number;
+  capabilities: string[];
+  available: boolean;
+  verified: boolean;
+  payout: SellerPayoutAccount;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SellerProof {
+  label: string;
+  note: string;
+  reference: string;
+  hash: string;
+  submitted_at: string;
+}
+
+export interface SellerReceipt {
+  id: string;
+  ref: string;
+  booking_id: string;
+  buyer_name: string;
+  title: string;
+  gross: number;
+  fee: number;
+  net: number;
+  currency: string;
+  fee_bps: number;
+  proof_hash: string;
+  issued_at: string;
+  status: string;
+}
+
+export interface SellerEarning {
+  id: string;
+  booking_id: string;
+  receipt_id: string;
+  description: string;
+  gross: number;
+  fee: number;
+  amount: number;
+  currency: string;
+  status: "held" | "available" | "processing" | "paid";
+  release_at: string;
+  created_at: string;
+  released_at: string | null;
+  paid_at: string | null;
+  payout_id: string | null;
+  requested_at?: string;
+}
+
+export interface SellerPayout {
+  id: string;
+  ref: string;
+  amount: number;
+  currency: string;
+  method: PayoutMethod;
+  destination: string;
+  status: "processing" | "paid";
+  entry_ids: string[];
+  created_at: string;
+  paid_at: string | null;
+  note: string;
+}
+
+export interface SellerBooking {
+  id: string;
+  ref: string;
+  buyer_name: string;
+  buyer_kind: string;
+  buyer_workspace: string;
+  title: string;
+  brief: string;
+  amount: number;
+  currency: string;
+  status: SellerBookingStatus;
+  requested_at: string;
+  due_at: string;
+  accepted_at: string | null;
+  started_at: string | null;
+  delivered_at: string | null;
+  completed_at: string | null;
+  proof: SellerProof | null;
+  receipt_id: string | null;
+  earning_id: string | null;
+  decline_reason: string | null;
+  declined_at?: string;
+  earning: SellerEarning | null;
+  receipt: SellerReceipt | null;
+  days_left: number;
+}
+
+export interface SellerSummary {
+  currency: string;
+  gross: number;
+  fees: number;
+  net: number;
+  held: number;
+  available: number;
+  processing: number;
+  paid: number;
+  open_bookings: number;
+  requests: number;
+  in_flight: number;
+  delivered: number;
+  completed: number;
+  declined: number;
+  acceptance_rate: number | null;
+  fee_bps: number;
+  hold_days: number;
+  next_release_at: string | null;
+}
+
+export interface SellerMaintenanceItem {
+  id: string;
+  label: string;
+  detail: string;
+  status: "done" | "todo" | "warn";
+}
+
+export interface SellerState {
+  profile: SellerProfile;
+  bookings: SellerBooking[];
+  receipts: SellerReceipt[];
+  payouts: SellerPayout[];
+  earnings: SellerEarning[];
+  summary: SellerSummary;
+  maintenance: SellerMaintenanceItem[];
+}
+
 export interface AppState {
   now: string;
   clock_offset_days: number;
@@ -337,6 +499,7 @@ export interface AppState {
   receipts: ProofReceipt[];
   escrows: Escrow[];
   trust: TrustSummary;
+  seller: SellerState;
   stats: Stats;
   api_calls: number;
   api_calls_limit: number;

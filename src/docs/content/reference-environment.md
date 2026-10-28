@@ -80,6 +80,17 @@ When `EMAIL_WEBHOOK_URL` is set, an email account must confirm its address befor
 
 Counters live in workspace metadata, so the limit holds across instances sharing one database. Response headers `x-ratelimit-limit` and `x-ratelimit-remaining` report the state.
 
+## Marketplace and seller desk
+
+Bookings, receipts and the earnings ledger are stored per workspace. Payouts are ledger entries only; no provider is connected.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MARKETPLACE_FEE_BPS` | `800` | Platform fee in basis points (800 = 8%) recorded on each receipt and ledger entry |
+| `SELLER_HOLD_DAYS` | `3` | Days a filed proof stays in `held` before the earning becomes `available` |
+
+The fee is clamped to 0–3000 bps and the hold to 0–30 days. Payout requests also respect `BLOCKED_COUNTRIES`.
+
 ## Region gating
 
 | Variable | Default | Purpose |
