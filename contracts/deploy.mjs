@@ -37,6 +37,22 @@ if (!network) {
   process.exit(1);
 }
 
+// Explain the shape of a bad key without ever printing its value.
+function describeKeyProblem(raw, bare) {
+  if (!raw) return null;
+  if (/^[0-9a-fA-F]{64}$/.test(bare)) return null;
+
+  const words = raw.split(/\s+/).filter(Boolean).length;
+  const hint = /^[0-9a-fA-F]{40}$/.test(bare)
+    ? "That looks like a wallet address, not a private key."
+    : /^[0-9a-fA-F]{128}$/.test(bare)
+      ? "That is 64 bytes. A private key is 32 bytes: 64 hex characters."
+      : words >= 12
+        ? "That looks like a seed phrase. Export the private key of the account instead."
+        : `Got ${bare.length} characters. A private key is 64 hex characters, usually shown as 0x followed by 64.`;
+  return `DEPLOYER_PRIVATE_KEY is not a valid 32-byte private key. ${hint}`;
+}
+
 const rpcConfigured = Boolean((process.env[network.rpc_env] || "").trim());
 const rpc = rpcConfigured
   ? process.env[network.rpc_env].trim()
@@ -44,16 +60,23 @@ const rpc = rpcConfigured
 const rpcDisplay = rpcConfigured ? "<configured>" : rpc;
 const usdc = getAddress(network.usdc);
 const rawKey = (process.env.DEPLOYER_PRIVATE_KEY || "").trim();
-const privateKey = rawKey
-  ? rawKey.startsWith("0x")
-    ? rawKey
-    : `0x${rawKey}`
-  : null;
+// Accept a 0x/0X prefix, surrounding quotes and stray whitespace from copy-paste.
+const bareKey = rawKey
+  .replace(/^["']+|["']+$/g, "")
+  .replace(/\s+/g, "")
+  .replace(/^0[xX]/, "");
+const keyProblem = describeKeyProblem(rawKey, bareKey);
+const privateKey = !bareKey || keyProblem ? null : `0x${bareKey}`;
 
-if (!dryRun && !privateKey) {
+if (!dryRun && !rawKey) {
   console.error(
     "DEPLOYER_PRIVATE_KEY is required. Set it in the shell for this command only; never commit it."
   );
+  process.exit(1);
+}
+
+if (rawKey && keyProblem) {
+  console.error(keyProblem);
   process.exit(1);
 }
 
