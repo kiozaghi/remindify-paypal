@@ -20,6 +20,9 @@ import {
 import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
 import { setWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES } from "./keys.mjs";
+import {
+  billingSummary, canSwitchPlans, keyLimitReached, meterApiCall, PLANS, setPlan,
+} from "./billing.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -173,10 +176,19 @@ async function handleRequest(req, res) {
       seedDatabase();
       ensureTrustDemo();
       const key = resolved.key;
+      const meter = meterApiCall();
+      if (!meter.allowed) {
+        return send(res, 429, {
+          error: "plan_limit",
+          plan: meter.plan.name,
+          period: meter.period,
+          limit: meter.limit,
+          message: `The ${meter.plan.name} plan includes ${meter.limit} machine calls per month.`,
+        });
+      }
       const usedAt = new Date().toISOString();
       put("keys", { ...key, last_used: usedAt });
       key.last_used = usedAt;
-      setMeta("api_calls", (getMeta("api_calls", 0) || 0) + 1);
       const state = buildState();
 
       if (path === "/api/v1/obligations" && req.method === "GET") {
@@ -520,6 +532,15 @@ async function handleRequest(req, res) {
 
     if (path === "/api/keys" && req.method === "POST") {
       const { name, scopes } = await body(req);
+      const billing = billingSummary();
+      if (keyLimitReached(loadAll().keys.length)) {
+        return send(res, 402, {
+          error: "plan_limit",
+          plan: billing.plan_name,
+          limit: billing.key_limit,
+          message: `The ${billing.plan_name} plan includes ${billing.key_limit} agent keys.`,
+        });
+      }
       const secret = `rfy_live_${randomBytes(14).toString("hex")}`;
       const requested = Array.isArray(scopes)
         ? [...new Set(scopes.filter((scope) => KEY_SCOPES.includes(scope)))]
@@ -547,6 +568,24 @@ async function handleRequest(req, res) {
       const { remove } = await import("./db.mjs");
       remove("keys", keyMatch[1]);
       return send(res, 200, { state: buildState() });
+    }
+
+    if (path === "/api/billing" && req.method === "GET") {
+      return send(res, 200, { billing: billingSummary(), plans: Object.values(PLANS) });
+    }
+
+    if (path === "/api/billing/plan" && req.method === "POST") {
+      if (!canSwitchPlans()) {
+        return send(res, 503, {
+          error: "billing_not_configured",
+          message: "Connect a billing provider before changing plans.",
+        });
+      }
+      const { plan } = await body(req);
+      if (!setPlan(plan)) {
+        return send(res, 422, { error: "unknown_plan", plans: Object.keys(PLANS) });
+      }
+      return send(res, 200, { billing: billingSummary(), state: buildState() });
     }
 
     if (path === "/api/meta" && req.method === "PATCH") {

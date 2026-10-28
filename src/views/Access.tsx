@@ -153,9 +153,9 @@ await rf.obligations.create({
           </div>
         </div>
         <div className="api-hero-stat">
-          <strong>{state.api_calls.toLocaleString()}</strong>
+          <strong>{state.api_calls.toLocaleString()} / {state.api_calls_limit.toLocaleString()}</strong>
           <span>machine calls this month</span>
-          <em>+ 24% vs human actions</em>
+          <em>on the {state.plan} plan</em>
         </div>
       </section>
 

@@ -125,6 +125,42 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
     assert.ok(used.keys.find((item) => item.name === "A agent key").last_used);
     assert.ok(used.keys.every((item) => !item.secret && !item.secret_hash));
 
+    await issueKey(cookieA, "Third key");
+    response = await fetch(`${base}/api/keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieA },
+      body: JSON.stringify({ name: "Fourth key" }),
+    });
+    assert.equal(response.status, 402);
+
+    response = await fetch(`${base}/api/billing/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieA },
+      body: JSON.stringify({ plan: "studio" }),
+    });
+    assert.equal(response.status, 503);
+
+    process.env.BILLING_ALLOW_PLAN_SWITCH = "1";
+    try {
+      response = await fetch(`${base}/api/billing/plan`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookieA },
+        body: JSON.stringify({ plan: "studio" }),
+      });
+      assert.equal(response.status, 200);
+      await issueKey(cookieA, "Fourth key");
+    } finally {
+      delete process.env.BILLING_ALLOW_PLAN_SWITCH;
+    }
+
+    response = await fetch(`${base}/api/billing`, { headers: { cookie: cookieA } });
+    assert.equal(response.status, 200);
+    const billing = await response.json();
+    assert.equal(billing.billing.plan, "studio");
+    assert.equal(billing.billing.key_limit, 25);
+    assert.ok(billing.billing.calls >= 3);
+    assert.equal(billing.plans.length, 3);
+
     response = await fetch(`${base}/api/demo/reset`, {
       method: "POST",
       headers: { cookie: cookieA },
@@ -133,8 +169,12 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
 
     const afterReset = await state(cookieA);
     assert.ok(!afterReset.obligations.some((item) => item.title === "A-only renewal"));
+    assert.notEqual(afterReset.workspace, "Exopya Studio");
     assert.ok((await state(cookieB)).obligations.some((item) => item.title === "B-only renewal"));
     assert.ok((await machineTitles(keyB)).includes("B-only renewal"));
+
+    response = await fetch(`${base}/api/billing`, { headers: { cookie: cookieA } });
+    assert.equal((await response.json()).billing.plan, "studio");
 
     response = await fetch(`${base}/api/auth/session`, { headers: { cookie: cookieA } });
     assert.equal(response.status, 200);

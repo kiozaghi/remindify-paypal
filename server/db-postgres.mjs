@@ -650,7 +650,15 @@ export function seedDatabase(force = false) {
   const store = requireStore();
   if (seeded() && !force) return false;
   const workspaceId = currentWorkspaceId();
+  const isDemo = workspaceId === DEMO_WORKSPACE;
   const prefix = `${workspaceId}\u0000`;
+  const preserved = isDemo ? null : {
+    workspace: getMeta("workspace", null),
+    user: getMeta("user", null),
+    plan: getMeta("plan", null),
+    api_calls: getMeta("api_calls", null),
+    usage_period: getMeta("usage_period", null),
+  };
 
   for (const key of [...store.items.keys()]) {
     if (!key.startsWith(prefix)) continue;
@@ -673,17 +681,27 @@ export function seedDatabase(force = false) {
   store.resetWorkspaces.add(workspaceId);
 
   const seed = buildSeed(Date.now());
-  if (workspaceId !== DEMO_WORKSPACE) {
-    // Seeded demo keys are public credentials; a real workspace starts with no
-    // keys and issues its own.
+  let meta = seed.meta;
+  if (!isDemo) {
+    // A real workspace keeps its name, plan and metered usage across a reset,
+    // and starts without the public demo credentials.
     seed.keys = [];
-    seed.meta.api_calls = 0;
-    seed.meta.streak_weeks = 1;
+    meta = {
+      workspace: preserved.workspace || seed.meta.workspace,
+      user: preserved.user || seed.meta.user,
+      plan: preserved.plan || "Free",
+      clock_offset_days: 0,
+      live: true,
+      streak_weeks: 1,
+      seed_now: seed.meta.seed_now,
+      api_calls: preserved.api_calls ?? 0,
+    };
+    if (preserved.usage_period) meta.usage_period = preserved.usage_period;
   }
   for (const kind of ITEM_KINDS) {
     for (const item of seed[kind] || []) put(kind, item);
   }
-  for (const [key, value] of Object.entries(seed.meta)) setMeta(key, value);
+  for (const [key, value] of Object.entries(meta)) setMeta(key, value);
   setMeta("seeded", true);
   setMeta("created_at", new Date().toISOString());
   return true;

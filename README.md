@@ -389,7 +389,19 @@ All machine endpoints require `Authorization: Bearer rfy_live_...`. Issued keys 
 | `GET` | `/api/v1/trust` | `risk:read` | Receipts, escrows, networks and trust stats. |
 | `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. |
 
-App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
+App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
+
+### Plans and usage
+
+Each workspace has a plan and two real allowances: agent keys and machine calls per calendar month. Calls are metered in the workspace's own meta and reset on the first request of a new month; exceeding either allowance returns `402` (keys) or `429` (calls) with `error: "plan_limit"`.
+
+| Plan | Price | Agent keys | Machine calls / month |
+| --- | --- | --- | --- |
+| Free | $0 | 3 | 500 |
+| Studio | $49 | 25 | 50,000 |
+| Firm | $199 | 100 | 500,000 |
+
+`GET /api/billing` returns the current plan, usage and plan catalogue. `POST /api/billing/plan` is refused with `503 billing_not_configured` until a payment provider is connected; set `BILLING_ALLOW_PLAN_SWITCH=1` for a demo or manually invoiced deployment. No card data touches this server.
 
 ```bash
 curl http://localhost:4178/api/v1/risk \
@@ -476,7 +488,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - make webhooks signed and retryable, and add an outbox;
 - encrypt proof documents at rest and add retention/deletion controls;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
-- add billing and tax handling;
+- connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;
 - take the reference contracts through an audit, add upgrade/ops procedures, and test anchor/fund/release against a deployed contract on Base Sepolia before mainnet;
 - add sanctions/geo checks to enforcement, not just the `jurisdiction_ack` boundary;
 - confirm or replace the placeholder `hello@remindify.app` and `security@remindify.app` inboxes.

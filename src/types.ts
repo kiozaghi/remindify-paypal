@@ -326,6 +326,7 @@ export interface AppState {
   trust: TrustSummary;
   stats: Stats;
   api_calls: number;
+  api_calls_limit: number;
 }
 
 export interface Draft {

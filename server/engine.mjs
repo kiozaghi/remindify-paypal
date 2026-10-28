@@ -1,6 +1,7 @@
 import { loadAll, put, getMeta, setMeta, remove } from "./db.mjs";
 import { fileReceiptForCompletion, trustSnapshot } from "./trust.mjs";
 import { publicKey } from "./keys.mjs";
+import { planForWorkspace, usage } from "./billing.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -120,7 +121,8 @@ export function buildState() {
       guardrails: trust.guardrails,
     },
     stats,
-    api_calls: getMeta("api_calls", 0),
+    api_calls: usage().calls,
+    api_calls_limit: planForWorkspace().call_limit,
   };
 }
 
