@@ -43,6 +43,10 @@ export const api = {
     request<{ ok: true; message: string }>("/api/auth/reset/request", "POST", { email }),
   authResetPassword: (payload: { token: string; password: string }) =>
     request<{ ok: true; message: string }>("/api/auth/reset/confirm", "POST", payload),
+  authVerifyRequest: () =>
+    request<{ ok: true; message: string; already_verified?: boolean }>("/api/auth/verify/request", "POST", {}),
+  authVerifyConfirm: (token: string) =>
+    request<{ user: AuthUser; message: string }>("/api/auth/verify/confirm", "POST", { token }),
   walletChallenge: (address: string) =>
     request<{ address: string; nonce: string; message: string; expires_at: string }>(
       "/api/auth/wallet/challenge",

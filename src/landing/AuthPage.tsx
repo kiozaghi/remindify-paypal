@@ -30,26 +30,28 @@ function nextRoute(next?: string): Route {
 }
 
 export default function AuthPage({
-  mode, next, notice, resetToken, onNavigate,
+  mode, next, notice, resetToken, verifyToken, onNavigate,
 }: {
   mode: "login" | "signup";
   next?: string;
   notice?: string | null;
   resetToken?: string | null;
+  verifyToken?: string | null;
   onNavigate: Navigate;
 }) {
-  const { config, login, signup, startGoogle, connectWallet } = useAuth();
+  const { config, user, login, signup, startGoogle, connectWallet, refresh } = useAuth();
   const [tab, setTab] = useState(mode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [busy, setBusy] = useState<"email" | "google" | "wallet" | "reset" | null>(null);
+  const [busy, setBusy] = useState<"email" | "google" | "wallet" | "reset" | "verify" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [forgot, setForgot] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resetDone, setResetDone] = useState(false);
+  const [verifyDone, setVerifyDone] = useState(false);
 
   useEffect(() => {
     setTab(mode);
@@ -95,8 +97,28 @@ export default function AuthPage({
       window.history.replaceState(null, "", url.pathname + (url.search || ""));
       setInfo(result.message);
       setResetDone(true);
+      await refresh();
     } catch (err: any) {
       setError(err?.message || "That reset link didn’t work. Request a new one.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirmVerify = async () => {
+    if (!verifyToken) return;
+    setError(null);
+    setBusy("verify");
+    try {
+      const result = await api.authVerifyConfirm(verifyToken);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("verify");
+      window.history.replaceState(null, "", url.pathname + (url.search || ""));
+      setInfo(result.message);
+      setVerifyDone(true);
+      await refresh();
+    } catch (err: any) {
+      setError(err?.message || "That confirmation link didn’t work. Sign in and resend it.");
     } finally {
       setBusy(null);
     }
@@ -206,7 +228,51 @@ export default function AuthPage({
               </div>
             )}
 
-            {resetToken || resetDone ? (
+            {verifyToken || verifyDone ? (
+              <>
+                <div className="auth-card-head">
+                  <span className="eyebrow">{verifyDone ? "Email confirmed" : "Confirm your email"}</span>
+                  <h2>{verifyDone ? "You’re confirmed." : "One tap to confirm."}</h2>
+                  <p>
+                    {verifyDone
+                      ? user
+                        ? "Your register is now tied to a confirmed address. Resetting your password stays possible."
+                        : "Sign in to pick up where you left off."
+                      : "Confirm the address on your Remindify register. The link works once and expires in 24 hours."}
+                  </p>
+                </div>
+
+                {info && (
+                  <div className="auth-info" role="status">
+                    <Icon name="shield" size={15} />
+                    <span>{info}</span>
+                  </div>
+                )}
+
+                {verifyDone ? (
+                  <button
+                    className="btn btn-ink auth-submit"
+                    type="button"
+                    onClick={() => onNavigate(user ? nextRoute(next) : "login")}
+                  >
+                    <Icon name="arrowRight" size={15} />
+                    {user ? "Go to my register" : "Sign in"}
+                  </button>
+                ) : (
+                  <button className="btn btn-ink auth-submit" type="button" onClick={confirmVerify} disabled={busy !== null}>
+                    {busy === "verify" ? <span className="spinner" /> : <Icon name="shield" size={15} />}
+                    Confirm this email
+                  </button>
+                )}
+
+                {!verifyDone && (
+                  <div className="auth-help">
+                    <span>Not your link?</span>
+                    <button onClick={() => switchTab("login")}>Sign in instead <Icon name="arrowRight" size={12} /></button>
+                  </div>
+                )}
+              </>
+            ) : resetToken || resetDone ? (
               <>
                 <div className="auth-card-head">
                   <span className="eyebrow">{resetDone ? "Password updated" : "Reset your password"}</span>

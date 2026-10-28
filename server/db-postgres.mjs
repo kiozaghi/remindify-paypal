@@ -39,7 +39,7 @@ export const isPostgres = true;
 
 const USER_COLUMNS = [
   "id", "email", "name", "password_hash", "password_salt", "google_sub",
-  "avatar_url", "wallet_address", "created_at", "last_login_at", "workspace_id",
+  "avatar_url", "wallet_address", "email_verified_at", "created_at", "last_login_at", "workspace_id",
 ];
 const USER_COLUMNS_SQL = USER_COLUMNS.join(", ");
 const ITEM_KINDS = [
@@ -112,11 +112,13 @@ const SCHEMA_STATEMENTS = [
     google_sub text UNIQUE,
     avatar_url text,
     wallet_address text UNIQUE,
+    email_verified_at text,
     created_at text NOT NULL,
     last_login_at text,
     workspace_id text NOT NULL DEFAULT 'ws_demo'
   )`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_id text NOT NULL DEFAULT 'ws_demo'`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at text`,
   `CREATE TABLE IF NOT EXISTS auth_sessions (
     token_hash text PRIMARY KEY,
     user_id text NOT NULL,
@@ -365,7 +367,7 @@ export async function endRequest(store) {
       if (!user) continue;
       await client.query(`
         INSERT INTO users (${USER_COLUMNS_SQL})
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES (${USER_COLUMNS.map((_, index) => `$${index + 1}`).join(", ")})
         ON CONFLICT (id) DO UPDATE SET
           email = EXCLUDED.email,
           name = EXCLUDED.name,
@@ -374,6 +376,7 @@ export async function endRequest(store) {
           google_sub = EXCLUDED.google_sub,
           avatar_url = EXCLUDED.avatar_url,
           wallet_address = EXCLUDED.wallet_address,
+          email_verified_at = EXCLUDED.email_verified_at,
           created_at = EXCLUDED.created_at,
           last_login_at = EXCLUDED.last_login_at,
           workspace_id = EXCLUDED.workspace_id
@@ -558,6 +561,7 @@ export function createUser(user) {
     google_sub: user.google_sub || null,
     avatar_url: user.avatar_url || null,
     wallet_address: user.wallet_address || null,
+    email_verified_at: user.email_verified_at || null,
     created_at: user.created_at,
     last_login_at: user.last_login_at || null,
     workspace_id: user.workspace_id || `ws_${randomBytes(8).toString("hex")}`,
@@ -659,6 +663,16 @@ export function createAuthToken({ tokenHash, userId, purpose, createdAt, expires
   });
   store.dirtyTokens.add(tokenHash);
   store.deletedTokens.delete(tokenHash);
+}
+
+export function deleteAuthTokensForUser(userId, purpose) {
+  const store = requireStore();
+  for (const [tokenHash, token] of store.tokens) {
+    if (token.user_id !== userId || token.purpose !== purpose || token.used) continue;
+    store.tokens.delete(tokenHash);
+    store.dirtyTokens.delete(tokenHash);
+    store.deletedTokens.add(tokenHash);
+  }
 }
 
 export function consumeAuthToken(tokenHash, purpose) {

@@ -59,20 +59,22 @@ test("password reset issues single-use hashed tokens and revokes sessions", asyn
     const signup = await post("/api/auth/signup", { name: "Reset Tester", email, password: oldPassword });
     assert.equal(signup.status, 201);
     const cookie = signup.headers.get("set-cookie").split(";")[0];
+    assert.equal(mailbox.length, 1);
+    assert.match(mailbox[0].body.subject, /Confirm your Remindify email/);
 
     // Unknown addresses get the same answer as known ones and no email.
     const stranger = await post("/api/auth/reset/request", { email: `nobody-${Date.now()}@example.com` });
     assert.equal(stranger.status, 202);
     const strangerBody = await stranger.json();
     assert.equal(strangerBody.message, "If that email has an account, a reset link is on its way.");
-    assert.equal(mailbox.length, 0);
+    assert.equal(mailbox.length, 1);
 
     const requested = await post("/api/auth/reset/request", { email });
     assert.equal(requested.status, 202);
     assert.deepEqual(await requested.json(), strangerBody);
-    assert.equal(mailbox.length, 1);
+    assert.equal(mailbox.length, 2);
 
-    const [{ headers, raw, body }] = mailbox;
+    const { headers, raw, body } = mailbox[1];
     assert.equal(body.to, email);
     assert.match(body.subject, /Reset your Remindify password/);
     const timestamp = headers["x-remindify-timestamp"];

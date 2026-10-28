@@ -5,6 +5,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string | null;
+  email_verified?: boolean;
   avatar_url: string | null;
   wallet_address: string | null;
   providers: Array<"email" | "google" | "wallet">;
@@ -16,6 +17,7 @@ export interface AuthConfig {
   google: boolean;
   wallet: boolean;
   reset?: boolean;
+  verify?: boolean;
 }
 
 export interface Risk {

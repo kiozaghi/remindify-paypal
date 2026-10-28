@@ -43,6 +43,7 @@ db.exec(`
     google_sub TEXT UNIQUE,
     avatar_url TEXT,
     wallet_address TEXT UNIQUE,
+    email_verified_at TEXT,
     created_at TEXT NOT NULL,
     last_login_at TEXT,
     workspace_id TEXT NOT NULL DEFAULT 'ws_demo'
@@ -119,6 +120,9 @@ function migrate() {
   }
   if (!columns("users").includes("workspace_id")) {
     db.exec("ALTER TABLE users ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'ws_demo'");
+  }
+  if (!columns("users").includes("email_verified_at")) {
+    db.exec("ALTER TABLE users ADD COLUMN email_verified_at TEXT");
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_items_workspace ON items(workspace_id, kind);
@@ -197,7 +201,7 @@ export function findKeyBySecret(secret) {
 
 const USER_COLUMNS = [
   "id", "email", "name", "password_hash", "password_salt", "google_sub",
-  "avatar_url", "wallet_address", "created_at", "last_login_at", "workspace_id",
+  "avatar_url", "wallet_address", "email_verified_at", "created_at", "last_login_at", "workspace_id",
 ].join(", ");
 
 export function getUser(id) {
@@ -278,6 +282,10 @@ export function createAuthToken({ tokenHash, userId, purpose, createdAt, expires
     INSERT INTO auth_tokens (token_hash, user_id, purpose, created_at, expires_at, used)
     VALUES (?, ?, ?, ?, ?, 0)
   `).run(tokenHash, userId, purpose, createdAt, expiresAt);
+}
+
+export function deleteAuthTokensForUser(userId, purpose) {
+  db.prepare("DELETE FROM auth_tokens WHERE user_id = ? AND purpose = ? AND used = 0").run(userId, purpose);
 }
 
 export function consumeAuthToken(tokenHash, purpose) {

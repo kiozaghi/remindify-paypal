@@ -39,6 +39,8 @@
     background: transparent; color: var(--ink); cursor: pointer; flex: none;
   }
   .topbar { height: 58px; padding: 0 16px; }
+  .verify-banner { margin: 10px 16px 0; flex-wrap: wrap; }
+  .verify-banner span { flex-basis: calc(100% - 30px); }
   .topbar-left { display: flex; align-items: center; gap: 10px; }
   .crumb { font-size: 10.5px; }
   .mobile-nav-panel {

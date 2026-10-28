@@ -5,7 +5,8 @@ import { getAddress, isAddress, verifyMessage } from "viem";
 import {
   consumeAuthChallenge, consumeAuthToken, createAuthChallenge, createAuthSession,
   createAuthToken, createUser, deleteAuthSession, deleteAuthSessionsForUser,
-  findUserByEmail, findUserByGoogleSub, findUserByWallet, getAuthSession, updateUser,
+  deleteAuthTokensForUser, findUserByEmail, findUserByGoogleSub, findUserByWallet,
+  getAuthSession, getUser, updateUser,
 } from "./db.mjs";
 import { emailConfigured, sendEmail } from "./email.mjs";
 import { provisionWorkspace } from "./provision.mjs";
@@ -15,6 +16,7 @@ const OAUTH_COOKIE = "remindify_oauth";
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
 const CHALLENGE_SECONDS = 60 * 10;
 const RESET_SECONDS = 60 * 30;
+const VERIFY_SECONDS = 60 * 60 * 24;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const attempts = new Map();
@@ -57,6 +59,7 @@ function publicUser(user) {
     id: user.id,
     name: user.name,
     email: user.email || null,
+    email_verified: Boolean(user.email_verified_at || user.google_sub),
     avatar_url: user.avatar_url || null,
     wallet_address: user.wallet_address || null,
     providers,
@@ -224,6 +227,7 @@ function findOrCreateGoogleUser(profile) {
   if (user) {
     const patch = { last_login_at: nowIso() };
     if (!user.google_sub) patch.google_sub = profile.sub;
+    if (!user.email_verified_at) patch.email_verified_at = nowIso();
     if (profile.picture && !user.avatar_url) patch.avatar_url = profile.picture;
     if (profile.name && !user.name) patch.name = String(profile.name).slice(0, 80);
     return updateUser(user.id, patch);
@@ -234,6 +238,7 @@ function findOrCreateGoogleUser(profile) {
     name: String(profile.name || nameFromEmail(email)).slice(0, 80),
     google_sub: profile.sub,
     avatar_url: profile.picture || null,
+    email_verified_at: nowIso(),
     created_at: nowIso(),
     last_login_at: nowIso(),
   });
@@ -270,6 +275,39 @@ function walletMessage(req, address, nonce) {
   ].join("\n");
 }
 
+// Email verification is soft during preview: unverified accounts keep full
+// access, but the register stays marked until the address is confirmed.
+async function sendVerificationEmail(req, user) {
+  if (!emailConfigured() || !user?.email || user.email_verified_at || user.google_sub) return false;
+  const token = randomBytes(32).toString("base64url");
+  deleteAuthTokensForUser(user.id, "verify");
+  createAuthToken({
+    tokenHash: hashToken(token),
+    userId: user.id,
+    purpose: "verify",
+    createdAt: nowIso(),
+    expiresAt: new Date(Date.now() + VERIFY_SECONDS * 1000).toISOString(),
+  });
+  const link = `${originFor(req)}/login?verify=${encodeURIComponent(token)}`;
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: "Confirm your Remindify email",
+      text: [
+        "Confirm the email on your Remindify register.",
+        "",
+        `Open this link (valid for 24 hours): ${link}`,
+        "",
+        "If you didn't create this register, ignore this message.",
+      ].join("\n"),
+    });
+    return true;
+  } catch (error) {
+    console.error("Verification email failed:", error?.message || error);
+    return false;
+  }
+}
+
 export async function handleAuthRoute(req, res, url, { send, body }) {
   const path = url.pathname;
   if (!path.startsWith("/api/auth/")) return false;
@@ -280,6 +318,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
       wallet: true,
       reset: emailConfigured(),
+      verify: emailConfigured(),
     });
     return true;
   }
@@ -324,6 +363,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       created_at: nowIso(),
       last_login_at: nowIso(),
     }));
+    await sendVerificationEmail(req, user);
     startSession(req, res, user.id);
     send(res, 201, { user: publicUser(user) });
     return true;
@@ -449,10 +489,80 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       return true;
     }
     const { salt, hash } = hashPassword(password);
-    updateUser(record.user_id, { password_hash: hash, password_salt: salt });
+    // Following a reset link proves control of the mailbox, so it also
+    // confirms the address.
+    updateUser(record.user_id, {
+      password_hash: hash,
+      password_salt: salt,
+      email_verified_at: nowIso(),
+    });
     deleteAuthSessionsForUser(record.user_id);
     appendCookie(res, serializeCookie(req, SESSION_COOKIE, "", { maxAge: 0 }));
     send(res, 200, { ok: true, message: "Password updated. Sign in with the new one." });
+    return true;
+  }
+
+  if (path === "/api/auth/verify/request" && req.method === "POST") {
+    if (limited(req, path, 3)) {
+      send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
+      return true;
+    }
+    const session = getSessionFromRequest(req);
+    if (!session) {
+      send(res, 401, { error: "not_signed_in", message: "Sign in to confirm your email." });
+      return true;
+    }
+    if (!emailConfigured()) {
+      send(res, 503, {
+        error: "email_not_configured",
+        message: "Email confirmation isn't available on this build yet. Ask the operator to connect email.",
+      });
+      return true;
+    }
+    const user = getUser(session.user.id);
+    if (!user?.email) {
+      send(res, 422, { error: "no_email", message: "This account has no email address to confirm." });
+      return true;
+    }
+    if (user.email_verified_at || user.google_sub) {
+      send(res, 200, { ok: true, already_verified: true, message: "That email is already confirmed." });
+      return true;
+    }
+    const sent = await sendVerificationEmail(req, user);
+    if (!sent) {
+      send(res, 502, { error: "email_failed", message: "We couldn't send that email. Try again in a moment." });
+      return true;
+    }
+    send(res, 202, { ok: true, message: "Confirmation link sent. It expires in 24 hours." });
+    return true;
+  }
+
+  if (path === "/api/auth/verify/confirm" && req.method === "POST") {
+    if (limited(req, path, 10)) {
+      send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
+      return true;
+    }
+    const input = await body(req);
+    const token = String(input.token || "");
+    if (!token || token.length > 200) {
+      send(res, 400, { error: "invalid_token", message: "That confirmation link is invalid. Request a new one." });
+      return true;
+    }
+    const record = consumeAuthToken(hashToken(token), "verify");
+    if (!record) {
+      send(res, 400, {
+        error: "invalid_token",
+        message: "That confirmation link is invalid or has expired. Request a new one.",
+      });
+      return true;
+    }
+    const user = updateUser(record.user_id, { email_verified_at: nowIso() });
+    if (!user) {
+      send(res, 400, { error: "invalid_token", message: "That confirmation link is invalid. Request a new one." });
+      return true;
+    }
+    deleteAuthTokensForUser(user.id, "verify");
+    send(res, 200, { user: publicUser(user), message: "Email confirmed." });
     return true;
   }
 

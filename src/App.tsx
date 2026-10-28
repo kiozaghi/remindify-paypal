@@ -24,6 +24,7 @@ import { CommandPalette, Toasts } from "./components/CommandPalette";
 import { CreateAgentModal, HireModal, NewObligationModal } from "./components/Modals";
 import { TemplatesModal } from "./components/TemplatesModal";
 import { clockLabel } from "./lib/format";
+import { api } from "./lib/api";
 
 const NAV = [
   {
@@ -64,14 +65,26 @@ const TITLES: Record<string, { title: string; sub: string }> = {
 
 function Shell() {
   const { state, loading, route, navigate, overlays, setOverlays, actions } = useApp();
-  const { user, logout } = useAuth();
+  const { user, config, logout } = useAuth();
   const [mobileNav, setMobileNav] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [verifyState, setVerifyState] = useState<"idle" | "sending" | "sent">("idle");
 
   const displayUser = user?.name || state?.user || "Operator";
   const displayDetail = user?.email || user?.wallet_address || "Signed in";
   const proofsOnFile = state ? state.runs.filter((run) => run.proof).length : 0;
+  const needsVerify = Boolean(user?.email && !user.email_verified && config.verify);
+
+  const resendVerification = async () => {
+    setVerifyState("sending");
+    try {
+      await api.authVerifyRequest();
+      setVerifyState("sent");
+    } catch {
+      setVerifyState("idle");
+    }
+  };
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -221,6 +234,16 @@ function Shell() {
           </div>
         </header>
 
+        {needsVerify && (
+          <div className="verify-banner" role="status">
+            <Icon name="shield" size={14} />
+            <span>Confirm <strong>{user?.email}</strong> to secure your register.</span>
+            <button onClick={resendVerification} disabled={verifyState !== "idle"}>
+              {verifyState === "sent" ? "Email sent" : verifyState === "sending" ? "Sending…" : "Resend email"}
+            </button>
+          </div>
+        )}
+
         {mobileNav && (
           <div className="mobile-nav-panel">
             {NAV.flatMap((g) => g.items).map((item) => (
@@ -321,8 +344,10 @@ function Root() {
   }, [location]);
 
   useEffect(() => {
-    if (user && isAuthRoute(location.page)) navigateTo("today");
-  }, [user, location.page]);
+    if (user && isAuthRoute(location.page) && !location.params.get("reset") && !location.params.get("verify")) {
+      navigateTo("today");
+    }
+  }, [user, location.page, location.params]);
 
   if (loading) {
     // Public pages are prerendered to static HTML. Render the same markup while
@@ -332,6 +357,8 @@ function Root() {
     }
     return <BootScreen />;
   }
+
+  const authToken = Boolean(location.params.get("reset") || location.params.get("verify"));
 
   if (!user) {
     if (isAppRoute(location.page)) {
@@ -351,6 +378,7 @@ function Root() {
           next={location.params.get("next") || undefined}
           notice={location.params.get("notice")}
           resetToken={location.params.get("reset")}
+          verifyToken={location.params.get("verify")}
           onNavigate={navigateTo}
         />
       );
@@ -359,6 +387,17 @@ function Root() {
   }
 
   if (isAuthRoute(location.page)) {
+    if (authToken) {
+      return (
+        <AuthPage
+          mode="login"
+          next={location.params.get("next") || undefined}
+          resetToken={location.params.get("reset")}
+          verifyToken={location.params.get("verify")}
+          onNavigate={navigateTo}
+        />
+      );
+    }
     return <BootScreen />;
   }
 

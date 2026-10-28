@@ -43,6 +43,7 @@ export const getAuthSession = (...args) => impl.getAuthSession(...args);
 export const deleteAuthSession = (...args) => impl.deleteAuthSession(...args);
 export const deleteAuthSessionsForUser = (...args) => impl.deleteAuthSessionsForUser(...args);
 export const createAuthToken = (...args) => impl.createAuthToken(...args);
+export const deleteAuthTokensForUser = (...args) => impl.deleteAuthTokensForUser(...args);
 export const consumeAuthToken = (...args) => impl.consumeAuthToken(...args);
 export const createAuthChallenge = (...args) => impl.createAuthChallenge(...args);
 export const consumeAuthChallenge = (...args) => impl.consumeAuthChallenge(...args);
