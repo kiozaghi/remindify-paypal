@@ -639,7 +639,7 @@ export function verifiedEmails() {
   return [...store.users.values()]
     .filter((user) => user.workspace_id === workspaceId && user.email && user.email_verified_at)
     .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
-    .map((user) => ({ email: user.email, name: user.name }));
+    .map((user) => ({ id: user.id, email: user.email, name: user.name }));
 }
 
 export function deleteWorkspace(workspaceId) {

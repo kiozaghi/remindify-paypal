@@ -63,6 +63,7 @@ test("the sweep emails one digest per verified account per day", async () => {
     assert.equal(mailbox.length, 0, "signup sends nothing before a provider is configured");
 
     process.env.EMAIL_WEBHOOK_URL = mailerUrl;
+    process.env.PUBLIC_ORIGIN = base;
     db.updateUser(alice.user.id, { email_verified_at: new Date().toISOString() });
 
     const aliceState = await (await fetch(`${base}/api/state`, { headers: { cookie: alice.cookie } })).json();
@@ -94,13 +95,27 @@ test("the sweep emails one digest per verified account per day", async () => {
     assert.match(mail.text, /\/today/);
     assert.doesNotMatch(mail.text, /File the quarterly return/, "an unconfirmed account's register stays private");
 
+    const unsubscribeLink = mail.text.match(/https?:\/\/\S+\/api\/digest\/unsubscribe\?token=\S+/)[0];
+    assert.ok(unsubscribeLink.startsWith(base), "the link points at the configured origin");
+
+    const optedOut = await fetch(unsubscribeLink);
+    assert.equal(optedOut.status, 200);
+    assert.match(await optedOut.text(), /Daily digest off/);
+    assert.equal((await fetch(`${base}/api/digest/unsubscribe?token=forged`)).status, 400);
+
     const second = await (await cron()).json();
     assert.equal(second.digests, 0, "a replayed sweep does not send the digest twice");
     assert.equal(mailbox.length, 1);
 
-    // A new UTC day reopens the digest.
+    // A new UTC day would reopen the digest, but the opt-out holds.
     const workspaceId = db.getUser(alice.user.id).workspace_id;
     runWithWorkspace(workspaceId, () => db.setMeta("digest_sent_for", "2000-01-01"));
+    const skipped = await (await cron()).json();
+    assert.equal(skipped.digests, 0, "an opted-out mailbox is not emailed again");
+    assert.equal(mailbox.length, 1);
+
+    // Turning it back on (the account surface will call this) restores delivery.
+    runWithWorkspace(workspaceId, () => db.setMeta("digest_opt_out", {}));
     const third = await (await cron()).json();
     assert.equal(third.digests, 1);
     assert.equal(mailbox.length, 2);
@@ -110,6 +125,7 @@ test("the sweep emails one digest per verified account per day", async () => {
     delete process.env.EMAIL_WEBHOOK_URL;
     delete process.env.EMAIL_WEBHOOK_SECRET;
     delete process.env.CRON_SECRET;
+    delete process.env.PUBLIC_ORIGIN;
     rmSync(dir, { recursive: true, force: true });
   }
 });

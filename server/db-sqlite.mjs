@@ -262,7 +262,7 @@ export function deleteUser(id) {
 
 export function verifiedEmails() {
   return db.prepare(
-    "SELECT email, name FROM users WHERE workspace_id = ? AND email IS NOT NULL AND email_verified_at IS NOT NULL ORDER BY created_at"
+    "SELECT id, email, name FROM users WHERE workspace_id = ? AND email IS NOT NULL AND email_verified_at IS NOT NULL ORDER BY created_at"
   ).all(currentWorkspaceId());
 }
 

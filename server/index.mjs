@@ -20,7 +20,7 @@ import {
 } from "./trust.mjs";
 import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
 import { emailConfigured } from "./email.mjs";
-import { sendDailyDigest } from "./digest.mjs";
+import { sendDailyDigest, unsubscribeByToken, unsubscribePage } from "./digest.mjs";
 import { pruneActivity } from "./retention.mjs";
 import { sanctionsConfigured, screenAddresses } from "./sanctions.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
@@ -434,6 +434,19 @@ async function handleRequest(req, res) {
       if (!cronSecretMatches(given)) return send(res, 401, { error: "unauthorized" });
       const result = await sweepAllWorkspaces();
       return send(res, 200, { ok: true, ...result });
+    }
+
+    // Digest links are signed per recipient and work without a session, so a
+    // mailbox can opt out from the email itself.
+    if (path === "/api/digest/unsubscribe" && req.method === "GET") {
+      const token = new URL(req.url, "http://localhost").searchParams.get("token") || "";
+      const result = unsubscribeByToken(token);
+      res.writeHead(result.ok ? 200 : 400, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      res.end(unsubscribePage(result));
+      return;
     }
 
     // Everything below this line is the signed-in workspace. The machine API
