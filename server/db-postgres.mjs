@@ -483,7 +483,7 @@ export function loadAll() {
   const workspaceId = currentWorkspaceId();
   const out = {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
-    receipts: [], escrows: [],
+    receipts: [], escrows: [], outbox: [],
   };
   for (const row of store.items.values()) {
     if (row.workspace_id !== workspaceId) continue;
@@ -508,6 +508,15 @@ export function put(kind, item) {
 
 export function putMany(kind, items) {
   for (const item of items) put(kind, item);
+}
+
+export function workspacesWithKind(kind) {
+  const store = requireStore();
+  const workspaces = new Set();
+  for (const row of store.items.values()) {
+    if (row.kind === kind) workspaces.add(row.workspace_id);
+  }
+  return [...workspaces];
 }
 
 export function remove(kind, id) {

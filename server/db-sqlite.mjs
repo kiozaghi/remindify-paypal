@@ -154,7 +154,7 @@ export function loadAll() {
   const rows = db.prepare("SELECT kind, data FROM items WHERE workspace_id = ?").all(currentWorkspaceId());
   const out = {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
-    receipts: [], escrows: [],
+    receipts: [], escrows: [], outbox: [],
   };
   for (const row of rows) {
     const item = JSON.parse(row.data);
@@ -170,6 +170,13 @@ export function loadAll() {
 export function put(kind, item) {
   upsert.run(currentWorkspaceId(), kind, item.id, JSON.stringify(item));
   return item;
+}
+
+export function workspacesWithKind(kind) {
+  return db
+    .prepare("SELECT DISTINCT workspace_id FROM items WHERE kind = ?")
+    .all(kind)
+    .map((row) => row.workspace_id);
 }
 
 export function putMany(kind, items) {

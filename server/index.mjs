@@ -2,15 +2,16 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   buildState, completeObligation, sweep, applyApproval, snoozeObligation,
   runObligation, advanceClock, deleteObligation, logEvent, uid, virtualNow,
-  riskFor, enrichObligation,
+  riskFor, enrichObligation, drainOutbox,
 } from "./engine.mjs";
 import {
   loadAll, put, putMany, getMeta, setMeta, seedDatabase, pruneAuth,
   beginRequest, runWithStore, endRequest, abortRequest, isPostgres, findKeyBySecret,
+  workspacesWithKind,
 } from "./db.mjs";
 import { parseCapture } from "./parse.mjs";
 import {
@@ -18,7 +19,7 @@ import {
   fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
 } from "./trust.mjs";
 import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
-import { setWorkspace } from "./workspace.mjs";
+import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
 import { takeRateLimit } from "./ratelimit.mjs";
@@ -406,6 +407,16 @@ async function handleRequest(req, res) {
 
     // ---------- App API ----------
     if (path === "/api/health") return send(res, 200, { ok: true, now: new Date().toISOString() });
+
+    // Serverless deployments have no background timer, so a scheduler calls
+    // this with the shared secret. It is the only app path that skips sessions.
+    if (path === "/api/cron/outbox" && req.method === "POST") {
+      if (!process.env.OUTBOX_SECRET) return send(res, 404, { error: "not_found", path });
+      const given = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+      if (!outboxSecretMatches(given)) return send(res, 401, { error: "unauthorized" });
+      const result = await sweepOutbox();
+      return send(res, 200, { ok: true, ...result });
+    }
 
     // Everything below this line is the signed-in workspace. The machine API
     // above keeps its own Bearer-key auth; auth routes and health stay public.
@@ -880,6 +891,43 @@ async function handleRequest(req, res) {
   }
 }
 
+function outboxSecretMatches(given) {
+  const secret = process.env.OUTBOX_SECRET || "";
+  if (!secret || !given) return false;
+  const provided = Buffer.from(String(given));
+  const expected = Buffer.from(secret);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+// Runs inside whatever workspace/store context the caller already entered.
+async function sweepOutbox() {
+  const results = [];
+  for (const workspaceId of workspacesWithKind("outbox")) {
+    const result = await runWithWorkspace(workspaceId, () => drainOutbox());
+    results.push({ workspace: workspaceId, processed: result.processed || 0 });
+  }
+  return { workspaces: results.length, processed: results.reduce((sum, r) => sum + r.processed, 0) };
+}
+
+// The local timer has no request to lean on, so it opens its own snapshot.
+async function sweepOutboxWithStore() {
+  if (!isPostgres) return sweepOutbox();
+  let store;
+  try {
+    store = await beginRequest();
+  } catch {
+    return null;
+  }
+  try {
+    const result = await runWithStore(store, sweepOutbox);
+    await endRequest(store);
+    return result;
+  } catch (error) {
+    await abortRequest(store).catch(() => {});
+    throw error;
+  }
+}
+
 function needsDatabase(path) {
   return path.startsWith("/api/")
     && path !== "/api/health"
@@ -995,6 +1043,17 @@ if (!process.env.VERCEL) {
         /* ignore */
       }
     }, 45_000).unref();
+  }
+
+  // Durable connector retries: the job list lives in the database, so this
+  // timer only decides when to look, not whether the retry survives a restart.
+  const configuredSweep = Number(process.env.OUTBOX_INTERVAL_MS);
+  const sweepEvery =
+    Number.isFinite(configuredSweep) && configuredSweep >= 0 ? Math.floor(configuredSweep) : 30_000;
+  if (sweepEvery > 0) {
+    setInterval(() => {
+      sweepOutboxWithStore().catch((error) => console.error("Outbox sweep failed:", error));
+    }, sweepEvery).unref();
   }
 }
 

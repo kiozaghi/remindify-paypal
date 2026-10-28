@@ -3,6 +3,7 @@ import { fileReceiptForCompletion, trustSnapshot } from "./trust.mjs";
 import { publicKey } from "./keys.mjs";
 import { planForWorkspace, usage } from "./billing.mjs";
 import { connectorConfigured, executeWithConnector, publicAgent } from "./executors.mjs";
+import { dueOutboxJobs, enqueueConnectorRetry, outboxBackoff, outboxLeaseMs } from "./outbox.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -207,6 +208,24 @@ async function executeAction(agent, ob, { action, detail, note }) {
   if (!outcome.configured) {
     return { configured: false, ok: false, error: outcome.error };
   }
+  let queued = false;
+  if (!outcome.ok && outcome.retryable) {
+    const job = enqueueConnectorRetry({
+      runId, agent, obligation: ob, action, detail, note, error: outcome.error,
+    });
+    queued = Boolean(job);
+    if (queued) {
+      logEvent({
+        actor_type: "system",
+        actor_id: null,
+        actor: "Remindify",
+        verb: "queued a connector retry",
+        object: ob.title,
+        detail: `${outcome.error} · the job is saved and will resume when the executor is reachable`,
+        kind: "automation",
+      });
+    }
+  }
   logRun({
     id: runId,
     agent_id: agent.id,
@@ -218,6 +237,7 @@ async function executeAction(agent, ob, { action, detail, note }) {
     duration_ms: Date.now() - started,
     connector_status: outcome.status || null,
     attempts: outcome.attempts || 1,
+    retry_queued: queued,
     error: outcome.ok ? null : outcome.error,
   });
   if (!outcome.ok) {
@@ -230,7 +250,7 @@ async function executeAction(agent, ob, { action, detail, note }) {
       detail: outcome.error,
       kind: "automation",
     });
-    return { configured: true, ok: false, error: outcome.error };
+    return { configured: true, ok: false, error: outcome.error, queued };
   }
   logEvent({
     actor_type: "agent",
@@ -243,6 +263,149 @@ async function executeAction(agent, ob, { action, detail, note }) {
   });
   completeObligation(ob.id, { proof: outcome.proof, note, by: agent.name, auto: true });
   return { configured: true, ok: true, proof: outcome.proof, status: outcome.status };
+}
+
+let draining = false;
+
+// Retries are persisted as workspace items, so a restart only delays them.
+// The job keeps its run id, and executors are expected to dedupe on
+// x-remindify-run, because a crash between claim and completion can redeliver.
+export async function drainOutbox({ now = Date.now(), limit = 5 } = {}) {
+  if (draining) return { skipped: true, processed: 0, results: [] };
+  draining = true;
+  const results = [];
+  try {
+    for (const pending of dueOutboxJobs(now, limit)) {
+      const data = loadAll();
+      const job = (data.outbox || []).find((entry) => entry.id === pending.id);
+      if (!job || job.status !== "pending") continue;
+      const agent = data.agents.find((entry) => entry.id === job.agent_id);
+      const ob = data.obligations.find((entry) => entry.id === job.obligation_id);
+
+      if (!agent || !connectorConfigured(agent) || !ob || ["done", "archived"].includes(ob.status)) {
+        job.status = "failed";
+        job.last_error = !agent
+          ? "The agent was removed before the retry."
+          : !connectorConfigured(agent)
+            ? "The agent no longer has an executor connected."
+            : "The obligation closed before the retry.";
+        job.updated_at = new Date().toISOString();
+        put("outbox", job);
+        logEvent({
+          actor_type: "system",
+          actor_id: null,
+          actor: "Remindify",
+          verb: "dropped a queued retry",
+          object: ob?.title || job.obligation_id,
+          detail: job.last_error,
+          kind: "automation",
+        });
+        results.push({ id: job.id, status: "failed" });
+        continue;
+      }
+
+      const claimAt = Date.now();
+      job.attempts = (job.attempts || 0) + 1;
+      job.updated_at = new Date(claimAt).toISOString();
+      job.next_at = new Date(claimAt + outboxLeaseMs()).toISOString();
+      put("outbox", job);
+
+      const started = Date.now();
+      const outcome = await executeWithConnector({
+        runId: job.run_id,
+        agent,
+        obligation: ob,
+        action: job.action,
+        detail: job.detail,
+      });
+      const duration = Date.now() - started;
+
+      if (outcome.ok) {
+        job.status = "done";
+        job.proof = outcome.proof;
+        job.connector_status = outcome.status || null;
+        job.last_error = null;
+        job.updated_at = new Date().toISOString();
+        put("outbox", job);
+        logRun({
+          id: uid("run"),
+          outbox_id: job.id,
+          agent_id: agent.id,
+          obligation_id: ob.id,
+          action: job.action,
+          detail: `${job.detail} · ${outcome.proof}`,
+          status: "done",
+          proof: outcome.proof,
+          duration_ms: duration,
+          connector_status: outcome.status || null,
+          attempts: outcome.attempts || 1,
+        });
+        logEvent({
+          actor_type: "agent",
+          actor_id: agent.id,
+          actor: agent.name,
+          verb: "executed after a queued retry",
+          object: ob.title,
+          detail: `${outcome.proof} · attempt ${job.attempts}/${job.max_attempts}`,
+          kind: "automation",
+        });
+        completeObligation(ob.id, { proof: outcome.proof, note: job.note, by: agent.name, auto: true });
+        results.push({ id: job.id, status: "done" });
+        continue;
+      }
+
+      if (outcome.retryable && job.attempts < job.max_attempts) {
+        job.status = "pending";
+        job.last_error = outcome.error;
+        job.next_at = new Date(Date.now() + outboxBackoff(job.attempts)).toISOString();
+        job.updated_at = new Date().toISOString();
+        put("outbox", job);
+        logEvent({
+          actor_type: "system",
+          actor_id: null,
+          actor: "Remindify",
+          verb: "scheduled another retry",
+          object: ob.title,
+          detail: `${outcome.error} · attempt ${job.attempts}/${job.max_attempts}`,
+          kind: "automation",
+        });
+        results.push({ id: job.id, status: "pending" });
+        continue;
+      }
+
+      job.status = "failed";
+      job.last_error = outcome.error;
+      job.updated_at = new Date().toISOString();
+      put("outbox", job);
+      logRun({
+        id: uid("run"),
+        outbox_id: job.id,
+        agent_id: agent.id,
+        obligation_id: ob.id,
+        action: job.action,
+        detail: `${job.detail} · ${outcome.error}`,
+        status: "failed",
+        proof: null,
+        duration_ms: duration,
+        connector_status: outcome.status || null,
+        attempts: outcome.attempts || 1,
+        error: outcome.error,
+      });
+      logEvent({
+        actor_type: "agent",
+        actor_id: agent.id,
+        actor: agent.name,
+        verb: "could not execute",
+        object: ob.title,
+        detail: `${outcome.error} · gave up after ${job.attempts} queued attempts`,
+        kind: "automation",
+      });
+      results.push({ id: job.id, status: "failed" });
+    }
+  } finally {
+    draining = false;
+  }
+  return { skipped: false, processed: results.length, results };
 }
 
 function executorHost(agent) {
@@ -544,10 +707,13 @@ export async function applyApproval(id, decision, note = "") {
     ok: true,
     approval,
     executed: outcome.ok,
+    queued: outcome.ok ? undefined : Boolean(outcome.queued),
     error: outcome.ok ? undefined : outcome.error,
     message: outcome.ok
       ? "The agent ran it through its connector and filed proof."
-      : `Approved, but execution failed: ${outcome.error}`,
+      : `Approved, but execution failed: ${outcome.error}${
+          outcome.queued ? " The job is saved and will retry." : ""
+        }`,
   };
 }
 
@@ -585,7 +751,14 @@ export async function runObligation(id) {
         note: "Manual run · autopilot",
       });
       if (!outcome.ok) {
-        return { ok: false, error: "executor_failed", message: outcome.error };
+        return {
+          ok: false,
+          error: "executor_failed",
+          queued: Boolean(outcome.queued),
+          message: outcome.queued
+            ? `${outcome.error} The job is saved and will retry when the executor is reachable.`
+            : outcome.error,
+        };
       }
       return {
         ok: true,

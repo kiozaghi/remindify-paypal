@@ -139,6 +139,20 @@ Return any `2xx` and include `{"proof": "your-proof-reference"}` (or `receipt_ur
 
 Transient failures (network errors, timeouts, `408`, `429` and `5xx`) are retried up to three times with exponential backoff; other `4xx` answers are final. Each attempt carries a fresh timestamp and signature plus `x-remindify-attempt`, so an executor can dedupe on `x-remindify-run` while still verifying every request.
 
+When those inline attempts still fail transiently, the execution is saved to a durable outbox instead of being lost. The job keeps the original run id, retries with exponential backoff (one minute, then two, four, eight… capped at six hours) for up to five attempts, and completes the obligation with proof when an executor finally answers. Jobs are ordinary workspace rows, so they survive a restart; a connector that is permanently broken or an obligation that closes first ends the job instead of retrying forever. The local server sweeps the outbox every 30 seconds (`OUTBOX_INTERVAL_MS`). Serverless deployments have no timer, so point a scheduler at `POST /api/cron/outbox` with `Authorization: Bearer $OUTBOX_SECRET`; the route is absent unless the secret is set.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `EXECUTOR_ATTEMPTS` | `3` | Inline attempts per call (max 5) |
+| `EXECUTOR_RETRY_BASE_MS` | `300` | Inline backoff base |
+| `EXECUTOR_TIMEOUT_MS` | `8000` | Per-attempt timeout |
+| `OUTBOX_MAX_ATTEMPTS` | `5` | Delayed attempts after inline failures (max 10) |
+| `OUTBOX_RETRY_BASE_MS` | `60000` | Delayed backoff base |
+| `OUTBOX_INTERVAL_MS` | `30000` | Local sweep interval (`0` disables) |
+| `OUTBOX_SECRET` | unset | Enables the cron route |
+
+Because a crash can land between claiming a job and recording the result, delivery is at-least-once. Executors should treat `x-remindify-run` as the idempotency key.
+
 Without a connector the agent is draft-only: sweeps produce plans, approvals are recorded but nothing runs, and nothing is marked complete. Executor URLs are resolved and checked for a public address, and that address is pinned for the send, so a second DNS answer cannot bounce the call inward. Redirects are refused. `EXECUTOR_ALLOW_LOCAL=1` permits `http://localhost` for local development only. The signing secret is stored server-side, stripped from state, exports and API responses, and rotated whenever you reconnect.
 
 ---
@@ -270,6 +284,8 @@ Signup sends a confirmation link to `/login?verify=…` when email is configured
 `/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`, `/api/account/delete`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
 
 The server partitions obligations, agents, runs, receipts, escrows, API keys and meta keys by workspace. A session cookie resolves to that account's workspace; a machine API key resolves to the workspace that issued it. New accounts get a seeded copy of the demo register in their own workspace, and `POST /api/demo/reset` only clears the caller's workspace. Auth rows (users, sessions, wallet challenges) live outside any workspace, so a reset never signs anyone out or touches another account.
+
+`POST /api/cron/outbox` is machine-only: it requires `Authorization: Bearer $OUTBOX_SECRET` and returns `404` when no secret is configured, so no session can reach it. See [Execution connectors](#execution-connectors) for its retry contract.
 
 Existing single-workspace databases are migrated in place: rows that predate this change are assigned to the `ws_demo` workspace.
 
@@ -547,9 +563,8 @@ Accounts get separate workspaces, but this is still a prototype. Do not run it a
 This is a complete product prototype, not a hardened multi-tenant service. Before charging money:
 
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
-- add an outbox and replay-safe job runner around the machine API and connectors (keys are already hashed, scoped, expiring and rate-limited, and mutating calls accept idempotency keys);
+- add a replay-safe job runner around the machine API (keys are already hashed, scoped, expiring and rate-limited, and mutating calls accept idempotency keys; connector retries now persist in a durable outbox);
 - gate paid plans or shared workspaces on a confirmed email (confirmation is recorded today, but the preview keeps access open);
-- add a durable outbox so connector retries survive a restart (calls now retry transient failures inline with backoff and pin the validated address on every attempt);
 - encrypt proof documents at rest and add retention/deletion controls;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
 - connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;

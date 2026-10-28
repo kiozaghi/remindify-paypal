@@ -28,6 +28,7 @@ export const setMeta = (...args) => impl.setMeta(...args);
 export const loadAll = (...args) => impl.loadAll(...args);
 export const put = (...args) => impl.put(...args);
 export const putMany = (...args) => impl.putMany(...args);
+export const workspacesWithKind = (...args) => impl.workspacesWithKind(...args);
 export const remove = (...args) => impl.remove(...args);
 export const findKeyBySecret = (...args) => impl.findKeyBySecret(...args);
 

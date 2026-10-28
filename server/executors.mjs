@@ -151,6 +151,7 @@ export async function executeWithConnector({ runId, agent, obligation, action, d
   if (!outcome.ok && outcome.attempts > 1) {
     outcome.error = `${outcome.error} (tried ${outcome.attempts} times)`;
   }
+  outcome.retryable = Boolean(outcome.transient);
   delete outcome.transient;
   return outcome;
 }
