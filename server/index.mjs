@@ -22,6 +22,7 @@ import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./a
 import { emailConfigured } from "./email.mjs";
 import { sendDailyDigest } from "./digest.mjs";
 import { pruneActivity } from "./retention.mjs";
+import { sanctionsConfigured, screenAddresses } from "./sanctions.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
@@ -843,6 +844,7 @@ async function handleRequest(req, res) {
 
     if (path === "/api/trust/escrows" && req.method === "POST") {
       if (regionBlockedResponse(req, res)) return;
+      if (await sanctionsBlockedResponse(req, res)) return;
       const input = await body(req);
       const result = createEscrow(input);
       return send(res, result.ok ? 201 : 422, { ...result, state: buildState() });
@@ -857,6 +859,7 @@ async function handleRequest(req, res) {
     const escrowFundMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/fund$/);
     if (escrowFundMatch && req.method === "POST") {
       if (regionBlockedResponse(req, res)) return;
+      if (await sanctionsBlockedResponse(req, res)) return;
       const { tx_hash } = await body(req);
       const result = await fundEscrow({ id: escrowFundMatch[1], tx_hash });
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
@@ -865,6 +868,7 @@ async function handleRequest(req, res) {
     const escrowReleaseMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/release$/);
     if (escrowReleaseMatch && req.method === "POST") {
       if (regionBlockedResponse(req, res)) return;
+      if (await sanctionsBlockedResponse(req, res)) return;
       const { proof_receipt_id, tx_hash } = await body(req);
       const result = await releaseEscrow({
         id: escrowReleaseMatch[1],
@@ -928,6 +932,31 @@ function regionBlockedResponse(req, res) {
   if (!regionBlocked(req)) return false;
   send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
   return true;
+}
+
+// The payer's connected wallet is screened before escrow money moves. Accounts
+// without a wallet have nothing to look up here; the regional gate still
+// applies to them.
+async function sanctionsBlockedResponse(req, res) {
+  const address = req.auth?.user?.wallet_address;
+  if (!address || !sanctionsConfigured()) return false;
+  const screen = await screenAddresses([address]);
+  if (screen.hits.length) {
+    send(res, 403, {
+      error: "sanctions_hit",
+      message: "This wallet is on a sanctions list, so the escrow cannot move.",
+      hits: screen.hits,
+    });
+    return true;
+  }
+  if (screen.unavailable && !screen.ok) {
+    send(res, 503, {
+      error: "sanctions_unavailable",
+      message: "The sanctions screen is unavailable. Try again later.",
+    });
+    return true;
+  }
+  return false;
 }
 
 function secretMatches(given, secret) {

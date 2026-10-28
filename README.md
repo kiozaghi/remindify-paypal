@@ -301,6 +301,12 @@ Set `BLOCKED_COUNTRIES` to a comma-separated list of ISO 3166-1 alpha-2 codes (`
 
 Sign-in for an existing account still works, so someone who moves or travels keeps access to their register; only new accounts and new money movement are refused.
 
+### Sanctions screening
+
+Set `SANCTIONS_API_URL` to screen the signed-in account's connected wallet before escrow money moves. Remindify POSTs `{ "addresses": [...] }` and expects `{ "hits": [{ "address", "reason" }] }`; a matching address stops `POST /api/trust/escrows`, `/fund` and `/release` with `403 {"error":"sanctions_hit"}` and the hit list. `SANCTIONS_API_KEY` adds a Bearer header and `SANCTIONS_TIMEOUT_MS` bounds the call (5 seconds by default). A provider outage lets the movement through by default; set `SANCTIONS_FAIL_CLOSED=1` to answer `503 {"error":"sanctions_unavailable"}` instead.
+
+This is a seam, not a compliance program: only wallets the account has connected are screened, escrows funded from an external wallet and marketplace provider payout addresses are not, and hits are reported as the provider returns them. Pick a provider with the coverage and record-keeping your jurisdiction requires.
+
 The country comes from `x-vercel-ip-country`, `cf-ipcountry` or `x-country-code`, in that order. Requests with no usable header are allowed so local development and self-hosted installs without a geo proxy keep working. These headers are only trustworthy behind a proxy you control: a client that reaches the Node server directly can send any value, so terminate traffic at Vercel or Cloudflare, or have your own proxy set the header from a source you trust. This is coarse geolocation, not a sanctions screening service; combine it with a provider check if you are required to screen individuals.
 
 ### API protection
@@ -594,7 +600,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
 - connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;
 - take the reference contracts through an audit, add upgrade/ops procedures, and test anchor/fund/release against a deployed contract on Base Sepolia before mainnet;
-- run a real sanctions/counterparty screen: `BLOCKED_COUNTRIES` is coarse IP geolocation plus the `jurisdiction_ack` checkbox, not a screening provider;
+- connect a real sanctions provider behind the `SANCTIONS_API_URL` seam (it screens the payer's connected wallet on escrow money movement, but external-wallet funding and provider payout addresses are out of scope);
 - confirm or replace the placeholder `hello@remindify.app` and `security@remindify.app` inboxes.
 
 The design decisions that matter — autonomy ceilings, proof requirements, audit trail, human/agent parity — are already in the data model.
