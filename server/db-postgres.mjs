@@ -633,6 +633,15 @@ export function deleteUser(id) {
   store.deletedUsers.add(id);
 }
 
+export function verifiedEmails() {
+  const store = requireStore();
+  const workspaceId = currentWorkspaceId();
+  return [...store.users.values()]
+    .filter((user) => user.workspace_id === workspaceId && user.email && user.email_verified_at)
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+    .map((user) => ({ email: user.email, name: user.name }));
+}
+
 export function deleteWorkspace(workspaceId) {
   const store = requireStore();
   const prefix = `${workspaceId}\u0000`;

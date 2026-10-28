@@ -260,6 +260,12 @@ export function deleteUser(id) {
   db.prepare("DELETE FROM users WHERE id = ?").run(id);
 }
 
+export function verifiedEmails() {
+  return db.prepare(
+    "SELECT email, name FROM users WHERE workspace_id = ? AND email IS NOT NULL AND email_verified_at IS NOT NULL ORDER BY created_at"
+  ).all(currentWorkspaceId());
+}
+
 export function deleteWorkspace(workspaceId) {
   db.prepare("DELETE FROM items WHERE workspace_id = ?").run(workspaceId);
   db.prepare("DELETE FROM meta WHERE workspace_id = ?").run(workspaceId);

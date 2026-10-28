@@ -20,6 +20,7 @@ import {
 } from "./trust.mjs";
 import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
 import { emailConfigured } from "./email.mjs";
+import { sendDailyDigest } from "./digest.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
@@ -955,6 +956,7 @@ const SWEEP_BUDGET_MS = 20_000;
 async function sweepAllWorkspaces() {
   const summary = {
     workspaces: 0, skipped: 0, deferred: 0, scanned: 0, proposed: 0, executed: 0, drafted: 0, blocked: 0, failed: 0,
+    digests: 0, digest_failed: 0,
   };
   const workspaces = workspacesWithKind("obligations");
   const deadline = Date.now() + SWEEP_BUDGET_MS;
@@ -977,6 +979,13 @@ async function sweepAllWorkspaces() {
         const result = await sweep({ actor: "Scheduled sweep", silent: true });
         for (const key of ["scanned", "proposed", "executed", "drafted", "blocked", "failed"]) {
           summary[key] += result[key] || 0;
+        }
+        try {
+          const digest = await sendDailyDigest();
+          summary.digests += digest.sent || 0;
+          summary.digest_failed += digest.failed || 0;
+        } catch {
+          summary.digest_failed += 1;
         }
       } finally {
         setMeta("sweep_lease_until", new Date(0).toISOString());
