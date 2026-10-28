@@ -54,6 +54,20 @@ const MIME = {
   ".ico": "image/x-icon",
 };
 
+// Baseline headers for every response, API and static. HSTS is only added
+// behind TLS so local development is never pinned.
+function applySecurityHeaders(req, res) {
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("content-security-policy", "frame-ancestors 'none'");
+  res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+  res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  if (proto === "https" || req.socket?.encrypted) {
+    res.setHeader("strict-transport-security", "max-age=15552000; includeSubDomains");
+  }
+}
+
 function send(res, status, payload, type = "application/json; charset=utf-8") {
   const headers = {
     "content-type": type,
@@ -212,6 +226,7 @@ function machineObligations() {
 }
 
 async function handleRequest(req, res) {
+  applySecurityHeaders(req, res);
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
 

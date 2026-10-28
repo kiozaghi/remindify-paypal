@@ -315,6 +315,8 @@ The country comes from `x-vercel-ip-country`, `cf-ipcountry` or `x-country-code`
 
 The server partitions obligations, agents, runs, receipts, escrows, API keys and meta keys by workspace. A session cookie resolves to that account's workspace; a machine API key resolves to the workspace that issued it. New accounts get a seeded copy of the demo register in their own workspace, and `POST /api/demo/reset` only clears the caller's workspace. Auth rows (users, sessions, wallet challenges) live outside any workspace, so a reset never signs anyone out or touches another account.
 
+Every response, API and static, carries `x-content-type-options: nosniff`, `x-frame-options: DENY` with `content-security-policy: frame-ancestors 'none'`, `referrer-policy: strict-origin-when-cross-origin` and a `permissions-policy` that turns off camera, microphone, geolocation and payment. `strict-transport-security` is added when the request arrives over TLS.
+
 `POST /api/cron/outbox` and `POST /api/cron/sweep` are machine-only: they require a Bearer secret and return `404` when none is configured, so no session can reach them. See [Execution connectors](#execution-connectors) for the retry contract and [Scheduled sweeps](#scheduled-sweeps) for the sweep contract. The other public `/api/` routes are `GET /api/digest/unsubscribe` and `GET /api/digest/subscribe`, which only accept a recipient-signed token.
 
 Existing single-workspace databases are migrated in place: rows that predate this change are assigned to the `ws_demo` workspace.
