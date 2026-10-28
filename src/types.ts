@@ -302,7 +302,6 @@ export interface Stats {
   coverage: number;
   delegated: number;
   with_backup: number;
-  saved_year: number;
   agent_runs_30d: number;
   hours_saved: number;
   streak_weeks: number;

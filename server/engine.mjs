@@ -80,10 +80,6 @@ export function buildState() {
     Math.min(99, Math.round(100 - avgRisk * 0.62 + (withBackup / Math.max(1, active.length)) * 6))
   );
 
-  const savedYear = Math.round(
-    data.runs.filter((r) => r.status === "done").length * 0.35 + 1842
-  );
-
   const stats = {
     active: active.length,
     due_week: dueThisWeek.length,
@@ -94,7 +90,6 @@ export function buildState() {
     coverage,
     delegated: active.filter((o) => o.owner_kind === "agent").length,
     with_backup: withBackup,
-    saved_year: savedYear,
     agent_runs_30d: data.agents.reduce((s, a) => s + (a.runs_30d || 0), 0),
     hours_saved: Math.round(data.agents.reduce((s, a) => s + (a.hours_saved || 0), 0)),
     streak_weeks: getMeta("streak_weeks", 14),
