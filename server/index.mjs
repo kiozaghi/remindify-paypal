@@ -23,6 +23,7 @@ import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
 import { takeRateLimit } from "./ratelimit.mjs";
+import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
 import {
   billingSummary, canSwitchPlans, keyLimitReached, meterApiCall, PLANS, setPlan,
 } from "./billing.mjs";
@@ -813,6 +814,7 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/trust/escrows" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
       const input = await body(req);
       const result = createEscrow(input);
       return send(res, result.ok ? 201 : 422, { ...result, state: buildState() });
@@ -826,6 +828,7 @@ async function handleRequest(req, res) {
 
     const escrowFundMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/fund$/);
     if (escrowFundMatch && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
       const { tx_hash } = await body(req);
       const result = await fundEscrow({ id: escrowFundMatch[1], tx_hash });
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
@@ -833,6 +836,7 @@ async function handleRequest(req, res) {
 
     const escrowReleaseMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/release$/);
     if (escrowReleaseMatch && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
       const { proof_receipt_id, tx_hash } = await body(req);
       const result = await releaseEscrow({
         id: escrowReleaseMatch[1],
@@ -889,6 +893,13 @@ async function handleRequest(req, res) {
     console.error(error);
     return send(res, 500, { error: "server_error", message: error.message });
   }
+}
+
+// Money movement is refused in a blocked region even for an existing session.
+function regionBlockedResponse(req, res) {
+  if (!regionBlocked(req)) return false;
+  send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
+  return true;
 }
 
 function outboxSecretMatches(given) {

@@ -279,6 +279,17 @@ Signup sends a confirmation link to `/login?verify=…` when email is configured
 
 “Delete account…” in the account menu calls `POST /api/account/delete` with `{ "confirm": "delete" }`. Password accounts must also send the current password; wrong or missing credentials return `401` and change nothing. A successful call deletes that account's sessions and single-use tokens, purges its private workspace (`items` and `meta`), removes the user row and clears the session cookie. Accounts that share the demo workspace lose the account but not the shared register, which stays available to other demo accounts. There is no soft-delete window, so the dialog links to `GET /api/export` first. The endpoint is rate limited per IP.
 
+### Region gating
+
+Set `BLOCKED_COUNTRIES` to a comma-separated list of ISO 3166-1 alpha-2 codes (`KP,IR,SY,CU`) to refuse account creation and escrow money movement for visitors geolocated there. The default is empty: Remindify does not decide on its own which jurisdictions its operator may serve. When configured, these calls answer `451 {"error":"region_blocked"}`:
+
+- `POST /api/auth/signup`, `GET /api/auth/google` (and its callback, which redirects to `/login?notice=region_blocked`), `POST /api/auth/wallet/challenge` and `POST /api/auth/wallet/verify`;
+- `POST /api/trust/escrows`, `/fund` and `/release`.
+
+Sign-in for an existing account still works, so someone who moves or travels keeps access to their register; only new accounts and new money movement are refused.
+
+The country comes from `x-vercel-ip-country`, `cf-ipcountry` or `x-country-code`, in that order. Requests with no usable header are allowed so local development and self-hosted installs without a geo proxy keep working. These headers are only trustworthy behind a proxy you control: a client that reaches the Node server directly can send any value, so terminate traffic at Vercel or Cloudflare, or have your own proxy set the header from a source you trust. This is coarse geolocation, not a sanctions screening service; combine it with a provider check if you are required to screen individuals.
+
 ### API protection
 
 `/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`, `/api/account/delete`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
@@ -423,7 +434,7 @@ After deploying, set the env vars, restart the server, and rehearse the full flo
 | `POST` | `/api/trust/receipts/:id/sign` | Verify and store `{ signature, signer }`. |
 | `POST` | `/api/trust/receipts/:id/anchor` | Verify `{ tx_hash }` against the configured contract. |
 | `GET` | `/api/trust/receipts/:id/calldata` | Prepared `anchor(...)` calldata. |
-| `POST` | `/api/trust/escrows` | Open an intent. Requires `jurisdiction_ack: true`. |
+| `POST` | `/api/trust/escrows` | Open an intent. Requires `jurisdiction_ack: true`; `451` in a blocked region. |
 | `POST` | `/api/trust/escrows/:id/commit` | Commit the intent offchain. |
 | `POST` | `/api/trust/escrows/:id/fund` | Record `{ tx_hash }` when an escrow contract is configured. |
 | `POST` | `/api/trust/escrows/:id/release` | Release against `{ proof_receipt_id }` (or the latest signed receipt). |
@@ -442,6 +453,7 @@ curl -X POST http://localhost:4178/api/v1/trust/receipts \
 ### Guardrails
 
 - **Ethiopia stays offchain.** No wallets or USDC payments for Ethiopian obligations until the NBE authorises virtual-asset activity. Escrow creation requires an explicit `jurisdiction_ack: true` at the API boundary and a required checkbox in the UI. Celo is gated to non-Ethiopian counterparties.
+- **Operator-managed region list.** `BLOCKED_COUNTRIES` refuses new accounts and escrow movement from listed countries. It is empty unless the operator sets it, and it reads edge-proxy geolocation, not a sanctions list.
 - **No token.** No points, no airdrop, no speculative asset.
 - **No custody.** The server never holds a key and never moves funds.
 - **No forced wallet.** A receipt is useful the moment it is filed.
@@ -569,7 +581,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
 - connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;
 - take the reference contracts through an audit, add upgrade/ops procedures, and test anchor/fund/release against a deployed contract on Base Sepolia before mainnet;
-- add sanctions/geo checks to enforcement, not just the `jurisdiction_ack` boundary;
+- run a real sanctions/counterparty screen: `BLOCKED_COUNTRIES` is coarse IP geolocation plus the `jurisdiction_ack` checkbox, not a screening provider;
 - confirm or replace the placeholder `hello@remindify.app` and `security@remindify.app` inboxes.
 
 The design decisions that matter — autonomy ceilings, proof requirements, audit trail, human/agent parity — are already in the data model.

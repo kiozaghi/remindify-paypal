@@ -12,6 +12,7 @@ const NOTICES: Record<string, string> = {
   google_not_configured: "Google sign-in isn’t available on this build yet. Use email or a wallet instead.",
   google_state: "That Google sign-in link expired. Please try again.",
   google_failed: "Google sign-in didn’t complete. Try again, or continue with email.",
+  region_blocked: "Remindify isn’t available in your region.",
 };
 
 function GoogleGlyph() {

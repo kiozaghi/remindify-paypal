@@ -11,6 +11,7 @@ import {
 import { emailConfigured, sendEmail } from "./email.mjs";
 import { provisionWorkspace } from "./provision.mjs";
 import { DEMO_WORKSPACE } from "./workspace.mjs";
+import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
 
 const SESSION_COOKIE = "remindify_session";
 const OAUTH_COOKIE = "remindify_oauth";
@@ -336,6 +337,10 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       return true;
     }
     const input = await body(req);
+    if (regionBlocked(req)) {
+      send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
+      return true;
+    }
     const email = cleanEmail(input.email);
     const password = String(input.password || "");
     if (email.length > 254) {
@@ -568,6 +573,10 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
   }
 
   if (path === "/api/auth/google" && req.method === "GET") {
+    if (regionBlocked(req)) {
+      redirect(res, "/login?notice=region_blocked");
+      return true;
+    }
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
       redirect(res, "/login?notice=google_not_configured");
       return true;
@@ -603,6 +612,10 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       redirect(res, `/login?notice=${normaliseNotice("google_state")}`, cleared);
       return true;
     }
+    if (regionBlocked(req)) {
+      redirect(res, `/login?notice=${normaliseNotice("region_blocked")}`, cleared);
+      return true;
+    }
     try {
       const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${originFor(req)}/api/auth/google/callback`;
       const profile = await googleProfile(code, redirectUri);
@@ -623,6 +636,10 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
       return true;
     }
+    if (regionBlocked(req)) {
+      send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
+      return true;
+    }
     const input = await body(req);
     if (!isAddress(String(input.address || ""))) {
       send(res, 422, { error: "invalid_address", message: "That wallet address doesn't look right." });
@@ -641,6 +658,10 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
   if (path === "/api/auth/wallet/verify" && req.method === "POST") {
     if (limited(req, path, 30)) {
       send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
+      return true;
+    }
+    if (regionBlocked(req)) {
+      send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
       return true;
     }
     const input = await body(req);
