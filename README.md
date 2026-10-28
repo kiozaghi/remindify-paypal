@@ -160,18 +160,18 @@ npm test
 
 The public site is story-first rather than a feature grid. It explains the product through a leak, a letter, a desk, a proof receipt and a day line, then moves into product, trust, pricing and FAQ sections.
 
-Public routes use hash navigation so the same build works on any static host or behind the Node server:
+Public pages use real paths, so each one is a crawlable URL with its own metadata:
 
 | Route | Page |
 | --- | --- |
-| `/` or `#/home` | Story landing page |
-| `#/pricing` | Plans and the preview promise |
-| `#/security` | Security and trust model |
-| `#/about` | Why Remindify exists |
-| `#/privacy`, `#/terms` | Legal preview |
-| `#/login`, `#/signup` | Account access |
+| `/` | Story landing page |
+| `/pricing` | Plans and the preview promise |
+| `/security` | Security and trust model |
+| `/about` | Why Remindify exists |
+| `/privacy`, `/terms` | Legal preview |
+| `/login`, `/signup` | Account access |
 
-App routes (`#/today`, `#/obligations`, `#/capture`, `#/agents`, `#/market`, `#/activity`, `#/trust`, `#/access`) require a session. Visiting one while signed out opens the auth page with a `next` target, so email and wallet sign-in return to the requested surface.
+App routes (`/today`, `/obligations`, `/capture`, `/agents`, `/market`, `/activity`, `/trust`, `/access`) require a session. Visiting one while signed out opens the auth page with a `next` target, so email and wallet sign-in return to the requested surface. Old `#/route` links are still accepted and rewritten to the clean path.
 
 ### Sign-in methods
 
@@ -216,6 +216,34 @@ The server currently gates one shared demo workspace. Accounts do not yet partit
 - Google: requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and a registered redirect URI.
 - Wallet: requires a browser wallet for manual testing. The server flow is verified with viem-generated accounts.
 - Contacts: `hello@remindify.app` and `security@remindify.app` are placeholders until monitored inboxes are confirmed.
+
+### Search and AI discovery
+
+The production build prerenders the six public pages to static HTML, so search engines and AI crawlers receive the full story, pricing, security, about and legal copy without executing JavaScript. Login, signup and the workspace ship as noindex shells.
+
+The build also generates:
+
+| File | Purpose |
+| --- | --- |
+| `sitemap.xml` | Canonical URLs for the six indexable pages |
+| `robots.txt` | Allows public pages, blocks `/api/`, `/login`, `/signup` and the workspace |
+| `llms.txt` | Short, structured summary for AI crawlers |
+| `llms-full.txt` | Longer product, pricing, trust and FAQ reference |
+| `og.png` | 1200×630 social card |
+| `favicon.svg`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` | Icons |
+| `404.html` | Static not-found page |
+
+Every public page carries a canonical link, Open Graph and Twitter metadata, and a JSON-LD graph (Organization, WebSite, SoftwareApplication, WebPage, plus FAQPage on the home page and BreadcrumbList elsewhere). Navigation, footer, product cards and CTAs are real `<a href>` links.
+
+Set the canonical origin and optional verification values at build time:
+
+```bash
+PUBLIC_ORIGIN=https://your-domain.example
+GOOGLE_SITE_VERIFICATION=...   # Search Console HTML-tag value
+BING_SITE_VERIFICATION=...     # Bing Webmaster msvalidate.01 value
+```
+
+After deploying, submit `https://your-domain.example/sitemap.xml` in Google Search Console and Bing Webmaster Tools. To improve AI answers and entity confidence, keep the same name, description and URL on the site, GitHub, X, LinkedIn and any directory profile; add `llms.txt` links where a profile allows it. Do not expect AI crawlers to index pages blocked by `noindex` or `robots.txt`.
 
 ---
 
@@ -403,7 +431,7 @@ The default key is the seeded demo key. Issue a fresh one in **Agent access** an
 
 ```bash
 npm run dev              # API + Vite with proxy
-npm run build            # production bundle
+npm run build            # client + SSR prerender + sitemap/robots/llms
 npm start                # serve dist + API on :4178
 npm run mcp              # MCP stdio server
 npm test                 # parser, trust and contract regression tests (node:test)

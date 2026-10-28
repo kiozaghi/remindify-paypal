@@ -1,11 +1,29 @@
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import { Logo } from "../components/Logo";
 import type { AuthUser } from "../types";
-import { isAppRoute, type AppRoute, type PublicRoute, type Route } from "../lib/router";
+import {
+  appHref, isAppRoute, routeHref,
+  type AppRoute, type PublicRoute, type Route,
+} from "../lib/router";
 
 export type Navigate = (page: Route, params?: Record<string, string>) => void;
+
+/**
+ * Follow a link inside the single-page app without losing normal browser
+ * behaviour for modified clicks (new tab, new window, download).
+ */
+export function spaClick(action: () => void) {
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.button !== 0 || event.metaKey || event.ctrlKey
+      || event.shiftKey || event.altKey
+    ) return;
+    event.preventDefault();
+    action();
+  };
+}
 
 const LINKS: Array<{ label: string; page: PublicRoute; section?: string }> = [
   { label: "The story", page: "home", section: "story" },
@@ -14,6 +32,10 @@ const LINKS: Array<{ label: string; page: PublicRoute; section?: string }> = [
   { label: "Pricing", page: "pricing" },
   { label: "About", page: "about" },
 ];
+
+function linkHref(link: typeof LINKS[number]) {
+  return link.section ? routeHref("home", { section: link.section }) : routeHref(link.page);
+}
 
 export function PublicNav({
   page, onNavigate, user, dark = false,
@@ -41,17 +63,26 @@ export function PublicNav({
 
   return (
     <header className={`site-nav ${dark ? "site-nav-dark" : ""}`}>
-      <button className="site-brand" onClick={() => onNavigate("home")}>
+      <a
+        className="site-brand"
+        href={routeHref("home")}
+        onClick={spaClick(() => onNavigate("home"))}
+      >
         <Logo />
         <span className="site-word">remindify</span>
         <span className="site-beta">preview</span>
-      </button>
+      </a>
 
       <nav className="site-links" aria-label="Primary">
         {LINKS.map((link) => (
-          <button key={link.label} onClick={() => go(link)} className={page === link.page && !link.section ? "on" : ""}>
+          <a
+            key={link.label}
+            href={linkHref(link)}
+            onClick={spaClick(() => go(link))}
+            className={page === link.page && !link.section ? "on" : ""}
+          >
             {link.label}
-          </button>
+          </a>
         ))}
       </nav>
 
@@ -62,16 +93,30 @@ export function PublicNav({
               <i />
               {user.name.split(/\s+/)[0]}
             </span>
-            <button className="btn btn-lime btn-sm" onClick={() => openApp("today")}>
+            <a
+              className="btn btn-lime btn-sm"
+              href={appHref("today", user)}
+              onClick={spaClick(() => openApp("today"))}
+            >
               Open workspace <Icon name="arrowRight" size={14} />
-            </button>
+            </a>
           </>
         ) : (
           <>
-            <button className="site-login" onClick={() => onNavigate("login")}>Sign in</button>
-            <button className="btn btn-ink btn-sm" onClick={() => onNavigate("signup")}>
+            <a
+              className="site-login"
+              href={routeHref("login")}
+              onClick={spaClick(() => onNavigate("login"))}
+            >
+              Sign in
+            </a>
+            <a
+              className="btn btn-ink btn-sm"
+              href={routeHref("signup")}
+              onClick={spaClick(() => onNavigate("signup"))}
+            >
               Start free <Icon name="arrowRight" size={14} />
-            </button>
+            </a>
           </>
         )}
         <button className="site-menu-btn" onClick={() => setOpen(!open)} aria-label="Menu" aria-expanded={open}>
@@ -82,22 +127,51 @@ export function PublicNav({
       {open && (
         <div className="site-mobile">
           {LINKS.map((link) => (
-            <button key={link.label} onClick={() => go(link)}>{link.label}</button>
+            <a
+              key={link.label}
+              href={linkHref(link)}
+              onClick={spaClick(() => go(link))}
+            >
+              {link.label}
+            </a>
           ))}
           <div className="site-mobile-products">
             <span className="eyebrow">Inside the register</span>
-            <button onClick={() => openApp("today")}>Today</button>
-            <button onClick={() => openApp("obligations")}>Obligations</button>
-            <button onClick={() => openApp("agents")}>Agents</button>
-            <button onClick={() => openApp("trust")}>Proof &amp; escrow</button>
+            {(["today", "obligations", "agents", "trust"] as AppRoute[]).map((route) => (
+              <a
+                key={route}
+                href={appHref(route, user)}
+                onClick={spaClick(() => openApp(route))}
+              >
+                {route === "today" ? "Today" : route === "obligations" ? "Obligations" : route === "agents" ? "Agents" : "Proof & escrow"}
+              </a>
+            ))}
           </div>
           <div className="site-mobile-actions">
             {user ? (
-              <button className="btn btn-lime" onClick={() => openApp("today")}>Open workspace</button>
+              <a
+                className="btn btn-lime"
+                href={appHref("today", user)}
+                onClick={spaClick(() => openApp("today"))}
+              >
+                Open workspace
+              </a>
             ) : (
               <>
-                <button className="btn btn-ghost" onClick={() => { setOpen(false); onNavigate("login"); }}>Sign in</button>
-                <button className="btn btn-ink" onClick={() => { setOpen(false); onNavigate("signup"); }}>Start free</button>
+                <a
+                  className="btn btn-ghost"
+                  href={routeHref("login")}
+                  onClick={spaClick(() => { setOpen(false); onNavigate("login"); })}
+                >
+                  Sign in
+                </a>
+                <a
+                  className="btn btn-ink"
+                  href={routeHref("signup")}
+                  onClick={spaClick(() => { setOpen(false); onNavigate("signup"); })}
+                >
+                  Start free
+                </a>
               </>
             )}
           </div>
@@ -108,10 +182,17 @@ export function PublicNav({
 }
 
 export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?: AuthUser | null }) {
-  const open = (page: Route) => {
+  const goPublic = (page: PublicRoute, section?: string) => {
+    if (section) onNavigate("home", { section });
+    else onNavigate(page);
+  };
+
+  const productHref = (page: AppRoute) => appHref(page, user);
+  const openProduct = (page: AppRoute) => {
     if (!user && isAppRoute(page)) onNavigate("login", { next: page });
     else onNavigate(page);
   };
+
   return (
     <footer className="site-footer">
       <div className="site-footer-main">
@@ -124,11 +205,29 @@ export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?
           </p>
           <div className="site-footer-actions">
             {user ? (
-              <button className="btn btn-lime btn-sm" onClick={() => open("today")}>Open workspace <Icon name="arrowRight" size={14} /></button>
+              <a
+                className="btn btn-lime btn-sm"
+                href={appHref("today", user)}
+                onClick={spaClick(() => openProduct("today"))}
+              >
+                Open workspace <Icon name="arrowRight" size={14} />
+              </a>
             ) : (
               <>
-                <button className="btn btn-lime btn-sm" onClick={() => open("signup")}>Start free <Icon name="arrowRight" size={14} /></button>
-                <button className="site-footer-signin" onClick={() => open("login")}>Sign in</button>
+                <a
+                  className="btn btn-lime btn-sm"
+                  href={routeHref("signup")}
+                  onClick={spaClick(() => onNavigate("signup"))}
+                >
+                  Start free <Icon name="arrowRight" size={14} />
+                </a>
+                <a
+                  className="site-footer-signin"
+                  href={routeHref("login")}
+                  onClick={spaClick(() => onNavigate("login"))}
+                >
+                  Sign in
+                </a>
               </>
             )}
           </div>
@@ -136,25 +235,29 @@ export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?
 
         <div className="site-footer-col">
           <span className="eyebrow">Product</span>
-          <button onClick={() => open("today")}>Today</button>
-          <button onClick={() => open("obligations")}>Obligations</button>
-          <button onClick={() => open("agents")}>Agents</button>
-          <button onClick={() => open("market")}>Marketplace</button>
-          <button onClick={() => open("trust")}>Proof &amp; escrow</button>
+          {(["today", "obligations", "agents", "market", "trust"] as AppRoute[]).map((route) => (
+            <a
+              key={route}
+              href={productHref(route)}
+              onClick={spaClick(() => openProduct(route))}
+            >
+              {route === "today" ? "Today" : route === "obligations" ? "Obligations" : route === "agents" ? "Agents" : route === "market" ? "Marketplace" : "Proof & escrow"}
+            </a>
+          ))}
         </div>
 
         <div className="site-footer-col">
           <span className="eyebrow">Company</span>
-          <button onClick={() => open("about")}>About</button>
-          <button onClick={() => open("security")}>Security &amp; trust</button>
-          <button onClick={() => open("pricing")}>Pricing</button>
-          <button onClick={() => open("home")}>Manifesto</button>
+          <a href={routeHref("about")} onClick={spaClick(() => goPublic("about"))}>About</a>
+          <a href={routeHref("security")} onClick={spaClick(() => goPublic("security"))}>Security &amp; trust</a>
+          <a href={routeHref("pricing")} onClick={spaClick(() => goPublic("pricing"))}>Pricing</a>
+          <a href={routeHref("home", { section: "story" })} onClick={spaClick(() => goPublic("home", "story"))}>Manifesto</a>
         </div>
 
         <div className="site-footer-col">
           <span className="eyebrow">Small print</span>
-          <button onClick={() => open("privacy")}>Privacy</button>
-          <button onClick={() => open("terms")}>Terms</button>
+          <a href={routeHref("privacy")} onClick={spaClick(() => goPublic("privacy"))}>Privacy</a>
+          <a href={routeHref("terms")} onClick={spaClick(() => goPublic("terms"))}>Terms</a>
           <a href="mailto:hello@remindify.app">hello@remindify.app</a>
           <a href="https://base.org" target="_blank" rel="noreferrer">Base ecosystem <Icon name="arrowUpRight" size={11} /></a>
         </div>
@@ -179,11 +282,16 @@ export function SectionTag({ children, light = false }: { children: ReactNode; l
 }
 
 export function ArrowLink({
-  children, onClick, light = false,
-}: { children: ReactNode; onClick: () => void; light?: boolean }) {
+  children, href, onClick, light = false,
+}: {
+  children: ReactNode;
+  href: string;
+  onClick: () => void;
+  light?: boolean;
+}) {
   return (
-    <button className={`arrow-link ${light ? "light" : ""}`} onClick={onClick}>
+    <a className={`arrow-link ${light ? "light" : ""}`} href={href} onClick={spaClick(onClick)}>
       {children} <Icon name="arrowRight" size={15} />
-    </button>
+    </a>
   );
 }

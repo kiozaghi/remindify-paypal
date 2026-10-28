@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import type { AuthUser } from "../types";
-import type { PublicRoute } from "../lib/router";
+import { appHref, routeHref, type PublicRoute } from "../lib/router";
 import {
-  ArrowLink, PublicFooter, PublicNav, SectionTag, type Navigate,
+  ArrowLink, PublicFooter, PublicNav, SectionTag, spaClick, type Navigate,
 } from "./Chrome";
 import { FAQS, PLANS } from "./data";
 import { scrollToId, useReveal } from "./hooks";
@@ -55,10 +55,20 @@ export function PricingPage({ onNavigate, user }: PageProps) {
         lede="Start free while Remindify is in preview. Upgrade when the register is carrying real work. No token, no usage trap, no card to begin."
         actions={
           <>
-            <button className="btn btn-ink btn-lg" onClick={start}>
+            <a
+              className="btn btn-ink btn-lg"
+              href={routeHref(user ? "today" : "signup")}
+              onClick={spaClick(start)}
+            >
               {user ? "Open your register" : "Start free"} <Icon name="arrowRight" size={16} />
-            </button>
-            <button className="btn btn-quiet btn-lg" onClick={() => onNavigate("security")}>Read the trust model</button>
+            </a>
+            <a
+              className="btn btn-quiet btn-lg"
+              href={routeHref("security")}
+              onClick={spaClick(() => onNavigate("security"))}
+            >
+              Read the trust model
+            </a>
           </>
         }
         aside={
@@ -87,9 +97,13 @@ export function PricingPage({ onNavigate, user }: PageProps) {
               <ul>
                 {plan.features.map((feature) => <li key={feature}><Icon name="check" size={12} /> {feature}</li>)}
               </ul>
-              <button className={`btn ${plan.featured ? "btn-lime" : plan.tone === "lime" ? "btn-ink" : "btn-ghost"} btn-sm`} onClick={start}>
+              <a
+                className={`btn ${plan.featured ? "btn-lime" : plan.tone === "lime" ? "btn-ink" : "btn-ghost"} btn-sm`}
+                href={routeHref(user ? "today" : "signup")}
+                onClick={spaClick(start)}
+              >
                 {plan.cta} <Icon name="arrowRight" size={13} />
-              </button>
+              </a>
             </article>
           ))}
         </div>
@@ -142,9 +156,13 @@ export function PricingPage({ onNavigate, user }: PageProps) {
           <SectionTag light>Start small</SectionTag>
           <h2>Put one recurring thing<br /><em>somewhere safe.</em></h2>
         </div>
-        <button className="btn btn-lime btn-lg" onClick={start}>
+        <a
+          className="btn btn-lime btn-lg"
+          href={routeHref(user ? "today" : "signup")}
+          onClick={spaClick(start)}
+        >
           {user ? "Open your register" : "Start free"} <Icon name="arrowRight" size={16} />
-        </button>
+        </a>
       </section>
     </PageFrame>
   );
@@ -161,10 +179,20 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
         lede="Remindify is built around a simple rule: the parts that matter should be inspectable, and the parts that move money should require your signature. Here is the model, including the parts that are still preview."
         actions={
           <>
-            <button className="btn btn-ink btn-lg" onClick={start}>
+            <a
+              className="btn btn-ink btn-lg"
+              href={routeHref(user ? "today" : "signup")}
+              onClick={spaClick(start)}
+            >
               {user ? "Open your register" : "Start free"} <Icon name="arrowRight" size={16} />
-            </button>
-            <button className="btn btn-quiet btn-lg" onClick={() => onNavigate("trust")}>Open the trust layer</button>
+            </a>
+            <a
+              className="btn btn-quiet btn-lg"
+              href={appHref("trust", user)}
+              onClick={spaClick(() => onNavigate(user ? "trust" : "login", user ? undefined : { next: "trust" }))}
+            >
+              Open the trust layer
+            </a>
           </>
         }
         aside={
@@ -292,9 +320,13 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
           <SectionTag light>Ready when you are</SectionTag>
           <h2>Start offchain.<br /><em>Add proof later.</em></h2>
         </div>
-        <button className="btn btn-lime btn-lg" onClick={start}>
+        <a
+          className="btn btn-lime btn-lg"
+          href={routeHref(user ? "today" : "signup")}
+          onClick={spaClick(start)}
+        >
           {user ? "Open your register" : "Start free"} <Icon name="arrowRight" size={16} />
-        </button>
+        </a>
       </section>
     </PageFrame>
   );
@@ -311,10 +343,20 @@ export function AboutPage({ onNavigate, user }: PageProps) {
         lede="Remindify started with an uncomfortable observation: the people who keep a life or a business running are rarely the ones with the most time. They are the ones who notice. This is a product for them."
         actions={
           <>
-            <button className="btn btn-ink btn-lg" onClick={start}>
+            <a
+              className="btn btn-ink btn-lg"
+              href={routeHref(user ? "today" : "signup")}
+              onClick={spaClick(start)}
+            >
               {user ? "Open your register" : "Start your register"} <Icon name="arrowRight" size={16} />
-            </button>
-            <button className="btn btn-quiet btn-lg" onClick={() => onNavigate("home")}>Read the story</button>
+            </a>
+            <a
+              className="btn btn-quiet btn-lg"
+              href={routeHref("home")}
+              onClick={spaClick(() => onNavigate("home"))}
+            >
+              Read the story
+            </a>
           </>
         }
         aside={
@@ -412,9 +454,13 @@ export function AboutPage({ onNavigate, user }: PageProps) {
           <h2>If this sounds like your week,<br /><em>you are who we built it for.</em></h2>
           <p>Start with one obligation. Tell us what feels missing. The preview is meant to be shaped by the people using it.</p>
         </div>
-        <button className="btn btn-ink btn-lg" onClick={start}>
+        <a
+          className="btn btn-ink btn-lg"
+          href={routeHref(user ? "today" : "signup")}
+          onClick={spaClick(start)}
+        >
           {user ? "Open your register" : "Start free"} <Icon name="arrowRight" size={16} />
-        </button>
+        </a>
       </section>
     </PageFrame>
   );
@@ -474,7 +520,9 @@ export function LegalPage({ kind, onNavigate, user }: PageProps & { kind: "priva
           ))}
           <div className="legal-foot">
             <span>Remindify · preview terms</span>
-            <button onClick={() => onNavigate("home")}>Back to the story <Icon name="arrowRight" size={13} /></button>
+            <a href={routeHref("home")} onClick={spaClick(() => onNavigate("home"))}>
+              Back to the story <Icon name="arrowRight" size={13} />
+            </a>
           </div>
         </div>
       </section>
@@ -530,7 +578,7 @@ const PRIVACY: LegalSection[] = [
   {
     title: "Retention",
     body: [
-      "We keep account and workspace data while your account is active. The preview database is local to the deployment you are using. If you ask us to delete an account, we will remove the account and its sessions; records already written to a public chain cannot be deleted by us or anyone else.",
+      "We keep account and workspace data while your account is active. Production workspaces live in a managed Postgres database; local development uses SQLite. If you ask us to delete an account, we will remove the account and its sessions; records already written to a public chain cannot be deleted by us or anyone else.",
     ],
   },
   {

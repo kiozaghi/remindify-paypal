@@ -1,0 +1,14 @@
+{
+  "name": "Remindify — the register for everything that comes back",
+  "short_name": "Remindify",
+  "description": "The calm register for renewals, filings, payroll, people and proof, handled by humans and agents.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EDE9DF",
+  "theme_color": "#EDE9DF",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -355,7 +355,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
 
   if (path === "/api/auth/google" && req.method === "GET") {
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-      redirect(res, "/#/login?notice=google_not_configured");
+      redirect(res, "/login?notice=google_not_configured");
       return true;
     }
     const state = randomBytes(24).toString("base64url");
@@ -386,7 +386,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
     const state = url.searchParams.get("state");
     const code = url.searchParams.get("code");
     if (!expected || !state || expected !== state || !code) {
-      redirect(res, `/#/login?notice=${normaliseNotice("google_state")}`, cleared);
+      redirect(res, `/login?notice=${normaliseNotice("google_state")}`, cleared);
       return true;
     }
     try {
@@ -395,11 +395,11 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       const user = findOrCreateGoogleUser(profile);
       startSession(req, res, user.id);
       appendCookie(res, cleared);
-      redirect(res, "/#/today");
+      redirect(res, "/today");
     } catch (error) {
       console.error("Google sign-in failed:", error.message);
       const notice = error.message === "google_not_configured" ? "google_not_configured" : "google_failed";
-      redirect(res, `/#/login?notice=${normaliseNotice(notice)}`, cleared);
+      redirect(res, `/login?notice=${normaliseNotice(notice)}`, cleared);
     }
     return true;
   }

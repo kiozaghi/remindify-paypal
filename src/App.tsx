@@ -6,7 +6,10 @@ import { Logo } from "./components/Logo";
 import { Monogram } from "./components/ui";
 import Landing from "./landing/Landing";
 import AuthPage from "./landing/AuthPage";
-import { isAppRoute, isAuthRoute, navigateTo, readLocation } from "./lib/router";
+import {
+  NAV_EVENT, isAppRoute, isAuthRoute, isPublicRoute, navigateTo, readLocation,
+} from "./lib/router";
+import { applySeo } from "./lib/seo";
 import Today from "./views/Today";
 import Obligations from "./views/Obligations";
 import Capture from "./views/Capture";
@@ -280,18 +283,37 @@ function Root() {
     const sync = () => setLocation(readLocation());
     window.addEventListener("hashchange", sync);
     window.addEventListener("popstate", sync);
+    window.addEventListener(NAV_EVENT, sync);
     return () => {
       window.removeEventListener("hashchange", sync);
       window.removeEventListener("popstate", sync);
+      window.removeEventListener(NAV_EVENT, sync);
     };
   }, []);
 
   useEffect(() => {
-    const section = location.params.get("section");
-    if (location.page === "home" && section) {
+    applySeo(location.page);
+  }, [location.page]);
+
+  useEffect(() => {
+    if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+  }, []);
+
+  useEffect(() => {
+    const section = location.page === "home"
+      ? location.params.get("section") || window.location.hash.replace(/^#\/?/, "")
+      : "";
+    if (location.page === "home" && section && !section.includes("/")) {
+      const startY = window.scrollY;
+      const jump = (behavior: ScrollBehavior) => document
+        .getElementById(section)
+        ?.scrollIntoView({ behavior, block: "start" });
+      jump("smooth");
+      // Some browsers suppress smooth scrolling (reduced motion, embedded views).
+      // If nothing moved, jump instantly rather than leaving the visitor at the top.
       const timer = window.setTimeout(() => {
-        document.getElementById(section)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 80);
+        if (Math.abs(window.scrollY - startY) < 4) jump("auto");
+      }, 240);
       return () => window.clearTimeout(timer);
     }
     window.scrollTo({ top: 0 });
@@ -301,7 +323,14 @@ function Root() {
     if (user && isAuthRoute(location.page)) navigateTo("today");
   }, [user, location.page]);
 
-  if (loading) return <BootScreen />;
+  if (loading) {
+    // Public pages are prerendered to static HTML. Render the same markup while
+    // the session check runs so hydration is clean and visitors see content first.
+    if (isPublicRoute(location.page) && !isAuthRoute(location.page)) {
+      return <Landing page={location.page} onNavigate={navigateTo} />;
+    }
+    return <BootScreen />;
+  }
 
   if (!user) {
     if (isAppRoute(location.page)) {

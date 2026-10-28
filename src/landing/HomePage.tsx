@@ -1,8 +1,8 @@
 import { Icon } from "../components/Icon";
 import type { AuthUser } from "../types";
-import type { Route } from "../lib/router";
+import { appHref, routeHref, type Route } from "../lib/router";
 import {
-  ArrowLink, PublicFooter, PublicNav, SectionTag, type Navigate,
+  ArrowLink, PublicFooter, PublicNav, SectionTag, spaClick, type Navigate,
 } from "./Chrome";
 import { CHAPTERS, FAQS, PLANS, PRODUCTS } from "./data";
 import { scrollToId, useActiveSection, useReveal, useScrollProgress } from "./hooks";
@@ -25,15 +25,19 @@ export default function HomePage({
 
       <aside className="story-rail" aria-label="The story">
         {CHAPTERS.map((chapter, index) => (
-          <button
+          <a
             key={chapter.id}
+            href={`#${chapter.id}`}
             className={active === chapter.id ? "on" : ""}
-            onClick={() => scrollToId(chapter.id)}
+            onClick={(event) => {
+              event.preventDefault();
+              scrollToId(chapter.id);
+            }}
             aria-label={`Go to ${chapter.label}`}
           >
             <i>{String(index + 1).padStart(2, "0")}</i>
             <span>{chapter.label}</span>
-          </button>
+          </a>
         ))}
       </aside>
 
@@ -55,13 +59,21 @@ export default function HomePage({
                 when it matters.
               </p>
               <div className="hero-story-actions">
-                <button className="btn btn-ink btn-lg" onClick={openPrimary}>
+                <a
+                  className="btn btn-ink btn-lg"
+                  href={routeHref(primary)}
+                  onClick={spaClick(openPrimary)}
+                >
                   {user ? "Open your register" : "Start your register"}
                   <Icon name="arrowRight" size={16} />
-                </button>
-                <button className="btn btn-quiet btn-lg" onClick={() => scrollToId("story")}>
+                </a>
+                <a
+                  className="btn btn-quiet btn-lg"
+                  href="#story"
+                  onClick={(event) => { event.preventDefault(); scrollToId("story"); }}
+                >
                   Walk through the story <Icon name="chevronDown" size={15} />
-                </button>
+                </a>
               </div>
               <div className="hero-trustline">
                 <span><i className="dot dot-teal" /> Email, Google or wallet</span>
@@ -143,9 +155,14 @@ export default function HomePage({
               <span>RENEWALS</span><i />
               <span>FILINGS</span><i />
             </div>
-            <button className="hero-scroll" onClick={() => scrollToId("story")} aria-label="Scroll to the story">
+            <a
+              className="hero-scroll"
+              href="#story"
+              onClick={(event) => { event.preventDefault(); scrollToId("story"); }}
+              aria-label="Scroll to the story"
+            >
               <span>Scroll</span><Icon name="chevronDown" size={14} />
-            </button>
+            </a>
           </div>
         </section>
 
@@ -203,7 +220,10 @@ export default function HomePage({
                 <li><span>02</span> The parser finds the date, amount, provider and recurrence.</li>
                 <li><span>03</span> You confirm the owner, the backup and what proof counts.</li>
               </ul>
-              <ArrowLink onClick={() => onNavigate(user ? "capture" : "login", user ? undefined : { next: "capture" })}>
+              <ArrowLink
+                href={appHref("capture", user)}
+                onClick={() => onNavigate(user ? "capture" : "login", user ? undefined : { next: "capture" })}
+              >
                 Try capture
               </ArrowLink>
             </div>
@@ -262,7 +282,10 @@ export default function HomePage({
                 <li><span>02</span> Autonomy from notify to prepare to approve to autopilot.</li>
                 <li><span>03</span> Evidence required before anything counts as complete.</li>
               </ul>
-              <ArrowLink onClick={() => onNavigate(user ? "obligations" : "login", user ? undefined : { next: "obligations" })}>
+              <ArrowLink
+                href={appHref("obligations", user)}
+                onClick={() => onNavigate(user ? "obligations" : "login", user ? undefined : { next: "obligations" })}
+              >
                 See the register
               </ArrowLink>
             </div>
@@ -332,7 +355,10 @@ export default function HomePage({
                 <li><span>02</span> Hire a specialist for one obligation, not your whole life.</li>
                 <li><span>03</span> Payment releases against accepted proof.</li>
               </ul>
-              <ArrowLink onClick={() => onNavigate(user ? "agents" : "login", user ? undefined : { next: "agents" })}>
+              <ArrowLink
+                href={appHref("agents", user)}
+                onClick={() => onNavigate(user ? "agents" : "login", user ? undefined : { next: "agents" })}
+              >
                 Meet the bench
               </ArrowLink>
             </div>
@@ -397,7 +423,11 @@ export default function HomePage({
                 <span><Icon name="wallet" size={13} /> Wallet optional</span>
                 <span><Icon name="globe" size={13} /> Base-first · Celo-ready</span>
               </div>
-              <ArrowLink light onClick={() => onNavigate(user ? "trust" : "login", user ? undefined : { next: "trust" })}>
+              <ArrowLink
+                light
+                href={appHref("trust", user)}
+                onClick={() => onNavigate(user ? "trust" : "login", user ? undefined : { next: "trust" })}
+              >
                 Open the trust layer
               </ArrowLink>
             </div>
@@ -443,7 +473,7 @@ export default function HomePage({
               <blockquote>
                 “The point isn’t to do more.<br /><em>It’s to carry less.”</em>
               </blockquote>
-              <ArrowLink onClick={openPrimary}>
+              <ArrowLink href={routeHref(primary)} onClick={openPrimary}>
                 {user ? "Open your register" : "Make your register"}
               </ArrowLink>
             </div>
@@ -492,12 +522,13 @@ export default function HomePage({
           </div>
           <div className="product-grid">
             {PRODUCTS.map((product, index) => (
-              <button
+              <a
                 key={product.route}
                 className="product-card"
+                href={appHref(product.route, user)}
                 data-reveal
                 style={{ transitionDelay: `${index * 45}ms` }}
-                onClick={() => onNavigate(user ? product.route : "login", user ? undefined : { next: product.route })}
+                onClick={spaClick(() => onNavigate(user ? product.route : "login", user ? undefined : { next: product.route }))}
               >
                 <div className="product-card-top">
                   <span className={`product-icon tone-${product.tone}`}><Icon name={product.icon} size={18} /></span>
@@ -506,7 +537,7 @@ export default function HomePage({
                 <h3>{product.title}</h3>
                 <p>{product.copy}</p>
                 <span className="product-open">Open <Icon name="arrowUpRight" size={13} /></span>
-              </button>
+              </a>
             ))}
           </div>
         </section>
@@ -522,7 +553,9 @@ export default function HomePage({
                 No server-held keys. USDC is the only asset that can move, and only when
                 you sign the transaction yourself.
               </p>
-              <ArrowLink light onClick={() => onNavigate("security")}>Read the security model</ArrowLink>
+              <ArrowLink light href={routeHref("security")} onClick={() => onNavigate("security")}>
+                Read the security model
+              </ArrowLink>
             </div>
             <div className="trust-cards" data-reveal>
               <article>
@@ -575,15 +608,21 @@ export default function HomePage({
                 <ul>
                   {plan.features.slice(0, 4).map((feature) => <li key={feature}><Icon name="check" size={12} /> {feature}</li>)}
                 </ul>
-                <button className={`btn ${plan.featured ? "btn-lime" : "btn-ghost"} btn-sm`} onClick={openPrimary}>
+                <a
+                  className={`btn ${plan.featured ? "btn-lime" : "btn-ghost"} btn-sm`}
+                  href={routeHref(primary)}
+                  onClick={spaClick(openPrimary)}
+                >
                   {plan.cta} <Icon name="arrowRight" size={13} />
-                </button>
+                </a>
               </article>
             ))}
           </div>
           <div className="pricing-preview-foot" data-reveal>
             <span>Preview pricing · billing opens after the private beta</span>
-            <button onClick={() => onNavigate("pricing")}>Compare plans <Icon name="arrowRight" size={13} /></button>
+            <a href={routeHref("pricing")} onClick={spaClick(() => onNavigate("pricing"))}>
+              Compare plans <Icon name="arrowRight" size={13} />
+            </a>
           </div>
         </section>
 
@@ -594,7 +633,9 @@ export default function HomePage({
               <SectionTag>Questions</SectionTag>
               <h2>The short<br /><em>answers.</em></h2>
               <p>Still curious? Start the preview and ask us inside.</p>
-              <button className="link-btn" onClick={() => onNavigate("about")}>Why we built this <Icon name="arrowRight" size={13} /></button>
+              <a className="link-btn" href={routeHref("about")} onClick={spaClick(() => onNavigate("about"))}>
+                Why we built this <Icon name="arrowRight" size={13} />
+              </a>
             </div>
             <div className="faq-list" data-reveal>
               {FAQS.map((faq, index) => (
@@ -618,12 +659,20 @@ export default function HomePage({
               an owner. It takes about ninety seconds. The relief lasts longer.
             </p>
             <div className="ending-actions">
-              <button className="btn btn-lime btn-lg" onClick={openPrimary}>
+              <a
+                className="btn btn-lime btn-lg"
+                href={routeHref(primary)}
+                onClick={spaClick(openPrimary)}
+              >
                 {user ? "Open your register" : "Start your register"} <Icon name="arrowRight" size={16} />
-              </button>
-              <button className="btn btn-ghost-light btn-lg" onClick={() => scrollToId("story")}>
+              </a>
+              <a
+                className="btn btn-ghost-light btn-lg"
+                href="#story"
+                onClick={(event) => { event.preventDefault(); scrollToId("story"); }}
+              >
                 Read the story again
-              </button>
+              </a>
             </div>
             <span className="ending-small">Free while in preview · no card · no token · wallet optional</span>
           </div>

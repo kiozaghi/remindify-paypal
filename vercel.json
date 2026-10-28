@@ -3,6 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "trailingSlash": false,
   "functions": {
     "api/index.js": {
       "maxDuration": 30
@@ -12,6 +13,35 @@
     {
       "source": "/api/(.*)",
       "destination": "/api/index?__path=$1"
+    },
+    { "source": "/pricing", "destination": "/pricing/index.html" },
+    { "source": "/security", "destination": "/security/index.html" },
+    { "source": "/about", "destination": "/about/index.html" },
+    { "source": "/privacy", "destination": "/privacy/index.html" },
+    { "source": "/terms", "destination": "/terms/index.html" },
+    { "source": "/login", "destination": "/login/index.html" },
+    { "source": "/signup", "destination": "/signup/index.html" },
+    { "source": "/today", "destination": "/today/index.html" },
+    { "source": "/obligations", "destination": "/obligations/index.html" },
+    { "source": "/capture", "destination": "/capture/index.html" },
+    { "source": "/agents", "destination": "/agents/index.html" },
+    { "source": "/market", "destination": "/market/index.html" },
+    { "source": "/activity", "destination": "/activity/index.html" },
+    { "source": "/trust", "destination": "/trust/index.html" },
+    { "source": "/access", "destination": "/access/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*).(png|svg|webmanifest)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800" }
+      ]
     }
   ]
 }

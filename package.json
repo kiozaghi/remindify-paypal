@@ -3,21 +3,24 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Remindify — the autonomy layer for everything that comes back.",
+  "description": "Remindify \u2014 the autonomy layer for everything that comes back.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "node server/dev.mjs",
-    "build": "vite build",
+    "build": "vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr --emptyOutDir && node scripts/seo.mjs",
     "start": "node server/index.mjs",
     "preview": "npm run build && npm start",
     "mcp": "node mcp/server.mjs",
     "contracts:compile": "node contracts/compile.mjs",
     "contracts:deploy": "node contracts/deploy.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit && vite build",
-    "test": "node --test test/*.test.mjs"
+    "check": "tsc --noEmit && npm run build",
+    "test": "node --test test/*.test.mjs",
+    "build:client": "vite build",
+    "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist-ssr --emptyOutDir",
+    "seo": "node scripts/seo.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "^6.4.299",

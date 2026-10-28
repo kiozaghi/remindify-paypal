@@ -2,6 +2,7 @@ import { useApp } from "../store";
 import { Icon } from "../components/Icon";
 import { Monogram } from "../components/ui";
 import { AUTONOMY } from "../lib/format";
+import { navigateTo } from "../lib/router";
 
 export default function Agents() {
   const { state, openAgent, actions, setOverlays, openHire } = useApp();
@@ -163,6 +164,6 @@ export default function Agents() {
 }
 
 function navigateApi(setOverlays: any) {
-  window.location.hash = "#/access";
+  navigateTo("access");
   setOverlays((o: any) => ({ ...o, palette: false }));
 }

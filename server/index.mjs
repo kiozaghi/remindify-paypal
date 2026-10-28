@@ -29,6 +29,9 @@ const MIME = {
   ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
   ".png": "image/png",
@@ -603,12 +606,20 @@ async function handleRequest(req, res) {
     if (path.startsWith("/api/")) return send(res, 404, { error: "not_found", path });
 
     // ---------- Static app ----------
-    let filePath = join(DIST, normalize(path).replace(/^(\.\.[\/\\])+/, ""));
+    const cleanPath = normalize(path).replace(/^(\.\.[\/\\])+/, "").replace(/\/+$/, "");
+    let filePath = join(DIST, cleanPath);
     try {
       const info = await stat(filePath);
       if (info.isDirectory()) filePath = join(filePath, "index.html");
     } catch {
-      filePath = join(DIST, "index.html");
+      // Clean URL: /pricing -> dist/pricing/index.html
+      const directoryIndex = join(DIST, cleanPath, "index.html");
+      try {
+        await stat(directoryIndex);
+        filePath = directoryIndex;
+      } catch {
+        filePath = join(DIST, "index.html");
+      }
     }
     try {
       const content = await readFile(filePath);

@@ -195,7 +195,7 @@ export default function Activity() {
             <div className="audit-facts">
               <div><span>Oldest retained event</span><strong>{dateShortYear(state.events[state.events.length - 1]?.created_at || state.now)}</strong></div>
               <div><span>Machine API calls</span><strong>{state.api_calls.toLocaleString()}</strong></div>
-              <div><span>Data location</span><strong>Local SQLite</strong></div>
+              <div><span>Data location</span><strong>Managed database</strong></div>
             </div>
           </section>
         </aside>

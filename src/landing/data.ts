@@ -28,7 +28,7 @@ export const PRODUCTS: Array<{
     route: "capture",
     icon: "sparkle",
     title: "Capture",
-    copy: "Paste a letter, a school email or a messy note. The on-device parser turns prose into a structured obligation.",
+    copy: "Paste a letter, a school email or a messy note. A deterministic parser turns prose into a structured obligation. No AI API required.",
     tone: "violet",
     badge: "From mess to model",
   },
@@ -151,11 +151,11 @@ export const FAQS = [
   },
   {
     q: "Is the product live?",
-    a: "This is a preview build. The core workspace is functional and every button writes to the local register. Billing, hosted workspaces and onchain contracts are being prepared. Pricing shown is preview pricing.",
+    a: "This is a preview build. The core workspace is functional and every action writes to the live register. Billing, paid workspaces and onchain contracts are still being prepared. Pricing shown is preview pricing.",
   },
   {
     q: "What happens to my data?",
-    a: "The demo stores your workspace in a local SQLite file. Accounts and sessions live in separate tables. Capture parsing runs on the server without sending your text to a third party. Google sign-in is optional and uses Google's OAuth flow.",
+    a: "Your workspace is stored in the deployment's Postgres database; local development uses SQLite. Accounts and sessions live in separate tables. Capture parsing runs on the server without sending your text to a third party or to an AI model. Google sign-in is optional and uses Google's OAuth flow.",
   },
 ];
 

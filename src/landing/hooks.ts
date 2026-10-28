@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
 
+let revealsPrimed = false;
+
 export function useReveal(deps: unknown[] = []) {
   useEffect(() => {
     const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
     if (!elements.length) return;
+
+    // The first page is prerendered and must stay visible without waiting for a
+    // scroll. Later in-app navigations get the reveal animation.
+    if (!revealsPrimed) {
+      revealsPrimed = true;
+      elements.forEach((element) => element.classList.add("is-in"));
+      return;
+    }
+
+    const viewport = window.innerHeight || 800;
+    for (const element of elements) {
+      if (element.getBoundingClientRect().top < viewport * 0.95) element.classList.add("is-in");
+    }
+    document.documentElement.classList.add("reveal-ready");
+
     if (!("IntersectionObserver" in window)) {
       elements.forEach((element) => element.classList.add("is-in"));
       return;
