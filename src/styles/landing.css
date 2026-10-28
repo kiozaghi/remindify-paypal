@@ -1088,6 +1088,9 @@
 .top-user-menu em { display: block; font-style: normal; font-size: 9.5px; color: var(--muted); margin: 2px 0 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top-user-menu button { display: flex; align-items: center; gap: 6px; width: 100%; height: 31px; padding: 0 8px; border: 0; border-radius: 7px; background: rgba(20, 20, 15, 0.05); font-size: 10.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
 .top-user-menu button:hover { background: var(--coral-soft); color: #9e2f1a; }
+.top-user-menu button + button { margin-top: 4px; }
+.top-user-menu button.menu-danger { background: transparent; color: #b5371f; }
+.top-user-menu button.menu-danger:hover { background: var(--coral-soft); }
 .user-row .user-signout { margin-left: 2px; width: 22px; height: 22px; }
 .user-row .user-signout:hover { background: var(--coral-soft); color: #9e2f1a; }
 

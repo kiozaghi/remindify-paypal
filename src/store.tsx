@@ -15,6 +15,7 @@ type Overlays = {
   newAgent: boolean;
   newObligation: boolean;
   templates: boolean;
+  deleteAccount: boolean;
 };
 
 type Ctx = {
@@ -282,6 +283,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     newAgent: false,
     newObligation: false,
     templates: false,
+    deleteAccount: false,
   });
   const toastId = useRef(0);
 

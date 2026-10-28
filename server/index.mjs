@@ -17,7 +17,7 @@ import {
   anchorReceipt, commitEscrow, createEscrow, createReceipt, ensureTrustDemo,
   fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
 } from "./trust.mjs";
-import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
+import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
 import { setWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
@@ -829,6 +829,10 @@ async function handleRequest(req, res) {
         tx_hash,
       });
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    }
+
+    if (path === "/api/account/delete" && req.method === "POST") {
+      return handleAccountDelete(req, res, { send, body });
     }
 
     if (path === "/api/export" && req.method === "GET") {

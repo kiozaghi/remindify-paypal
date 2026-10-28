@@ -37,6 +37,8 @@ export const findUserByGoogleSub = (...args) => impl.findUserByGoogleSub(...args
 export const findUserByWallet = (...args) => impl.findUserByWallet(...args);
 export const createUser = (...args) => impl.createUser(...args);
 export const updateUser = (...args) => impl.updateUser(...args);
+export const deleteUser = (...args) => impl.deleteUser(...args);
+export const deleteWorkspace = (...args) => impl.deleteWorkspace(...args);
 
 export const createAuthSession = (...args) => impl.createAuthSession(...args);
 export const getAuthSession = (...args) => impl.getAuthSession(...args);

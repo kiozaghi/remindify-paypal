@@ -213,6 +213,7 @@ export async function beginRequest() {
       client,
       finished: false,
       resetWorkspaces: new Set(),
+      purgedWorkspaces: new Set(),
       items: new Map(),
       meta: new Map(),
       users: new Map(),
@@ -325,10 +326,15 @@ export async function endRequest(store) {
       }
     }
 
+    for (const workspaceId of store.purgedWorkspaces) {
+      await client.query("DELETE FROM app_items WHERE workspace_id = $1", [workspaceId]);
+      await client.query("DELETE FROM app_meta WHERE workspace_id = $1", [workspaceId]);
+    }
+
     {
       for (const key of store.deletedItems) {
         const { workspaceId, kind, id } = splitItemKey(key);
-        if (store.resetWorkspaces.has(workspaceId)) continue;
+        if (store.resetWorkspaces.has(workspaceId) || store.purgedWorkspaces.has(workspaceId)) continue;
         await client.query(
           "DELETE FROM app_items WHERE workspace_id = $1 AND kind = $2 AND id = $3",
           [workspaceId, kind, id],
@@ -337,7 +343,7 @@ export async function endRequest(store) {
       for (const key of store.dirtyItems) {
         const row = store.items.get(key);
         if (!row) continue;
-        if (store.resetWorkspaces.has(row.workspace_id)) continue;
+        if (store.resetWorkspaces.has(row.workspace_id) || store.purgedWorkspaces.has(row.workspace_id)) continue;
         await client.query(
           "INSERT INTO app_items (workspace_id, kind, id, data) VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT (workspace_id, kind, id) DO UPDATE SET data = EXCLUDED.data",
           [row.workspace_id, row.kind, row.id, JSON.stringify(row.data)],
@@ -345,13 +351,13 @@ export async function endRequest(store) {
       }
       for (const key of store.deletedMeta) {
         const { workspaceId, k } = splitMetaKey(key);
-        if (store.resetWorkspaces.has(workspaceId)) continue;
+        if (store.resetWorkspaces.has(workspaceId) || store.purgedWorkspaces.has(workspaceId)) continue;
         await client.query("DELETE FROM app_meta WHERE workspace_id = $1 AND k = $2", [workspaceId, k]);
       }
       for (const key of store.dirtyMeta) {
         if (!store.meta.has(key)) continue;
         const { workspaceId, k } = splitMetaKey(key);
-        if (store.resetWorkspaces.has(workspaceId)) continue;
+        if (store.resetWorkspaces.has(workspaceId) || store.purgedWorkspaces.has(workspaceId)) continue;
         await client.query(
           "INSERT INTO app_meta (workspace_id, k, v) VALUES ($1, $2, $3::jsonb) ON CONFLICT (workspace_id, k) DO UPDATE SET v = EXCLUDED.v",
           [workspaceId, k, JSON.stringify(store.meta.get(key))],
@@ -608,6 +614,35 @@ export function updateUser(id, patch) {
   return { ...next };
 }
 
+export function deleteUser(id) {
+  const store = requireStore();
+  const user = store.users.get(id);
+  if (!user) return;
+  unindexUser(store, user);
+  store.users.delete(id);
+  store.dirtyUsers.delete(id);
+  store.deletedUsers.add(id);
+}
+
+export function deleteWorkspace(workspaceId) {
+  const store = requireStore();
+  const prefix = `${workspaceId}\u0000`;
+  for (const key of [...store.items.keys()]) {
+    if (!key.startsWith(prefix)) continue;
+    store.items.delete(key);
+    store.dirtyItems.delete(key);
+    store.deletedItems.add(key);
+  }
+  for (const key of [...store.meta.keys()]) {
+    if (!key.startsWith(prefix)) continue;
+    store.meta.delete(key);
+    store.dirtyMeta.delete(key);
+    store.deletedMeta.add(key);
+  }
+  store.resetWorkspaces.delete(workspaceId);
+  store.purgedWorkspaces.add(workspaceId);
+}
+
 export function createAuthSession({ tokenHash, userId, createdAt, expiresAt }) {
   const store = requireStore();
   store.sessions.set(tokenHash, {
@@ -668,7 +703,8 @@ export function createAuthToken({ tokenHash, userId, purpose, createdAt, expires
 export function deleteAuthTokensForUser(userId, purpose) {
   const store = requireStore();
   for (const [tokenHash, token] of store.tokens) {
-    if (token.user_id !== userId || token.purpose !== purpose || token.used) continue;
+    if (token.user_id !== userId) continue;
+    if (purpose && token.purpose !== purpose) continue;
     store.tokens.delete(tokenHash);
     store.dirtyTokens.delete(tokenHash);
     store.deletedTokens.add(tokenHash);

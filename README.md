@@ -261,9 +261,13 @@ Reset email goes through a single HTTPS webhook, so the app holds no SMTP creden
 
 Signup sends a confirmation link to `/login?verify=…` when email is configured. The token is hashed, single-use and valid for 24 hours; a resend replaces the previous link. `POST /api/auth/verify/request` (signed in) sends or resends it, and `POST /api/auth/verify/confirm` with `{ "token" }` records `email_verified_at`. Google sign-ins and password resets count as confirmed because both prove control of the address. Confirmation is soft during preview: the register shows an in-app banner and Resend button, but unverified accounts keep full access. Wallet accounts have no email and never see the banner.
 
+### Account deletion
+
+“Delete account…” in the account menu calls `POST /api/account/delete` with `{ "confirm": "delete" }`. Password accounts must also send the current password; wrong or missing credentials return `401` and change nothing. A successful call deletes that account's sessions and single-use tokens, purges its private workspace (`items` and `meta`), removes the user row and clears the session cookie. Accounts that share the demo workspace lose the account but not the shared register, which stays available to other demo accounts. There is no soft-delete window, so the dialog links to `GET /api/export` first. The endpoint is rate limited per IP.
+
 ### API protection
 
-`/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
+`/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`, `/api/account/delete`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
 
 The server partitions obligations, agents, runs, receipts, escrows, API keys and meta keys by workspace. A session cookie resolves to that account's workspace; a machine API key resolves to the workspace that issued it. New accounts get a seeded copy of the demo register in their own workspace, and `POST /api/demo/reset` only clears the caller's workspace. Auth rows (users, sessions, wallet challenges) live outside any workspace, so a reset never signs anyone out or touches another account.
 

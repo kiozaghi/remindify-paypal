@@ -21,7 +21,11 @@ export async function request<T = any>(path: string, method = "GET", payload?: a
     error.status = res.status;
     error.code = data.error;
     error.payload = data;
-    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+    if (
+      res.status === 401 &&
+      !path.startsWith("/api/auth/") &&
+      path !== "/api/account/delete"
+    ) {
       window.dispatchEvent(new CustomEvent("remindify:unauthorized"));
     }
     throw error;
@@ -47,6 +51,12 @@ export const api = {
     request<{ ok: true; message: string; already_verified?: boolean }>("/api/auth/verify/request", "POST", {}),
   authVerifyConfirm: (token: string) =>
     request<{ user: AuthUser; message: string }>("/api/auth/verify/confirm", "POST", { token }),
+  deleteAccount: (payload: { confirm: string; password?: string }) =>
+    request<{ ok: true; purged_workspace: boolean; message: string }>(
+      "/api/account/delete",
+      "POST",
+      payload
+    ),
   walletChallenge: (address: string) =>
     request<{ address: string; nonce: string; message: string; expires_at: string }>(
       "/api/auth/wallet/challenge",

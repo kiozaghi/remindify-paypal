@@ -21,7 +21,7 @@ import Access from "./views/Access";
 import ObligationDrawer from "./components/ObligationDrawer";
 import AgentDrawer from "./components/AgentDrawer";
 import { CommandPalette, Toasts } from "./components/CommandPalette";
-import { CreateAgentModal, HireModal, NewObligationModal } from "./components/Modals";
+import { CreateAgentModal, DeleteAccountModal, HireModal, NewObligationModal } from "./components/Modals";
 import { TemplatesModal } from "./components/TemplatesModal";
 import { clockLabel } from "./lib/format";
 import { api } from "./lib/api";
@@ -229,6 +229,14 @@ function Shell() {
                   <Icon name="power" size={13} />
                   {signingOut ? "Signing out…" : "Sign out"}
                 </button>
+                <button
+                  className="menu-danger"
+                  onClick={() => setOverlays((o) => ({ ...o, deleteAccount: true }))}
+                  role="menuitem"
+                >
+                  <Icon name="trash" size={13} />
+                  Delete account…
+                </button>
               </div>
             </div>
           </div>
@@ -282,6 +290,7 @@ function Shell() {
       <TemplatesModal />
       <CreateAgentModal />
       <HireModal />
+      <DeleteAccountModal />
       <Toasts />
     </div>
   );

@@ -5,11 +5,12 @@ import { getAddress, isAddress, verifyMessage } from "viem";
 import {
   consumeAuthChallenge, consumeAuthToken, createAuthChallenge, createAuthSession,
   createAuthToken, createUser, deleteAuthSession, deleteAuthSessionsForUser,
-  deleteAuthTokensForUser, findUserByEmail, findUserByGoogleSub, findUserByWallet,
-  getAuthSession, getUser, updateUser,
+  deleteAuthTokensForUser, deleteUser, deleteWorkspace, findUserByEmail,
+  findUserByGoogleSub, findUserByWallet, getAuthSession, getUser, updateUser,
 } from "./db.mjs";
 import { emailConfigured, sendEmail } from "./email.mjs";
 import { provisionWorkspace } from "./provision.mjs";
+import { DEMO_WORKSPACE } from "./workspace.mjs";
 
 const SESSION_COOKIE = "remindify_session";
 const OAUTH_COOKIE = "remindify_oauth";
@@ -674,6 +675,51 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
   }
 
   send(res, 404, { error: "not_found", path });
+  return true;
+}
+
+// Irreversible deletion of one account and, when it owns a private workspace,
+// its register. The shared demo register is never purged for everyone.
+export async function handleAccountDelete(req, res, { send, body }) {
+  if (limited(req, "account-delete", 10)) {
+    send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
+    return true;
+  }
+  const session = req.auth || getSessionFromRequest(req);
+  if (!session) {
+    send(res, 401, { error: "unauthorized", message: "Sign in to delete your account." });
+    return true;
+  }
+  const input = await body(req);
+  if (String(input.confirm || "").trim().toLowerCase() !== "delete") {
+    send(res, 422, { error: "confirm_required", message: "Type delete to confirm." });
+    return true;
+  }
+  const user = getUser(session.user.id);
+  if (!user) {
+    send(res, 401, { error: "unauthorized", message: "Sign in to delete your account." });
+    return true;
+  }
+  if (user.password_hash && !passwordMatches(String(input.password || ""), user.password_salt, user.password_hash)) {
+    send(res, 401, {
+      error: "invalid_credentials",
+      message: "Enter your current password to delete this account.",
+    });
+    return true;
+  }
+  const sharedDemo = user.workspace_id === DEMO_WORKSPACE;
+  if (!sharedDemo) deleteWorkspace(user.workspace_id);
+  deleteAuthSessionsForUser(user.id);
+  deleteAuthTokensForUser(user.id);
+  deleteUser(user.id);
+  appendCookie(res, serializeCookie(req, SESSION_COOKIE, "", { maxAge: 0 }));
+  send(res, 200, {
+    ok: true,
+    purged_workspace: !sharedDemo,
+    message: sharedDemo
+      ? "Account deleted. The shared demo register was left in place for other demo accounts."
+      : "Account and register deleted.",
+  });
   return true;
 }
 

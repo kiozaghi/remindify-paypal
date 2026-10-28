@@ -249,6 +249,15 @@ export function updateUser(id, patch) {
   return getUser(id);
 }
 
+export function deleteUser(id) {
+  db.prepare("DELETE FROM users WHERE id = ?").run(id);
+}
+
+export function deleteWorkspace(workspaceId) {
+  db.prepare("DELETE FROM items WHERE workspace_id = ?").run(workspaceId);
+  db.prepare("DELETE FROM meta WHERE workspace_id = ?").run(workspaceId);
+}
+
 export function createAuthSession({ tokenHash, userId, createdAt, expiresAt }) {
   db.prepare(`
     INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at)
@@ -285,7 +294,11 @@ export function createAuthToken({ tokenHash, userId, purpose, createdAt, expires
 }
 
 export function deleteAuthTokensForUser(userId, purpose) {
-  db.prepare("DELETE FROM auth_tokens WHERE user_id = ? AND purpose = ? AND used = 0").run(userId, purpose);
+  if (purpose) {
+    db.prepare("DELETE FROM auth_tokens WHERE user_id = ? AND purpose = ?").run(userId, purpose);
+    return;
+  }
+  db.prepare("DELETE FROM auth_tokens WHERE user_id = ?").run(userId);
 }
 
 export function consumeAuthToken(tokenHash, purpose) {
