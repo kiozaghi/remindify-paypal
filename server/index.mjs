@@ -411,11 +411,24 @@ async function handleRequest(req, res) {
 
     // Serverless deployments have no background timer, so a scheduler calls
     // this with the shared secret. It is the only app path that skips sessions.
-    if (path === "/api/cron/outbox" && req.method === "POST") {
+    // Vercel Cron sends GET; other schedulers may POST. Both carry the secret,
+    // so neither relies on a cookie.
+    const cronCall = req.method === "GET" || req.method === "POST";
+    if (path === "/api/cron/outbox" && cronCall) {
       if (!process.env.OUTBOX_SECRET) return send(res, 404, { error: "not_found", path });
       const given = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
       if (!outboxSecretMatches(given)) return send(res, 401, { error: "unauthorized" });
       const result = await sweepOutbox();
+      return send(res, 200, { ok: true, ...result });
+    }
+
+    if (path === "/api/cron/sweep" && cronCall) {
+      if (!process.env.CRON_SECRET && !process.env.OUTBOX_SECRET) {
+        return send(res, 404, { error: "not_found", path });
+      }
+      const given = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+      if (!cronSecretMatches(given)) return send(res, 401, { error: "unauthorized" });
+      const result = await sweepAllWorkspaces();
       return send(res, 200, { ok: true, ...result });
     }
 
@@ -902,12 +915,62 @@ function regionBlockedResponse(req, res) {
   return true;
 }
 
-function outboxSecretMatches(given) {
-  const secret = process.env.OUTBOX_SECRET || "";
+function secretMatches(given, secret) {
   if (!secret || !given) return false;
   const provided = Buffer.from(String(given));
   const expected = Buffer.from(secret);
   return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+function outboxSecretMatches(given) {
+  return secretMatches(given, process.env.OUTBOX_SECRET || "");
+}
+
+// One secret could schedule both jobs, so CRON_SECRET falls back to
+// OUTBOX_SECRET when only the older variable is set.
+function cronSecretMatches(given) {
+  return secretMatches(given, process.env.CRON_SECRET || process.env.OUTBOX_SECRET || "");
+}
+
+const SWEEP_LEASE_MS = 5 * 60_000;
+// Vercel's function limit is 30s; stop early and let the next run continue.
+const SWEEP_BUDGET_MS = 20_000;
+
+// Replay-safe: sweep() skips an obligation that already has a run in the last
+// six hours, and this lease stops a second scheduler from entering the same
+// workspace while the first is still calling connectors.
+async function sweepAllWorkspaces() {
+  const summary = {
+    workspaces: 0, skipped: 0, deferred: 0, scanned: 0, proposed: 0, executed: 0, drafted: 0, blocked: 0, failed: 0,
+  };
+  const workspaces = workspacesWithKind("obligations");
+  const deadline = Date.now() + SWEEP_BUDGET_MS;
+  for (let index = 0; index < workspaces.length; index++) {
+    if (Date.now() >= deadline) {
+      summary.deferred = workspaces.length - index;
+      break;
+    }
+    const workspaceId = workspaces[index];
+    summary.workspaces += 1;
+    await runWithWorkspace(workspaceId, async () => {
+      const now = Date.now();
+      const leasedUntil = Date.parse(getMeta("sweep_lease_until", "")) || 0;
+      if (leasedUntil > now) {
+        summary.skipped += 1;
+        return;
+      }
+      setMeta("sweep_lease_until", new Date(now + SWEEP_LEASE_MS).toISOString());
+      try {
+        const result = await sweep({ actor: "Scheduled sweep", silent: true });
+        for (const key of ["scanned", "proposed", "executed", "drafted", "blocked", "failed"]) {
+          summary[key] += result[key] || 0;
+        }
+      } finally {
+        setMeta("sweep_lease_until", new Date(0).toISOString());
+      }
+    });
+  }
+  return summary;
 }
 
 // Runs inside whatever workspace/store context the caller already entered.
