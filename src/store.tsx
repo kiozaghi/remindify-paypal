@@ -103,7 +103,9 @@ function makeActions(
     runNow: (id: string) =>
       run(async () => {
         const res = await api.run(id);
-        if (res?.message) toast("Agent dispatched", res.message, "agent");
+        if (res?.message) {
+          toast(res.executed ? "Agent executed" : "Plan drafted", res.message, res.executed ? "agent" : "default");
+        }
         return res;
       }),
     remove: (id: string) =>
@@ -116,11 +118,13 @@ function makeActions(
     decide: (id: string, decision: string, note = "") =>
       run(async () => {
         const res = await api.decide(id, decision, note);
-        toast(
-          decision === "approve" ? "Approved. Agent is on it." : "Declined",
-          decision === "approve" ? "The action ran and proof was filed." : "The agent will wait for new instructions.",
-          decision === "approve" ? "agent" : "default"
-        );
+        if (decision !== "approve") {
+          toast("Declined", "The agent will wait for new instructions.", "default");
+        } else if (res?.executed) {
+          toast("Approved and executed", res.message || "The action ran and proof was filed.", "agent");
+        } else {
+          toast("Approved", res?.message || "No executor is connected, so nothing ran.", "warn");
+        }
         return res;
       }),
     createAgent: (payload: any) =>
@@ -134,6 +138,18 @@ function makeActions(
       run(async () => {
         const res = await api.patchAgent(id, patch);
         if (patch.status) toast(patch.status === "paused" ? "Agent paused" : "Agent resumed", "Presence updated.", "default");
+        return res;
+      }),
+    connectExecutor: (id: string, url: string | null) =>
+      run(async () => {
+        const res = await api.connectExecutor(id, url);
+        toast(
+          url ? "Executor connected" : "Executor disconnected",
+          url
+            ? "Copy the signing secret now. It is shown once and never again."
+            : "The agent can draft and request approval, but it cannot act.",
+          url ? "agent" : "warn"
+        );
         return res;
       }),
     hire: (payload: any) =>
@@ -166,6 +182,8 @@ function makeActions(
         if (res?.proposed) bits.push(`${res.proposed} ready for approval`);
         if (res?.executed) bits.push(`${res.executed} executed`);
         if (res?.drafted) bits.push(`${res.drafted} plans drafted`);
+        if (res?.blocked) bits.push(`${res.blocked} waiting on an executor`);
+        if (res?.failed) bits.push(`${res.failed} failed`);
         toast(
           "Agent sweep complete",
           bits.length ? bits.join(" · ") : "Nothing needed a decision. Portfolio is quiet.",
@@ -178,7 +196,9 @@ function makeActions(
         const res = await api.advance(days);
         const bits = [];
         if (res?.proposed) bits.push(`${res.proposed} escalated for approval`);
-        if (res?.executed) bits.push(`${res.executed} auto-executed`);
+        if (res?.executed) bits.push(`${res.executed} executed`);
+        if (res?.blocked) bits.push(`${res.blocked} waiting on an executor`);
+        if (res?.failed) bits.push(`${res.failed} failed`);
         toast(
           `${days} days later`,
           bits.length ? bits.join(" · ") : "Risk re-scored. Agents re-planned.",

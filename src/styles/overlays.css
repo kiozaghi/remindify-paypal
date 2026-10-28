@@ -124,7 +124,17 @@
 .run-row { display: flex; align-items: flex-start; gap: 7px; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .run-row:last-child { border: 0; }
 .run-status { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; flex: none; margin-top: 1px; background: var(--teal-soft); color: #086b52; }
-.run-status.proposed, .run-status.drafted, .run-status.waiting { background: var(--amber-soft); color: #8f5e0c; }
+.run-status.proposed, .run-status.drafted, .run-status.waiting, .run-status.blocked { background: var(--amber-soft); color: #8f5e0c; }
+.run-status.failed { background: var(--coral-soft); color: #b5371f; }
+.executor-box { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 11px; display: flex; flex-direction: column; gap: 8px; }
+.executor-state { display: flex; align-items: center; gap: 6px; }
+.executor-note { font-size: 9.5px; line-height: 1.45; color: var(--muted); }
+.executor-form { display: flex; gap: 6px; }
+.executor-form input { flex: 1; min-width: 0; height: 34px; border: 1px solid var(--line-2); border-radius: 8px; padding: 0 9px; font-family: var(--mono); font-size: 9px; background: var(--white); outline: none; }
+.executor-form input:focus { border-color: var(--ink); }
+.executor-secret { margin-top: 8px; padding: 9px 10px; border: 1px dashed var(--line-2); border-radius: 9px; background: rgba(255, 253, 248, 0.5); display: flex; align-items: center; gap: 8px; }
+.executor-secret > div { flex: 1; min-width: 0; }
+.executor-secret code { display: block; margin-top: 3px; font-family: var(--mono); font-size: 8px; color: var(--ink); word-break: break-all; }
 .run-row > div { flex: 1; min-width: 0; }
 .run-row strong { display: block; font-size: 10px; }
 .run-row em { display: block; font-style: normal; font-size: 8.5px; color: var(--faint); }

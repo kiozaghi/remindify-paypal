@@ -60,6 +60,8 @@ export const api = {
     request(`/api/approvals/${id}/decide`, "POST", { decision, note }),
   createAgent: (agent: any) => request("/api/agents", "POST", agent),
   patchAgent: (id: string, patch: any) => request(`/api/agents/${id}`, "PATCH", patch),
+  connectExecutor: (id: string, url: string | null) =>
+    request(`/api/agents/${id}/executor`, "POST", { url }),
   hire: (payload: any) => request("/api/hire", "POST", payload),
   createKey: (name: string) => request("/api/keys", "POST", { name }),
   deleteKey: (id: string) => request(`/api/keys/${id}`, "DELETE"),

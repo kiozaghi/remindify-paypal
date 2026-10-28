@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { createHmac } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 
 test("Vercel-style handler keeps each account's workspace isolated in Postgres", async () => {
@@ -18,12 +19,38 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
   process.env.PG_NO_LOCK = "1";
   process.env.VERCEL = "1";
   process.env.COOKIE_SECURE = "false";
+  process.env.EXECUTOR_ALLOW_LOCAL = "1";
 
   const { default: handle } = await import(`../server/index.mjs?test=${Date.now()}`);
   const server = createServer(handle);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;
+
+  let executorSecret = "";
+  const delivered = [];
+  const receiver = createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    const timestamp = req.headers["x-remindify-timestamp"];
+    const expected = createHmac("sha256", executorSecret)
+      .update(`${timestamp}.${raw}`)
+      .digest("hex");
+    delivered.push({
+      path: req.url,
+      signed: req.headers["x-remindify-signature"] === `sha256=${expected}`,
+      event: req.headers["x-remindify-event"],
+      body: JSON.parse(raw || "{}"),
+    });
+    res.writeHead(req.url === "/fail" ? 500 : 200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify(
+        req.url === "/fail" ? { error: "downstream exploded" } : { proof: "executor_receipt_123" },
+      ),
+    );
+  });
+  await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+  const receiverBase = `http://127.0.0.1:${receiver.address().port}`;
 
   async function signup(email, name) {
     const response = await fetch(`${base}/api/auth/signup`, {
@@ -161,6 +188,114 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
     assert.ok(billing.billing.calls >= 3);
     assert.equal(billing.plans.length, 3);
 
+    // A connector is the only way an agent can actually run something.
+    response = await fetch(`${base}/api/agents`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieA },
+      body: JSON.stringify({ name: "Connector QA", autonomy_ceiling: "autopilot" }),
+    });
+    assert.equal(response.status, 201);
+    const qaAgentId = (await response.json()).agent.id;
+
+    async function connectorObligation(title) {
+      response = await fetch(`${base}/api/obligations`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookieA },
+        body: JSON.stringify({
+          title,
+          agent_id: qaAgentId,
+          autonomy: "autopilot",
+          due_at: new Date(Date.now() + 2 * 86400000).toISOString(),
+        }),
+      });
+      assert.equal(response.status, 201);
+      const current = await state(cookieA);
+      return current.obligations.find((item) => item.title === title);
+    }
+
+    const qaObligation = await connectorObligation("Connector QA run");
+    response = await fetch(`${base}/api/obligations/${qaObligation.id}/run`, {
+      method: "POST",
+      headers: { cookie: cookieA },
+    });
+    assert.equal(response.status, 200);
+    const drafted = await response.json();
+    assert.equal(drafted.executed, false);
+    assert.match(drafted.message, /no executor/i);
+
+    response = await fetch(`${base}/api/agents/${qaAgentId}/executor`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieA },
+      body: JSON.stringify({ url: `${receiverBase}/execute` }),
+    });
+    assert.equal(response.status, 200);
+    const connected = await response.json();
+    executorSecret = connected.signing_secret;
+    assert.match(executorSecret, /^rfy_exec_/);
+    assert.equal(connected.agent.executor_configured, true);
+
+    const sanitized = (await state(cookieA)).agents.find((item) => item.id === qaAgentId);
+    assert.equal(sanitized.executor_secret, undefined);
+    assert.equal(sanitized.executor_configured, true);
+
+    response = await fetch(`${base}/api/obligations/${qaObligation.id}/run`, {
+      method: "POST",
+      headers: { cookie: cookieA },
+    });
+    assert.equal(response.status, 200);
+    const ran = await response.json();
+    assert.equal(ran.executed, true);
+    assert.equal(delivered.length, 1);
+    assert.equal(delivered[0].signed, true);
+    assert.equal(delivered[0].event, "obligation.execute");
+    assert.equal(delivered[0].body.obligation.id, qaObligation.id);
+
+    const afterRun = await state(cookieA);
+    assert.equal(afterRun.obligations.find((item) => item.id === qaObligation.id).status, "done");
+    assert.ok(
+      afterRun.runs.some(
+        (item) =>
+          item.obligation_id === qaObligation.id &&
+          item.status === "done" &&
+          item.proof === "executor_receipt_123" &&
+          item.connector_status === 200,
+      ),
+    );
+
+    response = await fetch(`${base}/api/agents/${qaAgentId}/executor`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieA },
+      body: JSON.stringify({ url: "https://192.168.1.1/execute" }),
+    });
+    assert.equal(response.status, 422);
+
+    const failingObligation = await connectorObligation("Connector QA failure");
+    response = await fetch(`${base}/api/agents/${qaAgentId}/executor`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieA },
+      body: JSON.stringify({ url: `${receiverBase}/fail` }),
+    });
+    assert.equal(response.status, 200);
+    executorSecret = (await response.json()).signing_secret;
+
+    response = await fetch(`${base}/api/obligations/${failingObligation.id}/run`, {
+      method: "POST",
+      headers: { cookie: cookieA },
+    });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "executor_failed");
+
+    const afterFailure = await state(cookieA);
+    assert.equal(afterFailure.obligations.find((item) => item.id === failingObligation.id).status, "active");
+    assert.ok(
+      afterFailure.runs.some(
+        (item) =>
+          item.obligation_id === failingObligation.id &&
+          item.status === "failed" &&
+          item.connector_status === 500,
+      ),
+    );
+
     response = await fetch(`${base}/api/demo/reset`, {
       method: "POST",
       headers: { cookie: cookieA },
@@ -188,6 +323,7 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
     assert.equal(workspaces.rows[0].count, 2);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => receiver.close(resolve));
     await db.close();
   }
 });

@@ -20,6 +20,7 @@ import {
 import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
 import { setWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES } from "./keys.mjs";
+import { newExecutorSecret, publicAgent, validateExecutorUrl } from "./executors.mjs";
 import {
   billingSummary, canSwitchPlans, keyLimitReached, meterApiCall, PLANS, setPlan,
 } from "./billing.mjs";
@@ -419,7 +420,7 @@ async function handleRequest(req, res) {
 
     const runMatch = path.match(/^\/api\/obligations\/([^/]+)\/run$/);
     if (runMatch && req.method === "POST") {
-      const result = runObligation(runMatch[1]);
+      const result = await runObligation(runMatch[1]);
       return send(res, result.ok ? 200 : 400, { ...result, state: buildState() });
     }
 
@@ -432,7 +433,7 @@ async function handleRequest(req, res) {
     if (approvalMatch && req.method === "POST") {
       const { decision, note } = await body(req);
       if (!["approve", "deny"].includes(decision)) return send(res, 422, { error: "bad_decision" });
-      const result = applyApproval(approvalMatch[1], decision, note || "");
+      const result = await applyApproval(approvalMatch[1], decision, note || "");
       return send(res, result.ok ? 200 : 404, { ...result, state: buildState() });
     }
 
@@ -479,7 +480,50 @@ async function handleRequest(req, res) {
         if (key in patch) agent[key] = patch[key];
       }
       put("agents", agent);
-      return send(res, 200, { state: buildState(), agent });
+      return send(res, 200, { state: buildState(), agent: publicAgent(agent) });
+    }
+
+    const executorMatch = path.match(/^\/api\/agents\/([^/]+)\/executor$/);
+    if (executorMatch && req.method === "POST") {
+      const { url } = await body(req);
+      const data = loadAll();
+      const agent = data.agents.find((a) => a.id === executorMatch[1]);
+      if (!agent) return send(res, 404, { error: "not_found" });
+
+      if (url === null || url === undefined || url === "") {
+        delete agent.executor_url;
+        delete agent.executor_secret;
+        put("agents", agent);
+        logEvent({
+          actor_type: "human", actor: "Solomon Tigabu", verb: "disconnected an executor",
+          object: agent.name, detail: "The agent can draft and request approval, but not act.",
+          kind: "human",
+        });
+        return send(res, 200, { state: buildState(), agent: publicAgent(agent) });
+      }
+
+      const check = await validateExecutorUrl(url);
+      if (!check.ok) {
+        return send(res, 422, { error: "invalid_executor", message: check.error });
+      }
+      const secret = newExecutorSecret();
+      agent.executor_url = check.url;
+      agent.executor_secret = secret;
+      put("agents", agent);
+      let host = "connector";
+      try {
+        host = new URL(check.url).host;
+      } catch {}
+      logEvent({
+        actor_type: "human", actor: "Solomon Tigabu", verb: "connected an executor",
+        object: agent.name, detail: `${host} · signed requests`,
+        kind: "human",
+      });
+      return send(res, 200, {
+        state: buildState(),
+        agent: publicAgent(agent),
+        signing_secret: secret,
+      });
     }
 
     if (path === "/api/hire" && req.method === "POST") {
@@ -596,14 +640,14 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/demo/sweep" && req.method === "POST") {
-      const result = sweep({ actor: "Remy" });
+      const result = await sweep({ actor: "Remy" });
       return send(res, 200, { ...result, state: buildState() });
     }
 
     if (path === "/api/demo/advance" && req.method === "POST") {
       const { days = 7, run = true } = await body(req);
       advanceClock(days);
-      const result = run ? sweep({ actor: "Time machine", silent: true }) : null;
+      const result = run ? await sweep({ actor: "Time machine", silent: true }) : null;
       return send(res, 200, { ...result, state: buildState() });
     }
 
@@ -679,6 +723,7 @@ async function handleRequest(req, res) {
       return send(res, 200, {
         exported_at: new Date().toISOString(),
         ...data,
+        agents: data.agents.map(publicAgent),
         keys: data.keys.map(publicKey),
       });
     }

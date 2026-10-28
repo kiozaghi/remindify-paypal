@@ -37,7 +37,7 @@ Vercel functions do not have a persistent writable filesystem, so **SQLite canno
 4. Deploy. On the first API request the Postgres store creates its tables and seeds the demo workspace. Accounts, sessions and workspace data now survive redeploys and cold starts.
 5. If Google sign-in is enabled, register `https://your-app.vercel.app/api/auth/google/callback` as an authorized redirect URI and set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 
-Do **not** set `REMINDIFY_DB`, `DATABASE_SSL=false` or `PG_NO_LOCK=1` on Vercel. The Postgres store serializes writes with an advisory lock; this keeps the single shared demo workspace consistent, but it is not per-tenant isolation yet.
+Do **not** set `REMINDIFY_DB`, `DATABASE_SSL=false` or `PG_NO_LOCK=1` on Vercel. The Postgres store serializes each request's writes under an advisory lock; that bounds write throughput but every row is still partitioned by `workspace_id`, and each account resolves to its own workspace.
 
 If a CLI deployment is blocked because the latest Git commit author is not a member of the Vercel team, either add that email to the team or deploy from a clean copy without a `.git` directory. GitHub auto-deploy also requires the Vercel GitHub app to have access to this private repository.
 
@@ -52,7 +52,7 @@ If a CLI deployment is blocked because the latest Git commit author is not a mem
 | **Today** | Greeting, live approvals, closest-to-the-edge obligations, portfolio pulse, agent wire, failsafe policy. |
 | **Obligations** | The register. Search, filter by risk/owner/autonomy, inline autonomy control, risk meters, due dates, backups. |
 | **Capture** | Paste a letter, email or messy note, or drop a text-based PDF. A deterministic parser extracts obligations, dates, amounts, recurrence, provider and category — then asks you to review before scheduling. No external AI API is called; text-based PDFs are read in the browser, while scanned PDFs need OCR or a vision service. |
-| **Agents** | Agent passports: role, scopes, trust, runs, success rate, autonomy ceiling, obligations on desk, recent runs, exportable passport JSON. |
+| **Agents** | Agent passports: role, scopes, trust, runs, success rate, autonomy ceiling, execution connector, obligations on desk, recent runs, exportable passport JSON. |
 | **Marketplace** | Vetted humans and agents side by side. Fixed price, escrow on proof, scoped access, SLA. Attach a provider to an obligation or post a new job. |
 | **Activity & proof** | Immutable event stream, filterable by agents/humans/system/API/proof, exportable audit log, proof vault. |
 | **Trust layer** | Offchain proof receipts, EIP-712 signing, optional Base/Celo anchoring, and USDC escrow intents that release on proof. Preview mode needs no wallet or contract. |
@@ -62,16 +62,16 @@ Plus: **⌘K command palette**, obligation drawer with autonomy + checklist + pr
 
 ### The demo, in 90 seconds
 
-1. **Today** — 5 approvals are waiting. Open one, then **Approve & run**. The agent executes, files proof, and the obligation advances to its next cycle.
+1. **Today** — 5 approvals are waiting. Open one and **Approve**. With no executor connected, the decision is recorded and the obligation stays open for you. Connect an executor in an agent's passport, then the same button reads **Approve & run** and the agent executes.
 2. **Capture** — choose “Insurance renewal letter” → **Parse & structure**. One obligation appears with due date, amount, provider, recurrence and the exact source sentence. Confirm and schedule it.
 3. **Obligations** — open any row. Change autonomy from Notify to Auto and watch the risk score recalculate. Add proof to complete it.
-4. **Agents** — open **Ledger**’s passport. See its ceiling, scopes, trust and work on desk.
+4. **Agents** — open **Ledger**’s passport. See its ceiling, scopes, trust, work on desk, and the execution connector.
 5. **Marketplace** — delegate the payroll filing to a human PA or an agent. Access is scoped to that obligation; payment releases on proof.
 6. **Trust layer** — every completion files an offchain receipt. Open it, **Sign** with a wallet or copy the EIP-712 payload. With a contract configured, **Anchor** writes the proof hash to Base. Escrow intents release only against a signed or anchored receipt.
 7. **Agent access** — hit **Test live call**, create a key, or run the MCP server.
-8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Autopilot obligations execute and reschedule, approvals escalate, risk moves. Reset from the clock chip.
+8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Agents draft plans and escalate approvals. Autopilot obligations execute only where a connector is connected; otherwise the sweep tells you how many are waiting on one. Reset from the clock chip.
 
-Nothing here is a static mock: every button writes to the active store — SQLite locally, Postgres on Vercel — and re-renders from the API.
+Nothing here is a static mock: every button writes to the active store — SQLite locally, Postgres on Vercel — and re-renders from the API. Agent work is only reported as executed when a connector answers.
 
 ---
 
@@ -94,6 +94,50 @@ That structure is what makes it safe to hand recurring work to software. It is a
 - Machine calls are attributed to a key, logged in the same event stream as human actions, and rate-limited by scope in production.
 - Agents can read, create and complete obligations — but completion without proof is rejected by the MCP tool contract.
 - Autonomy above an agent’s ceiling still requires a human approval.
+
+### Execution connectors
+
+An agent cannot act until you connect an executor. In an agent's passport, paste an `https://` endpoint; Remindify shows the signing secret once. From then on, every action the agent takes is a real HTTP `POST` to that endpoint, signed with HMAC-SHA256.
+
+```http
+POST /your/execute
+x-remindify-event: obligation.execute
+x-remindify-run: run_ab12cd3
+x-remindify-timestamp: 1761600000000
+x-remindify-signature: sha256=<hmac>
+content-type: application/json
+```
+
+The signature is `HMAC-SHA256(secret, "<timestamp>.<raw body>")`. Verify it before acting:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+const expected = createHmac("sha256", process.env.REMINDIFY_EXECUTOR_SECRET)
+  .update(`${req.headers["x-remindify-timestamp"]}.${rawBody}`)
+  .digest("hex");
+const given = String(req.headers["x-remindify-signature"] || "").replace(/^sha256=/, "");
+const ok = given.length === expected.length &&
+  timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+```
+
+Body:
+
+```json
+{
+  "event": "obligation.execute",
+  "run_id": "run_ab12cd3",
+  "issued_at": "2026-10-28T09:00:00.000Z",
+  "workspace": { "id": "ws_5f2c…", "name": "Exopya Studio" },
+  "agent": { "id": "ag_ledger", "name": "Ledger", "handle": "ledger" },
+  "obligation": { "id": "ob_rent", "title": "Pay rent", "provider": "…", "amount": 750, "currency": "USD", "due_at": "…", "autonomy": "autopilot" },
+  "action": "Executed the obligation",
+  "detail": "Pay $750 to … using the verified account, then archive the receipt."
+}
+```
+
+Return any `2xx` and include `{"proof": "your-proof-reference"}` (or `receipt_url`) to file it as evidence. A non-2xx response, timeout or network error records a **failed** run, leaves the obligation open, and surfaces the error in the passport. A `2xx` without a proof reference is recorded as `connector_<status>` so the gap is visible.
+
+Without a connector the agent is draft-only: sweeps produce plans, approvals are recorded but nothing runs, and nothing is marked complete. Executor URLs are checked so they resolve to a public address; redirects are refused. `EXECUTOR_ALLOW_LOCAL=1` permits `http://localhost` for local development only. The signing secret is stored server-side, stripped from state, exports and API responses, and rotated whenever you reconnect.
 
 ---
 
@@ -389,7 +433,7 @@ All machine endpoints require `Authorization: Bearer rfy_live_...`. Issued keys 
 | `GET` | `/api/v1/trust` | `risk:read` | Receipts, escrows, networks and trust stats. |
 | `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. |
 
-App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
+App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/agents/:id/executor`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
 
 ### Plans and usage
 
@@ -485,7 +529,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
 - add a shared rate-limit store, idempotency keys and key expiry/rotation on the machine API (keys are already hashed and scope-enforced);
 - add email verification and a password-reset flow;
-- make webhooks signed and retryable, and add an outbox;
+- add retry/backoff and an outbox to the signed execution connectors, and verify the resolved address again at fetch time to close DNS-rebinding gaps;
 - encrypt proof documents at rest and add retention/deletion controls;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
 - connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;

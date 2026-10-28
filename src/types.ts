@@ -76,6 +76,8 @@ export interface Agent {
   scopes: string[];
   hours_saved: number;
   last_active: string;
+  executor_url?: string | null;
+  executor_configured?: boolean;
   custom?: boolean;
 }
 
@@ -93,6 +95,8 @@ export interface Approval {
   created_at: string;
   decided_at?: string;
   decision_note?: string;
+  executed?: boolean;
+  execution_error?: string;
   obligation?: Obligation | null;
   agent?: Agent | null;
 }
@@ -107,6 +111,8 @@ export interface Run {
   proof: string | null;
   duration_ms: number;
   cost: number;
+  connector_status?: number | null;
+  error?: string | null;
   created_at: string;
   agent?: Agent | null;
   obligation?: Obligation | null;
