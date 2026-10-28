@@ -453,7 +453,25 @@ The script prints the `*_RPC_URL`, `*_ATTESTATION_CONTRACT` and `*_ESCROW_CONTRA
 
 Verify both contracts on Basescan or Celoscan after deployment. Use `solc 0.8.24` with the optimizer enabled at 200 runs, matching `contracts/compile.mjs`.
 
-After deploying, set the env vars, restart the server, and rehearse the full flow: file a receipt, sign it, anchor it, then fund and release an escrow. The product works without a deployment in preview mode.
+After deploying, set the env vars, restart the server, and rehearse the full flow. The product works without a deployment in preview mode.
+
+### Rehearsing the deployed flow
+
+```bash
+REHEARSAL_PRIVATE_KEY=0x... npm run chain:rehearse
+```
+
+The script drives the real HTTP API and chain with one funded wallet: it files a receipt, signs it, anchors it, opens an escrow, approves and funds USDC, then releases on proof. It prints every transaction hash and explorer link. Before signing anything it checks the wallet has gas and test USDC, that the server reports `configured` mode, and that the server's contract addresses match the shell's.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REHEARSAL_PRIVATE_KEY` | — | Payer and signer. Needs native gas and test USDC. |
+| `REHEARSAL_CHAIN` | `base-sepolia` | Any key from `contracts/networks.mjs`. |
+| `REHEARSAL_USDC` | `1` | Amount to fund. |
+| `REHEARSAL_API` | `http://localhost:4178` | Running server. |
+| `REHEARSAL_PAYEE` | the payer | Address the escrow releases to. |
+
+The wallet needs test USDC from `faucet.circle.com`; the app has no UI for funding or releasing with a wallet yet, which is why this runs through the API.
 
 ### Trust API
 

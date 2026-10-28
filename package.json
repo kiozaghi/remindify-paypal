@@ -15,6 +15,7 @@
     "mcp": "node mcp/server.mjs",
     "contracts:compile": "node contracts/compile.mjs",
     "contracts:deploy": "node contracts/deploy.mjs",
+    "chain:rehearse": "node scripts/rehearse-chain.mjs",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && npm run build",
     "test": "node --test test/*.test.mjs",
