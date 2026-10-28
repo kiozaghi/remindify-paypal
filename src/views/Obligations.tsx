@@ -3,15 +3,17 @@ import { useApp } from "../store";
 import { Icon } from "../components/Icon";
 import { Monogram, CategoryTile, RiskMeter, RiskPill, EmptyState } from "../components/ui";
 import {
-  CATEGORIES, AUTONOMY, money, dueLabel, recurrenceLabel, dateShort, BANDS,
+  CATEGORIES, AUTONOMY, LENSES, lensOf, money, dueLabel, recurrenceLabel, dateShort, BANDS,
 } from "../lib/format";
 
 type Filter = "all" | "needs" | "delegated" | "overdue" | "done";
+type LensFilter = "all" | "life" | "money";
 
 export default function Obligations() {
   const { state, nowMs, openObligation, setOverlays, actions } = useApp();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
+  const [lens, setLens] = useState<LensFilter>("all");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"risk" | "due" | "title">("risk");
 
@@ -20,6 +22,7 @@ export default function Obligations() {
   const live = state.obligations.filter((o) => !["done", "archived"].includes(o.status));
   const list = useMemo(() => {
     let items = [...live];
+    if (lens !== "all") items = items.filter((o) => lensOf(o.category) === lens);
     if (category !== "all") items = items.filter((o) => o.category === category);
     if (filter === "needs") items = items.filter((o) => o.risk.band === "critical" || o.risk.band === "high");
     if (filter === "delegated") items = items.filter((o) => o.owner_kind === "agent");
@@ -39,13 +42,23 @@ export default function Obligations() {
     if (sort === "due") items.sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
     if (sort === "title") items.sort((a, b) => a.title.localeCompare(b.title));
     return items;
-  }, [live, category, filter, query, sort, state.obligations]);
+  }, [live, lens, category, filter, query, sort, state.obligations]);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     live.forEach((o) => { counts[o.category] = (counts[o.category] || 0) + 1; });
     return counts;
   }, [live]);
+
+  const lensCounts = useMemo(() => ({
+    life: live.filter((o) => lensOf(o.category) === "life").length,
+    money: live.filter((o) => lensOf(o.category) === "money").length,
+  }), [live]);
+
+  const chooseLens = (value: LensFilter) => {
+    setLens(value);
+    if (value !== "all" && category !== "all" && lensOf(category) !== value) setCategory("all");
+  };
 
   const filters: { key: Filter; label: string; count: number }[] = [
     { key: "all", label: "All live", count: live.length },
@@ -60,7 +73,7 @@ export default function Obligations() {
         <div>
           <span className="eyebrow">The register</span>
           <h1>Obligations</h1>
-          <p>Everything that comes back. One owner, one backup, one proof trail.</p>
+          <p>Everything that comes back — the people you love and the money you can’t lose. One owner, one backup, one proof trail.</p>
         </div>
         <div className="view-head-actions">
           <button className="btn btn-ghost" onClick={() => setOverlays((o) => ({ ...o, templates: true }))}>
@@ -132,6 +145,19 @@ export default function Obligations() {
         </label>
       </div>
 
+      <div className="lens-rail">
+        <button className={`lens-chip all ${lens === "all" ? "on" : ""}`} onClick={() => chooseLens("all")}>
+          Everything <span>{live.length}</span>
+        </button>
+        <button className={`lens-chip life ${lens === "life" ? "on" : ""}`} onClick={() => chooseLens("life")}>
+          <Icon name="heart" size={13} /> {LENSES.life.label} <span>{lensCounts.life}</span>
+        </button>
+        <button className={`lens-chip money ${lens === "money" ? "on" : ""}`} onClick={() => chooseLens("money")}>
+          <Icon name="wallet" size={13} /> {LENSES.money.label} <span>{lensCounts.money}</span>
+        </button>
+        <em>One register. Both kinds of weight.</em>
+      </div>
+
       <div className="category-rail">
         <button className={`cat-chip ${category === "all" ? "on" : ""}`} onClick={() => setCategory("all")}>
           All categories
@@ -164,7 +190,7 @@ export default function Obligations() {
             icon="search"
             title="Nothing matches that"
             detail="Try a broader filter, or capture something new."
-            action={<button className="btn btn-ghost btn-sm" onClick={() => { setFilter("all"); setCategory("all"); setQuery(""); }}>Clear filters</button>}
+            action={<button className="btn btn-ghost btn-sm" onClick={() => { setFilter("all"); setCategory("all"); setLens("all"); setQuery(""); }}>Clear filters</button>}
           />
         )}
 

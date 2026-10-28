@@ -10,6 +10,26 @@ export const CATEGORIES: Record<string, { label: string; icon: string; tone: str
   other: { label: "Other", icon: "circle", tone: "ink" },
 };
 
+/** The two kinds of weight the register carries. */
+export const LENSES = {
+  life: {
+    label: "People & life",
+    short: "Life",
+    categories: ["people", "health", "other"],
+  },
+  money: {
+    label: "Money & admin",
+    short: "Money",
+    categories: ["finance", "work", "home", "identity"],
+  },
+} as const;
+
+export type Lens = keyof typeof LENSES;
+
+export function lensOf(category: string): Lens {
+  return (LENSES.life.categories as readonly string[]).includes(category) ? "life" : "money";
+}
+
 export const AUTONOMY: Record<string, { label: string; short: string; desc: string }> = {
   notify: { label: "Notify", short: "Notify", desc: "Nudge me. I'll do it." },
   prepare: { label: "Prepare", short: "Prepare", desc: "Draft the plan, don't act." },

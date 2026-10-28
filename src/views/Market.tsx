@@ -5,7 +5,7 @@ import { Monogram, Segmented } from "../components/ui";
 import { money, timeAgo } from "../lib/format";
 
 export default function Market() {
-  const { state, openHire, nowMs } = useApp();
+  const { state, openHire, setOverlays, nowMs } = useApp();
   const [kind, setKind] = useState("all");
   const [sort, setSort] = useState("rating");
   if (!state) return null;
@@ -68,6 +68,47 @@ export default function Market() {
           </div>
         </div>
       </div>
+
+      <section className="community-bench">
+        <div className="community-bench-copy">
+          <span className="eyebrow light">Built by the community</span>
+          <h2>Borrow a bench <em>someone already built.</em></h2>
+          <p>
+            People with the same year you’re having have already mapped it: the school run,
+            the tax cycle, the holidays, the move abroad. Import their pack, or publish the
+            agent that finally solved yours — and get paid when the proof is accepted.
+          </p>
+          <div className="community-bench-actions">
+            <button
+              className="btn btn-lime btn-sm"
+              onClick={() => setOverlays((o) => ({ ...o, templates: true, palette: false }))}
+            >
+              <Icon name="layers" size={14} /> Browse community packs
+            </button>
+            <button
+              className="btn btn-ghost-light btn-sm"
+              onClick={() => setOverlays((o) => ({ ...o, newAgent: true, palette: false }))}
+            >
+              <Icon name="bot" size={14} /> Publish your own agent
+            </button>
+          </div>
+        </div>
+        <div className="community-bench-side">
+          <div className="community-packs">
+            <span className="community-label">Popular packs</span>
+            <div className="community-chips">
+              {["Love & connection", "Family & school", "Tax & filings", "Holidays", "Caregiving", "Moving country"].map((name) => (
+                <span key={name}>{name}</span>
+              ))}
+            </div>
+          </div>
+          <div className="community-bench-stats">
+            <div><strong>8</strong><span>community packs</span></div>
+            <div><strong>14k</strong><span>imports this year</span></div>
+            <div><strong>100%</strong><span>proof-gated payouts</span></div>
+          </div>
+        </div>
+      </section>
 
       {bookings.length > 0 && (
         <section className="bookings">

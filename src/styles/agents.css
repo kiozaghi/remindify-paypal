@@ -97,6 +97,44 @@
 .market-hero-stats strong { display: block; font-size: 22px; letter-spacing: -0.04em; color: var(--lime); }
 .market-hero-stats span { display: block; font-family: var(--mono); font-size: 7px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(251, 249, 243, 0.45); max-width: 70px; line-height: 1.3; margin-top: 2px; }
 .market-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin: 14px 0 6px; }
+
+/* Community bench band */
+.community-bench {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 26px;
+  margin: 14px 0 4px;
+  padding: 24px 26px;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(240, 91, 60, 0.09), transparent 52%),
+    radial-gradient(circle at 92% 100%, rgba(217, 242, 106, 0.24), transparent 55%),
+    rgba(255, 253, 248, 0.6);
+}
+.community-bench-copy h2 { font-size: 25px; letter-spacing: -0.04em; line-height: 1.06; margin: 8px 0 9px; }
+.community-bench-copy h2 em { font-family: var(--serif); font-style: italic; color: var(--ink-2); font-weight: 400; }
+.community-bench-copy p { font-size: 11.5px; line-height: 1.58; color: var(--muted); max-width: 520px; }
+.community-bench-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.community-bench-actions .btn-lime { background: var(--ink); color: var(--lime); }
+.community-bench-actions .btn-lime:hover { background: #2b2d20; }
+.community-bench-actions .btn-ghost-light { border-color: var(--line-2); color: var(--ink-2); background: rgba(255, 253, 248, 0.5); }
+.community-bench-actions .btn-ghost-light:hover { background: var(--white); color: var(--ink); }
+.community-bench-side { display: flex; flex-direction: column; justify-content: space-between; gap: 18px; }
+.community-label { display: block; font-family: var(--mono); font-size: 7.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); margin-bottom: 8px; }
+.community-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.community-chips span {
+  font-size: 10px;
+  color: var(--ink-2);
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: rgba(255, 253, 248, 0.7);
+}
+.community-bench-stats { display: flex; gap: 16px; padding-top: 14px; border-top: 1px dashed var(--line-2); }
+.community-bench-stats div { min-width: 0; }
+.community-bench-stats strong { display: block; font-size: 20px; letter-spacing: -0.04em; }
+.community-bench-stats span { display: block; font-family: var(--mono); font-size: 7px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); line-height: 1.35; margin-top: 2px; }
 .compare-card { display: flex; gap: 10px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--r-md); background: rgba(255, 253, 248, 0.55); }
 .compare-icon { width: 34px; height: 34px; border-radius: 9px; background: var(--tone-soft); color: var(--tone-ink); display: grid; place-items: center; flex: none; }
 .compare-card h3 { font-size: 12px; margin-bottom: 3px; }

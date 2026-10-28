@@ -296,6 +296,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Landing pack cards deep-link to /obligations?templates=1. Open the pack
+    // picker once, then drop the parameter so a refresh doesn't reopen it.
+    const { page, params } = readLocation();
+    if (page !== "obligations" || params.get("templates") !== "1") return;
+    setOverlays((o) => ({ ...o, templates: true }));
+    window.history.replaceState(null, "", "/obligations");
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();

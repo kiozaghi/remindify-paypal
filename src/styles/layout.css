@@ -347,6 +347,32 @@
 .hero-stats em { font-style: normal; font-size: 9px; color: rgba(251, 249, 243, 0.4); }
 
 /* Today layout */
+.ledger-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: stretch;
+  gap: 0;
+  margin: 16px 0 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: rgba(255, 253, 248, 0.62);
+  overflow: hidden;
+}
+.ledger-side { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; border-right: 1px solid var(--line); min-width: 0; }
+.ledger-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; }
+.ledger-side.life .ledger-icon { background: var(--coral-soft); color: #a53320; }
+.ledger-side.money .ledger-icon { background: #eff7cb; color: #4b5e0a; }
+.ledger-copy { min-width: 0; }
+.ledger-copy .eyebrow { display: block; font-size: 7.5px; letter-spacing: 0.1em; }
+.ledger-copy strong { display: block; font-size: 12px; letter-spacing: -0.02em; margin: 4px 0 2px; }
+.ledger-copy em { display: block; font-style: normal; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ledger-action {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 0 18px; border: 0; border-left: 1px solid var(--line);
+  background: rgba(229, 224, 211, 0.35); color: var(--ink);
+  font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.ledger-action:hover { background: var(--ink); color: var(--paper); }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(300px, 0.82fr); gap: 22px; align-items: start; }
 .today-main { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
 .today-rail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }

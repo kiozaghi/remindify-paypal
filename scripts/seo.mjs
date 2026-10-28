@@ -19,7 +19,7 @@ const builtAt = new Date().toISOString().slice(0, 10);
 const seo = await import(pathToFileURL(join(root, "dist-ssr", "entry-server.js")).href);
 const {
   CONTENT_PAGES, SHELL_PAGES, PAGE_META,
-  FAQS, PLANS, PRODUCTS,
+  FAQS, PLANS, PRODUCTS, SIDES, DELEGATION, COMMUNITY_PACKS,
   renderPage, headTags, routePath, canonicalFor,
 } = seo;
 
@@ -111,11 +111,14 @@ const pageIndex = CONTENT_PAGES.map((page) => {
 
 const llms = `# Remindify
 
-> Remindify is the calm register for everything that comes back: renewals, filings, payroll, people, maintenance and proof. Humans and agents share one owned, risk-scored, proof-backed workspace.
+> Remindify is one calm register for both kinds of weight: the people you love and the money you can't lose. Renewals, filings, school terms and birthdays, with humans and agents who can actually do the work, community calendar packs, and verifiable proof.
 
 Remindify is a web application for individuals and small teams. Every recurring obligation has one owner, one backup, a risk score, an autonomy level, a proof requirement and an audit trail. The product is in private preview; billing is not enabled.
 
 Key facts:
+- Two sides, one register: people (relationships, family, health, caregiving) and money (jobs, insurance, subscriptions, filings, home).
+- Remind, then do: open the item yourself, delegate to an agent you built, or hire a community agent or human for one obligation.
+- Community packs: importable calendars for love and connection, the school year, holidays, caregiving, tax filings, home cover, subscriptions and moving country.
 - No token. No custody. No server-held private keys.
 - Wallet sign-in and onchain proof are optional; email and Google sign-in work without a wallet.
 - Proof receipts are hashed and signed with EIP-712 offchain. Anchoring to Base is optional.
@@ -153,6 +156,18 @@ Call to action: ${plan.cta}.`;
 
 const faqLines = FAQS.map((faq) => `### ${faq.q}\n${faq.a}`).join("\n\n");
 
+const sideLines = SIDES.map(
+  (side) => `### ${side.eyebrow}: ${side.title}\n${side.lede}\nExamples: ${side.items.map((item) => `${item.title} (${item.meta})`).join("; ")}.\nWhat it costs when it slips: ${side.cost}`,
+).join("\n\n");
+
+const delegationLines = DELEGATION.map(
+  (path) => `${path.step}. ${path.title} (${path.tag}) — ${path.copy}`,
+).join("\n");
+
+const packLines = COMMUNITY_PACKS.map(
+  (pack) => `- ${pack.name} (${pack.lens === "life" ? "people" : "money"}, ${pack.count} obligations, curated by ${pack.curator}): ${pack.tagline} Proof required: ${pack.proof}.`,
+).join("\n");
+
 const llmsFull = `# Remindify — full summary
 
 Canonical site: ${origin}
@@ -164,6 +179,24 @@ Remindify is the register for everything that comes back. A reminder is a notifi
 
 It is built for the person who remembers everything for everyone: a founder, an operator, a household manager, a small team. Humans and agents work from the same register, with scoped access and an audit trail.
 
+## The two sides
+
+Most tools pick one side of a life. A finance app ignores a mother's birthday; a family calendar forgets the insurance renewal. Remindify carries both, with one owner, one backup and one proof trail.
+
+${sideLines}
+
+## Remind, then do
+
+A notification ends with you. Remindify offers three ways for the work to leave your desk, each with scoped access and proof before payment:
+
+${delegationLines}
+
+## Community packs
+
+Packs are calendars someone already survived: love and connection, the school year, holidays, caregiving, tax filings, home cover, subscriptions and moving country. Import a pack, edit it, and it becomes yours. Community agents are held to the same scopes, ceilings and proof standard as your own.
+
+${packLines}
+
 ## Product surfaces
 
 ${productLines}
@@ -171,10 +204,11 @@ ${productLines}
 ## How it works
 
 1. Capture: paste a letter, email, note or text-based PDF. A deterministic parser extracts the dates, amounts, provider and recurrence. No AI API is required for this path.
-2. Own: assign one owner and one backup. Set the risk and the autonomy ceiling (notify, prepare, approve, autopilot).
-3. Prove: define what evidence counts. Completion files a hashed proof receipt signed with EIP-712.
-4. Escalate only when needed: anchor the proof hash to Base, or fund non-custodial USDC escrow that releases against proof.
-5. Audit: Activity keeps an attributed event stream of who did what, with which scope, and what evidence was filed.
+2. Own: assign one owner and one backup. Set the risk and the autonomy ceiling (notify, prepare, approve, autopilot). Filter the register by the people side or the money side.
+3. Do: open the next step yourself, delegate to your own agent, or hire a community agent or vetted human from the marketplace.
+4. Prove: define what evidence counts. Completion files a hashed proof receipt signed with EIP-712.
+5. Escalate only when needed: anchor the proof hash to Base, or fund non-custodial USDC escrow that releases against proof.
+6. Audit: Activity keeps an attributed event stream of who did what, with which scope, and what evidence was filed.
 
 ## Pricing
 

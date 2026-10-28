@@ -27,7 +27,7 @@ export const PAGE_META: Record<Route, PageMeta> = {
     label: "Home",
     title: "Remindify — the register for everything that comes back",
     description:
-      "Remindify turns renewals, filings, payroll, people and proof into one calm, owned register for humans and agents. Email, Google or wallet. No token. Wallet optional.",
+      "One calm register for both kinds of weight: the people you love and the money you can't lose. Renewals, filings, school terms and birthdays — with agents and humans who actually do the work, community calendar packs, and proof when it matters.",
     index: true,
   },
   pricing: {
@@ -48,7 +48,7 @@ export const PAGE_META: Record<Route, PageMeta> = {
     label: "About",
     title: "About — Remindify",
     description:
-      "Why we built Remindify: a calm register for the recurring work that keeps a life or business running. Built in Addis Ababa, for everywhere.",
+      "Why we built Remindify: the people side and the money side of the same life, carried by one person. A calm register built in Addis Ababa, for everywhere.",
     index: true,
   },
   privacy: {
@@ -108,7 +108,7 @@ export function structuredData(page: Route, origin = SITE_ORIGIN) {
       logo: `${base}/icon-512.png`,
       email: "hello@remindify.app",
       description:
-        "Remindify is the calm register for recurring obligations: renewals, filings, payroll, people, maintenance and proof.",
+        "Remindify is the calm register for both sides of a life: the people you love and the money you can't lose.",
       foundingLocation: { "@type": "Place", name: "Addis Ababa, Ethiopia" },
     },
     {
@@ -118,7 +118,7 @@ export function structuredData(page: Route, origin = SITE_ORIGIN) {
       name: "Remindify",
       alternateName: "Remindify OS",
       description:
-        "The register for everything that comes back. Humans and agents share one owned, risk-scored, proof-backed workspace.",
+        "The register for everything that comes back — people and money, owners and agents, community packs and proof.",
       inLanguage: "en",
       publisher: { "@id": organizationId },
     },
@@ -130,11 +130,14 @@ export function structuredData(page: Route, origin = SITE_ORIGIN) {
       operatingSystem: "Web",
       url: base,
       description:
-        "A register for recurring obligations with owners, backups, risk scoring, agent passports, proof receipts and optional USDC escrow.",
+        "A register for both sides of a life — people and money — with owners, backups, risk scoring, agent passports, proof receipts, community packs and optional USDC escrow.",
       featureList: [
-        "Recurring obligation register",
-        "Risk scoring and approvals",
+        "Recurring obligation register for people and money",
+        "Life and money lenses on one register",
+        "Community calendar packs",
         "Human and agent owners with scopes",
+        "Do it yourself, delegate to your agent, or hire the community",
+        "Risk scoring and approvals",
         "Deterministic capture from text and text-based PDFs",
         "EIP-712 proof receipts",
         "Optional Base and Celo anchoring",

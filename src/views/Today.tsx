@@ -6,7 +6,7 @@ import {
   Monogram, CategoryTile, RiskMeter, RiskPill, AutonomyControl, Ring, EmptyState, LiveDot,
 } from "../components/ui";
 import {
-  CATEGORIES, AUTONOMY, money, dueLabel, timeAgo, dateShort, recurrenceLabel, clockLabel, riskTone,
+  CATEGORIES, AUTONOMY, money, dueLabel, timeAgo, dateShort, recurrenceLabel, clockLabel, riskTone, lensOf,
 } from "../lib/format";
 import type { Approval } from "../types";
 
@@ -143,6 +143,13 @@ export default function Today() {
     .slice(0, 6);
   const nextApproval = pending[0];
 
+  const lifeItems = active.filter((o) => lensOf(o.category) === "life");
+  const moneyItems = active.filter((o) => lensOf(o.category) === "money");
+  const soonest = (items: typeof active) =>
+    [...items].sort((a, b) => a.risk.days - b.risk.days)[0];
+  const nextLife = soonest(lifeItems);
+  const nextMoney = soonest(moneyItems);
+
   const sweep = async () => {
     setSweeping(true);
     await actions.sweep();
@@ -229,6 +236,43 @@ export default function Today() {
             </div>
           </div>
         </aside>
+      </section>
+
+      <section className="ledger-strip">
+        <div className="ledger-side life">
+          <span className="ledger-icon"><Icon name="heart" size={15} /></span>
+          <div className="ledger-copy">
+            <span className="eyebrow">The people side</span>
+            <strong>
+              {lifeItems.length} {lifeItems.length === 1 ? "thing" : "things"} you hold for other people
+            </strong>
+            <em>
+              {nextLife
+                ? `Next: ${nextLife.title} · ${dueLabel(nextLife.due_at, nowMs)}`
+                : "Nothing on the people side is close to the edge."}
+            </em>
+          </div>
+        </div>
+
+        <div className="ledger-side money">
+          <span className="ledger-icon"><Icon name="wallet" size={15} /></span>
+          <div className="ledger-copy">
+            <span className="eyebrow">The money side</span>
+            <strong>
+              {moneyItems.length} {moneyItems.length === 1 ? "thing" : "things"} that send an invoice
+            </strong>
+            <em>
+              {nextMoney
+                ? `Next: ${nextMoney.title} · ${dueLabel(nextMoney.due_at, nowMs)}`
+                : "Nothing on the money side is close to the edge."}
+            </em>
+          </div>
+        </div>
+
+        <button className="ledger-action" onClick={() => navigate("obligations")}>
+          Both ledgers
+          <Icon name="arrowRight" size={14} />
+        </button>
       </section>
 
       <div className="today-grid">

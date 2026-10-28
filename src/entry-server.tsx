@@ -1,13 +1,13 @@
 import { renderToString } from "react-dom/server";
 import Landing from "./landing/Landing";
-import { FAQS, PLANS, PRODUCTS } from "./landing/data";
+import { FAQS, PLANS, PRODUCTS, SIDES, DELEGATION, COMMUNITY_PACKS } from "./landing/data";
 import {
   CONTENT_PAGES, PAGE_META, SHELL_PAGES, canonicalFor, structuredData,
 } from "./lib/seo";
 import type { Route } from "./lib/router";
 import { routePath } from "./lib/router";
 
-export { CONTENT_PAGES, SHELL_PAGES, PAGE_META, FAQS, PLANS, PRODUCTS, routePath, canonicalFor };
+export { CONTENT_PAGES, SHELL_PAGES, PAGE_META, FAQS, PLANS, PRODUCTS, SIDES, DELEGATION, COMMUNITY_PACKS, routePath, canonicalFor };
 
 export type HeadOptions = {
   verification?: { google?: string; bing?: string };

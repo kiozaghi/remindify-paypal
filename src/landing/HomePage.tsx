@@ -5,6 +5,9 @@ import {
   ArrowLink, PublicFooter, PublicNav, SectionTag, spaClick, type Navigate,
 } from "./Chrome";
 import { CHAPTERS, FAQS, PLANS, PRODUCTS } from "./data";
+import {
+  CarryingSection, DelegationPaths, PacksSection, TwoSidesSection,
+} from "./Sections";
 import { scrollToId, useActiveSection, useReveal, useScrollProgress } from "./hooks";
 
 const CHAPTER_IDS = CHAPTERS.map((chapter) => chapter.id);
@@ -53,10 +56,10 @@ export default function HomePage({
                 <em>It’s remembering.</em>
               </h1>
               <p className="hero-lede">
-                Renewals. Filings. Payroll. The boiler service. Your mother’s birthday.
-                Remindify turns the recurring weight of running a life or a business into one
-                calm, owned register — with humans and agents on the same shift, and proof
-                when it matters.
+                Some of what you carry is money: renewals, filings, subscriptions, cover.
+                Some of it is people: birthdays, school terms, the call you keep postponing.
+                Remindify is one calm register for both — with humans and agents who can
+                actually do the work, and proof when it matters.
               </p>
               <div className="hero-story-actions">
                 <a
@@ -147,13 +150,13 @@ export default function HomePage({
             <span className="hero-foot-label">Built for the person who remembers everything for everyone</span>
             <div className="hero-marquee" aria-hidden="true">
               <span>RENEWALS</span><i />
+              <span>BIRTHDAYS</span><i />
               <span>FILINGS</span><i />
+              <span>SUBSCRIPTIONS</span><i />
               <span>PAYROLL</span><i />
-              <span>MAINTENANCE</span><i />
-              <span>PEOPLE</span><i />
+              <span>THE PEOPLE YOU LOVE</span><i />
               <span>THE THINGS THAT COME BACK</span><i />
               <span>RENEWALS</span><i />
-              <span>FILINGS</span><i />
             </div>
             <a
               className="hero-scroll"
@@ -197,11 +200,13 @@ export default function HomePage({
           </div>
           <div className="story-strip" data-reveal>
             <div><strong>One</strong><span>register for everything that returns</span></div>
-            <div><strong>Two</strong><span>kinds of operators: human and agent</span></div>
-            <div><strong>Three</strong><span>layers of calm: own it, prove it, forget it</span></div>
+            <div><strong>Two</strong><span>kinds of weight: people and money</span></div>
+            <div><strong>Three</strong><span>layers of calm: own it, do it, prove it</span></div>
             <div><strong>Zero</strong><span>tokens, custody or server-held keys</span></div>
           </div>
         </section>
+
+        <TwoSidesSection onNavigate={onNavigate} user={user} />
 
         {/* ---------- Chapter one ---------- */}
         <section className="chapter chapter-one" id="chapter-one">
@@ -342,18 +347,18 @@ export default function HomePage({
           <div className="section-wrap chapter-grid">
             <div className="chapter-copy" data-reveal>
               <span className="chapter-number">03</span>
-              <SectionTag>The bench</SectionTag>
-              <h2>Give the recurring work<br /><em>a bench.</em></h2>
+              <SectionTag>Remind, then do</SectionTag>
+              <h2>The nudge is not<br /><em>the point.</em></h2>
               <p>
                 Some things need a human. Some need software. Most need one of each.
-                In Remindify, agents are not magic. They have a passport: role, scopes,
-                trust, an autonomy ceiling and a record of every run. Humans arrive through
-                the marketplace with a fixed price and scoped access.
+                Build an agent for your own recurring work, or borrow one someone else
+                already built. Either way it carries a passport: role, scopes, trust,
+                an autonomy ceiling and a record of every run.
               </p>
               <ul className="chapter-list">
-                <li><span>01</span> Agents act only inside a ceiling you can read.</li>
-                <li><span>02</span> Hire a specialist for one obligation, not your whole life.</li>
-                <li><span>03</span> Payment releases against accepted proof.</li>
+                <li><span>01</span> Do it yourself, with the next step and proof in one place.</li>
+                <li><span>02</span> Delegate inside a ceiling you can read and change.</li>
+                <li><span>03</span> Hire a specialist for one obligation, not your whole life.</li>
               </ul>
               <ArrowLink
                 href={appHref("agents", user)}
@@ -402,7 +407,11 @@ export default function HomePage({
               <div className="bench-line" aria-hidden="true" />
             </div>
           </div>
+
+          <DelegationPaths onNavigate={onNavigate} user={user} />
         </section>
+
+        <PacksSection onNavigate={onNavigate} user={user} />
 
         {/* ---------- Chapter four ---------- */}
         <section className="chapter chapter-four chapter-dark" id="chapter-four">
@@ -413,9 +422,10 @@ export default function HomePage({
               <h2>The database can be wrong.<br /><em>The receipt can be checked.</em></h2>
               <p>
                 Every completed obligation files an offchain proof receipt: a hashed reference
-                to the proof, signed with EIP-712. If a counterparty needs more than your word,
-                anchor the hash to Base. If a provider needs to be paid on delivery, put USDC
-                in escrow that releases only against a valid receipt.
+                to the proof, signed with EIP-712. That includes work done by a community agent
+                or a hired human — same receipt, same standard. If a counterparty needs more
+                than your word, anchor the hash to Base. If a provider needs to be paid on
+                delivery, put USDC in escrow that releases only against a valid receipt.
               </p>
               <div className="trust-pills">
                 <span><Icon name="fingerprint" size={13} /> EIP-712 signed</span>
@@ -467,8 +477,9 @@ export default function HomePage({
               <h2>A quieter Monday.<br /><em>Not a busier dashboard.</em></h2>
               <p>
                 The goal is not to check another app. It is to open one place, see that
-                everything that comes back has an owner, and close the laptop. The agents
-                keep working. The proof keeps filing. You get the part of your mind back.
+                everything that comes back — the people you love and the money you can’t
+                lose — has an owner, and close the laptop. The agents keep working. The
+                proof keeps filing. You get the part of your mind back.
               </p>
               <blockquote>
                 “The point isn’t to do more.<br /><em>It’s to carry less.”</em>
@@ -516,8 +527,9 @@ export default function HomePage({
             <SectionTag>Inside the register</SectionTag>
             <h2>One calm surface for<br /><em>everything that returns.</em></h2>
             <p>
-              Eight rooms. One source of truth. Every action is attributed, every outcome
-              has evidence, and nothing depends on somebody remembering.
+              Eight rooms. Two kinds of weight. One source of truth. Every action is
+              attributed, every outcome has evidence, and nothing depends on somebody
+              remembering.
             </p>
           </div>
           <div className="product-grid">
@@ -648,6 +660,8 @@ export default function HomePage({
           </div>
         </section>
 
+        <CarryingSection onNavigate={onNavigate} user={user} />
+
         {/* ---------- Ending ---------- */}
         <section className="ending">
           <div className="ending-inner" data-reveal>
@@ -655,8 +669,9 @@ export default function HomePage({
             <SectionTag light>Your turn</SectionTag>
             <h2>You have enough to remember.<br /><em>Let this remember for you.</em></h2>
             <p>
-              Open a register, paste in the first thing that keeps coming back, and give it
-              an owner. It takes about ninety seconds. The relief lasts longer.
+              Open a register, put in the first thing you’re carrying — a birthday, a
+              renewal, the call you keep postponing — and give it an owner. It takes about
+              ninety seconds. The relief lasts longer.
             </p>
             <div className="ending-actions">
               <a

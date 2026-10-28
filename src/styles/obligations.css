@@ -36,6 +36,28 @@
 .toolbar-filters { display: flex; gap: 5px; flex-wrap: wrap; }
 .toolbar .sort-select { margin-left: auto; }
 .category-rail { display: flex; gap: 5px; margin-bottom: 14px; flex-wrap: wrap; }
+.lens-rail { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.lens-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 248, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.lens-chip > span { font-family: var(--mono); font-size: 8px; color: var(--faint); }
+.lens-chip:hover { color: var(--ink); border-color: var(--line-strong); }
+.lens-chip.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.lens-chip.on > span { color: rgba(251, 249, 243, 0.55); }
+.lens-chip.life.on { background: #b8422b; border-color: #b8422b; }
+.lens-chip.money.on { background: #5a6d10; border-color: #5a6d10; color: #f6ffd0; }
+.lens-rail em { margin-left: auto; font-style: normal; font-size: 10px; color: var(--faint); }
 .cat-chip {
   display: inline-flex;
   align-items: center;
