@@ -230,9 +230,9 @@ export default function Today() {
               <em>agent proposals</em>
             </div>
             <div>
-              <span>Hours back</span>
-              <strong>{state.stats.hours_saved}</strong>
-              <em>this month</em>
+              <span>Executed</span>
+              <strong>{state.stats.agent_done_30d}</strong>
+              <em>by agents · 30 days</em>
             </div>
           </div>
         </aside>

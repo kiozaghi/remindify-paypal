@@ -52,6 +52,9 @@ export default function Activity() {
   const todayCount = state.events.filter((e) => groupLabel(e.created_at, nowMs) === "Today").length;
   const agentCount = state.events.filter((e) => e.actor_type === "agent").length;
   const agentShare = Math.round((agentCount / Math.max(1, state.events.length)) * 100);
+  const overdue = state.obligations.filter(
+    (o) => !["done", "archived"].includes(o.status) && new Date(o.due_at).getTime() < nowMs
+  ).length;
 
   const exportLog = () => {
     download(
@@ -99,7 +102,7 @@ export default function Activity() {
         <div><strong>{todayCount}</strong><span>actions today</span></div>
         <div><strong>{agentShare}%</strong><span>done by agents</span></div>
         <div><strong>{state.runs.filter((r) => r.proof).length}</strong><span>proofs on file</span></div>
-        <div className="activity-streak"><Icon name="shield" size={14} /> {state.stats.streak_weeks} weeks without a missed deadline</div>
+        <div className="activity-streak"><Icon name="alert" size={14} /> {overdue} overdue right now</div>
       </div>
 
       <div className="activity-layout">

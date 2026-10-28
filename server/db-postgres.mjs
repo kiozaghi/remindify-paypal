@@ -692,7 +692,6 @@ export function seedDatabase(force = false) {
       plan: preserved.plan || "Free",
       clock_offset_days: 0,
       live: true,
-      streak_weeks: 1,
       seed_now: seed.meta.seed_now,
       api_calls: preserved.api_calls ?? 0,
     };

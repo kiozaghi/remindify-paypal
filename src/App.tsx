@@ -71,6 +71,7 @@ function Shell() {
 
   const displayUser = user?.name || state?.user || "Operator";
   const displayDetail = user?.email || user?.wallet_address || "Signed in";
+  const proofsOnFile = state ? state.runs.filter((run) => run.proof).length : 0;
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -137,8 +138,8 @@ function Shell() {
           <div className="streak-card">
             <span className="streak-icon"><Icon name="shield" size={15} /></span>
             <div>
-              <strong>{state.stats.streak_weeks} weeks</strong>
-              <em>without a missed deadline</em>
+              <strong>{proofsOnFile} proofs</strong>
+              <em>on file from real runs</em>
             </div>
           </div>
           <div className="workspace-card">

@@ -50,12 +50,43 @@ export function enrichObligation(ob, now) {
   return { ...ob, risk, due_label: new Date(ob.due_at).toISOString() };
 }
 
+const RUN_WINDOW = 30 * DAY;
+
+function tallyRuns(runs, since) {
+  const totals = new Map();
+  for (const run of runs) {
+    const tally = totals.get(run.agent_id) || { runs: 0, done: 0, failed: 0, proofs: 0 };
+    if (new Date(run.created_at).getTime() >= since) {
+      tally.runs++;
+      if (run.status === "done") {
+        tally.done++;
+        if (run.proof) tally.proofs++;
+      } else if (run.status === "failed") {
+        tally.failed++;
+      }
+    }
+    totals.set(run.agent_id, tally);
+  }
+  return totals;
+}
+
+export function agentStats(agent, tally = { runs: 0, done: 0, failed: 0, proofs: 0 }) {
+  const attempts = tally.done + tally.failed;
+  return {
+    ...agent,
+    runs_30d: tally.runs,
+    success_rate: attempts ? Math.round((tally.done / attempts) * 1000) / 10 : null,
+    proofs_30d: tally.proofs,
+  };
+}
+
 export function buildState() {
   const data = loadAll();
   const now = virtualNow();
   const obligations = data.obligations.map((ob) => enrichObligation(ob, now));
   const byId = Object.fromEntries(obligations.map((o) => [o.id, o]));
-  const agents = data.agents.map(publicAgent);
+  const runTallies = tallyRuns(data.runs, now - RUN_WINDOW);
+  const agents = data.agents.map((agent) => publicAgent(agentStats(agent, runTallies.get(agent.id))));
   const agentsById = Object.fromEntries(agents.map((a) => [a.id, a]));
 
   const approvals = data.approvals.map((a) => ({
@@ -84,6 +115,16 @@ export function buildState() {
     Math.min(99, Math.round(100 - avgRisk * 0.62 + (withBackup / Math.max(1, active.length)) * 6))
   );
 
+  const agentTotals = [...runTallies.values()].reduce(
+    (acc, tally) => ({
+      runs: acc.runs + tally.runs,
+      done: acc.done + tally.done,
+      failed: acc.failed + tally.failed,
+      proofs: acc.proofs + tally.proofs,
+    }),
+    { runs: 0, done: 0, failed: 0, proofs: 0 }
+  );
+
   const stats = {
     active: active.length,
     due_week: dueThisWeek.length,
@@ -94,9 +135,10 @@ export function buildState() {
     coverage,
     delegated: active.filter((o) => o.owner_kind === "agent").length,
     with_backup: withBackup,
-    agent_runs_30d: data.agents.reduce((s, a) => s + (a.runs_30d || 0), 0),
-    hours_saved: Math.round(data.agents.reduce((s, a) => s + (a.hours_saved || 0), 0)),
-    streak_weeks: getMeta("streak_weeks", 14),
+    agent_runs_30d: agentTotals.runs,
+    agent_done_30d: agentTotals.done,
+    agent_failed_30d: agentTotals.failed,
+    agent_proofs_30d: agentTotals.proofs,
   };
 
   const trust = trustSnapshot(data);

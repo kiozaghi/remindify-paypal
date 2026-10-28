@@ -20,7 +20,7 @@ import {
 import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
 import { setWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES } from "./keys.mjs";
-import { newExecutorSecret, publicAgent, validateExecutorUrl } from "./executors.mjs";
+import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
 import {
   billingSummary, canSwitchPlans, keyLimitReached, meterApiCall, PLANS, setPlan,
 } from "./billing.mjs";
@@ -451,12 +451,9 @@ async function handleRequest(req, res) {
         capabilities: input.capabilities || ["execute"],
         autonomy_ceiling: input.autonomy_ceiling || "approve",
         trust: 80,
-        runs_30d: 0,
-        success_rate: 100,
         cost_per_run: 0,
         status: "active",
         scopes: input.scopes || ["obligations:read"],
-        hours_saved: 0,
         last_active: new Date().toISOString(),
         created_at: new Date().toISOString(),
         custom: true,
@@ -467,7 +464,8 @@ async function handleRequest(req, res) {
         object: agent.name, detail: `${agent.role} · ceiling ${agent.autonomy_ceiling}`,
         kind: "human",
       });
-      return send(res, 201, { state: buildState(), agent });
+      const state = buildState();
+      return send(res, 201, { state, agent: state.agents.find((a) => a.id === agent.id) });
     }
 
     const agentMatch = path.match(/^\/api\/agents\/([^/]+)$/);
@@ -480,7 +478,8 @@ async function handleRequest(req, res) {
         if (key in patch) agent[key] = patch[key];
       }
       put("agents", agent);
-      return send(res, 200, { state: buildState(), agent: publicAgent(agent) });
+      const state = buildState();
+      return send(res, 200, { state, agent: state.agents.find((a) => a.id === agent.id) });
     }
 
     const executorMatch = path.match(/^\/api\/agents\/([^/]+)\/executor$/);
@@ -499,7 +498,8 @@ async function handleRequest(req, res) {
           object: agent.name, detail: "The agent can draft and request approval, but not act.",
           kind: "human",
         });
-        return send(res, 200, { state: buildState(), agent: publicAgent(agent) });
+        const state = buildState();
+        return send(res, 200, { state, agent: state.agents.find((a) => a.id === agent.id) });
       }
 
       const check = await validateExecutorUrl(url);
@@ -519,9 +519,10 @@ async function handleRequest(req, res) {
         object: agent.name, detail: `${host} · signed requests`,
         kind: "human",
       });
+      const state = buildState();
       return send(res, 200, {
-        state: buildState(),
-        agent: publicAgent(agent),
+        state,
+        agent: state.agents.find((a) => a.id === agent.id),
         signing_secret: secret,
       });
     }
@@ -723,7 +724,7 @@ async function handleRequest(req, res) {
       return send(res, 200, {
         exported_at: new Date().toISOString(),
         ...data,
-        agents: data.agents.map(publicAgent),
+        agents: buildState().agents,
         keys: data.keys.map(publicKey),
       });
     }

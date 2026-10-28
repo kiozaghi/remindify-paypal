@@ -70,11 +70,11 @@ export interface Agent {
   autonomy_ceiling: Autonomy;
   trust: number;
   runs_30d: number;
-  success_rate: number;
+  success_rate: number | null;
+  proofs_30d: number;
   cost_per_run: number;
   status: string;
   scopes: string[];
-  hours_saved: number;
   last_active: string;
   executor_url?: string | null;
   executor_configured?: boolean;
@@ -309,8 +309,9 @@ export interface Stats {
   delegated: number;
   with_backup: number;
   agent_runs_30d: number;
-  hours_saved: number;
-  streak_weeks: number;
+  agent_done_30d: number;
+  agent_failed_30d: number;
+  agent_proofs_30d: number;
 }
 
 export interface AppState {

@@ -84,8 +84,8 @@ export default function AgentDrawer() {
 
           <div className="passport-stats">
             <div><strong>{agent.runs_30d.toLocaleString()}</strong><em>runs · 30d</em></div>
-            <div><strong>{agent.success_rate}%</strong><em>success</em></div>
-            <div><strong>{agent.hours_saved}h</strong><em>returned</em></div>
+            <div><strong>{agent.success_rate == null ? "—" : `${agent.success_rate}%`}</strong><em>success</em></div>
+            <div><strong>{agent.proofs_30d}</strong><em>proofs · 30d</em></div>
             <div><strong>{assigned.length}</strong><em>obligations</em></div>
           </div>
 
