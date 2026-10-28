@@ -4,12 +4,14 @@
 // Usage:
 //   BASE_SEPOLIA_ATTESTATION_CONTRACT=0x... \
 //   BASE_SEPOLIA_ESCROW_CONTRACT=0x... \
-//   REHEARSAL_PRIVATE_KEY=0x... \
 //   npm run chain:rehearse
 //
-// The key is read from the environment and never written to disk. The server
-// must already be running with the same contract addresses configured.
+// Without REHEARSAL_PRIVATE_KEY the script generates a throwaway wallet,
+// prints its address and waits for you to fund it. With the variable set, the
+// key is read once and never written to disk. The server must already be
+// running with the same contract addresses configured.
 
+import { randomBytes } from "node:crypto";
 import {
   createPublicClient,
   createWalletClient,
@@ -28,20 +30,14 @@ const API = (process.env.REHEARSAL_API || "http://localhost:4178").replace(/\/$/
 const CHAIN_KEY = process.env.REHEARSAL_CHAIN || "base-sepolia";
 const network = NETWORKS[CHAIN_KEY];
 const USDC_AMOUNT = Number(process.env.REHEARSAL_USDC || 1);
+const WAIT_SECONDS = Number(process.env.REHEARSAL_WAIT_SECONDS || 900);
 
 if (!network) {
   console.error(`Unknown chain "${CHAIN_KEY}". Choose one of: ${Object.keys(NETWORKS).join(", ")}`);
   process.exit(1);
 }
 
-const rawKey = (process.env.REHEARSAL_PRIVATE_KEY || "").trim().replace(/^0[xX]/, "");
-if (!/^[0-9a-fA-F]{64}$/.test(rawKey)) {
-  console.error("REHEARSAL_PRIVATE_KEY must be a 32-byte hex key (funded with gas and test USDC).");
-  process.exit(1);
-}
-
-const account = privateKeyToAccount(`0x${rawKey}`);
-const payee = (process.env.REHEARSAL_PAYEE || account.address).trim();
+const providedKey = (process.env.REHEARSAL_PRIVATE_KEY || "").trim().replace(/^0[xX]/, "");
 const rpc = (process.env[network.rpc_env] || "").trim() || network.rpc_default;
 const attestationContract = (process.env[network.attestation_env] || "").trim();
 const escrowContract = (process.env[network.escrow_env] || "").trim();
@@ -62,7 +58,10 @@ const ESCROW_ABI = [
 ];
 
 const publicClient = createPublicClient({ chain: network.chain, transport: http(rpc) });
-const wallet = createWalletClient({ account, chain: network.chain, transport: http(rpc) });
+
+let account = null;
+let wallet = null;
+let payee = "";
 
 let cookie = "";
 
@@ -102,15 +101,57 @@ async function send(request) {
   return hash;
 }
 
+async function readBalances(address) {
+  const [native, usdc] = await Promise.all([
+    publicClient.getBalance({ address }),
+    publicClient.readContract({
+      address: network.usdc,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [address],
+    }),
+  ]);
+  return { native, usdc };
+}
+
+async function resolveAccount(amountBase) {
+  if (providedKey) {
+    if (!/^[0-9a-fA-F]{64}$/.test(providedKey)) {
+      throw new Error("REHEARSAL_PRIVATE_KEY must be a 32-byte hex key, with or without 0x.");
+    }
+    return privateKeyToAccount(`0x${providedKey}`);
+  }
+
+  const generated = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+  console.log("\nNo REHEARSAL_PRIVATE_KEY set, so this run generated a throwaway wallet:");
+  console.log(`  address : ${generated.address}`);
+  console.log(`  gas     : any ${network.label} faucet`);
+  console.log(`  USDC    : https://faucet.circle.com — select ${network.label}, ${USDC_AMOUNT} USDC`);
+  console.log(`  Waiting up to ${Math.round(WAIT_SECONDS / 60)} minutes. Keep this terminal open;`);
+  console.log("  the key lives only in this process and is discarded when it exits.");
+
+  const deadline = Date.now() + WAIT_SECONDS * 1000;
+  let previous = "";
+  while (Date.now() < deadline) {
+    const { native, usdc } = await readBalances(generated.address);
+    const status = `gas ${formatEther(native)} · USDC ${formatUnits(usdc, 6)}`;
+    if (status !== previous) {
+      console.log(`  ${status}`);
+      previous = status;
+    }
+    if (native > 0n && usdc >= amountBase) return generated;
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  throw new Error("Timed out waiting for funds. The generated wallet is gone; re-run to start again.");
+}
+
 async function main() {
-  const native = await publicClient.getBalance({ address: account.address });
-  const usdc = await publicClient.readContract({
-    address: network.usdc,
-    abi: ERC20_ABI,
-    functionName: "balanceOf",
-    args: [account.address],
-  });
   const amountBase = parseUnits(String(USDC_AMOUNT), 6);
+  account = await resolveAccount(amountBase);
+  wallet = createWalletClient({ account, chain: network.chain, transport: http(rpc) });
+  payee = (process.env.REHEARSAL_PAYEE || account.address).trim();
+
+  const { native, usdc } = await readBalances(account.address);
 
   console.log(`Network   : ${network.label} (${network.chain_id})`);
   console.log(`Wallet    : ${account.address}`);

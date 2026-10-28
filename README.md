@@ -458,16 +458,19 @@ After deploying, set the env vars, restart the server, and rehearse the full flo
 ### Rehearsing the deployed flow
 
 ```bash
-REHEARSAL_PRIVATE_KEY=0x... npm run chain:rehearse
+npm run chain:rehearse
 ```
 
 The script drives the real HTTP API and chain with one funded wallet: it files a receipt, signs it, anchors it, opens an escrow, approves and funds USDC, then releases on proof. It prints every transaction hash and explorer link. Before signing anything it checks the wallet has gas and test USDC, that the server reports `configured` mode, and that the server's contract addresses match the shell's.
 
+Without `REHEARSAL_PRIVATE_KEY` it generates a throwaway wallet, prints its address, and waits for you to fund it, so the key never touches the shell history or disk. It also accepts an existing key.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `REHEARSAL_PRIVATE_KEY` | — | Payer and signer. Needs native gas and test USDC. |
+| `REHEARSAL_PRIVATE_KEY` | generated | Payer and signer. Needs native gas and test USDC. |
 | `REHEARSAL_CHAIN` | `base-sepolia` | Any key from `contracts/networks.mjs`. |
 | `REHEARSAL_USDC` | `1` | Amount to fund. |
+| `REHEARSAL_WAIT_SECONDS` | `900` | How long to wait for a generated wallet to be funded. |
 | `REHEARSAL_API` | `http://localhost:4178` | Running server. |
 | `REHEARSAL_PAYEE` | the payer | Address the escrow releases to. |
 
