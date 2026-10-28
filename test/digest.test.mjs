@@ -100,7 +100,9 @@ test("the sweep emails one digest per verified account per day", async () => {
 
     const optedOut = await fetch(unsubscribeLink);
     assert.equal(optedOut.status, 200);
-    assert.match(await optedOut.text(), /Daily digest off/);
+    const optedOutPage = await optedOut.text();
+    assert.match(optedOutPage, /Daily digest off/);
+    const resubscribePath = optedOutPage.match(/href="(\/api\/digest\/subscribe\?token=[^"]+)"/)[1];
     assert.equal((await fetch(`${base}/api/digest/unsubscribe?token=forged`)).status, 400);
 
     const second = await (await cron()).json();
@@ -114,8 +116,11 @@ test("the sweep emails one digest per verified account per day", async () => {
     assert.equal(skipped.digests, 0, "an opted-out mailbox is not emailed again");
     assert.equal(mailbox.length, 1);
 
-    // Turning it back on (the account surface will call this) restores delivery.
-    runWithWorkspace(workspaceId, () => db.setMeta("digest_opt_out", {}));
+    // The confirmation page links back, so the preference is self-service.
+    const back = await fetch(`${base}${resubscribePath}`);
+    assert.equal(back.status, 200);
+    assert.match(await back.text(), /Daily digest on/);
+
     const third = await (await cron()).json();
     assert.equal(third.digests, 1);
     assert.equal(mailbox.length, 2);

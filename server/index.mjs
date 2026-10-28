@@ -20,7 +20,9 @@ import {
 } from "./trust.mjs";
 import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
 import { emailConfigured } from "./email.mjs";
-import { sendDailyDigest, unsubscribeByToken, unsubscribePage } from "./digest.mjs";
+import {
+  sendDailyDigest, subscribeByToken, unsubscribeByToken, unsubscribePage,
+} from "./digest.mjs";
 import { pruneActivity } from "./retention.mjs";
 import { sanctionsConfigured, screenAddresses } from "./sanctions.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
@@ -437,15 +439,21 @@ async function handleRequest(req, res) {
     }
 
     // Digest links are signed per recipient and work without a session, so a
-    // mailbox can opt out from the email itself.
-    if (path === "/api/digest/unsubscribe" && req.method === "GET") {
+    // mailbox can opt out from the email itself and undo it from the page.
+    const digestPrefMatch = path.match(/^\/api\/digest\/(unsubscribe|subscribe)$/);
+    if (digestPrefMatch && req.method === "GET") {
       const token = new URL(req.url, "http://localhost").searchParams.get("token") || "";
-      const result = unsubscribeByToken(token);
+      const result = digestPrefMatch[1] === "subscribe"
+        ? subscribeByToken(token)
+        : unsubscribeByToken(token);
+      const resubscribeUrl = result.ok && !result.enabled
+        ? `/api/digest/subscribe?token=${encodeURIComponent(token)}`
+        : null;
       res.writeHead(result.ok ? 200 : 400, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
       });
-      res.end(unsubscribePage(result));
+      res.end(unsubscribePage(result, { resubscribeUrl }));
       return;
     }
 

@@ -117,7 +117,7 @@ function sameSignature(given, expected) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function unsubscribeByToken(token) {
+function withTokenUser(token, apply) {
   const raw = String(token || "").trim();
   const dot = raw.lastIndexOf(".");
   if (dot <= 0) return { ok: false, error: "invalid_token" };
@@ -130,10 +130,25 @@ export function unsubscribeByToken(token) {
     if (!secret || !sameSignature(raw.slice(dot + 1), signature(user.id, secret))) {
       return { ok: false, error: "invalid_token" };
     }
+    return apply(user);
+  });
+}
+
+export function unsubscribeByToken(token) {
+  return withTokenUser(token, (user) => {
     const opted = optOuts();
     opted[user.id] = new Date().toISOString();
     setMeta(OPT_OUT_KEY, opted);
-    return { ok: true, email: user.email };
+    return { ok: true, email: user.email, enabled: false };
+  });
+}
+
+export function subscribeByToken(token) {
+  return withTokenUser(token, (user) => {
+    const opted = optOuts();
+    delete opted[user.id];
+    setMeta(OPT_OUT_KEY, opted);
+    return { ok: true, email: user.email, enabled: true };
   });
 }
 
@@ -143,11 +158,18 @@ function escapeHtml(value) {
   }[char]));
 }
 
-export function unsubscribePage(result) {
-  const title = result.ok ? "Daily digest off" : "Link not recognised";
-  const message = result.ok
-    ? `We won't email ${escapeHtml(result.email)} the daily digest anymore.`
-    : "This unsubscribe link is invalid. Open the latest digest email and try again.";
+export function unsubscribePage(result, { resubscribeUrl = null } = {}) {
+  const title = !result.ok
+    ? "Link not recognised"
+    : result.enabled ? "Daily digest on" : "Daily digest off";
+  const message = !result.ok
+    ? "This unsubscribe link is invalid. Open the latest digest email and try again."
+    : result.enabled
+      ? `We'll email ${escapeHtml(result.email)} the daily digest again.`
+      : `We won't email ${escapeHtml(result.email)} the daily digest anymore.`;
+  const action = result.ok && !result.enabled && resubscribeUrl
+    ? `<p style="margin:0 0 1rem"><a href="${escapeHtml(resubscribeUrl)}" style="color:#1F1C18">Turn the daily digest back on</a></p>`
+    : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -160,6 +182,7 @@ export function unsubscribePage(result) {
 <main style="max-width:34rem;padding:2rem">
 <h1 style="font-size:1.5rem;margin:0 0 1rem">${title}</h1>
 <p style="line-height:1.6;margin:0 0 1.5rem">${message}</p>
+${action}
 <p style="margin:0"><a href="/" style="color:#1F1C18">Back to Remindify</a></p>
 </main>
 </body>
