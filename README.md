@@ -209,7 +209,9 @@ Then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Use `GOOGLE_REDIRECT_URI
 
 `/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
 
-The server currently gates one shared demo workspace. Accounts do not yet partition obligations, agents or proof between tenants; add workspace ownership before treating the auth gate as multi-tenant isolation.
+The server partitions obligations, agents, runs, receipts, escrows, API keys and meta keys by workspace. A session cookie resolves to that account's workspace; a machine API key resolves to the workspace that issued it. New accounts get a seeded copy of the demo register in their own workspace, and `POST /api/demo/reset` only clears the caller's workspace. Auth rows (users, sessions, wallet challenges) live outside any workspace, so a reset never signs anyone out or touches another account.
+
+Existing single-workspace databases are migrated in place: rows that predate this change are assigned to the `ws_demo` workspace.
 
 ### Status hints
 
@@ -460,7 +462,7 @@ Open `http://localhost:4178`. The database is created, seeded and protected by t
 
 For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it, and set `PUBLIC_ORIGIN=https://your-domain.example` plus `COOKIE_SECURE=true` behind HTTPS. Public demos should use a fresh API key and should not expose the seeded demo key.
 
-This is still a single-workspace prototype with an account gate. Do not run it as a public multi-tenant service until workspace isolation, key hashing, shared rate limiting and password reset are added.
+Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until key hashing, shared rate limiting and password reset are added.
 
 ---
 
@@ -468,8 +470,7 @@ This is still a single-workspace prototype with an account gate. Do not run it a
 
 This is a complete product prototype, not a hardened multi-tenant service. Before charging money:
 
-- add per-workspace data isolation; accounts currently gate one shared demo workspace;
-- move the JSON-per-row store to Postgres with row-level security;
+- add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
 - add key hashing, shared rate limiting, idempotency keys and per-scope enforcement on the machine API;
 - add email verification and a password-reset flow;
 - make webhooks signed and retryable, and add an outbox;

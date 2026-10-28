@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { buildSeed } from "./seed.mjs";
+import { currentWorkspaceId, DEMO_WORKSPACE } from "./workspace.mjs";
 
 const { Pool } = pg;
 
@@ -36,7 +38,7 @@ export const isPostgres = true;
 
 const USER_COLUMNS = [
   "id", "email", "name", "password_hash", "password_salt", "google_sub",
-  "avatar_url", "wallet_address", "created_at", "last_login_at",
+  "avatar_url", "wallet_address", "created_at", "last_login_at", "workspace_id",
 ];
 const USER_COLUMNS_SQL = USER_COLUMNS.join(", ");
 const ITEM_KINDS = [
@@ -44,17 +46,32 @@ const ITEM_KINDS = [
   "keys", "receipts", "escrows",
 ];
 
-// One workspace, one serialized writer. This keeps the existing single-tenant
-// demo semantics intact while requests are spread across serverless instances.
+// One serialized writer per database. Requests from different workspaces still
+// share the lock; per-workspace locking is a later optimization.
 const WORKSPACE_LOCK = 728394;
 
-function itemKey(kind, id) {
-  return `${kind}\u0000${id}`;
+function itemKey(workspaceId, kind, id) {
+  return `${workspaceId}\u0000${kind}\u0000${id}`;
 }
 
 function splitItemKey(key) {
+  const first = key.indexOf("\u0000");
+  const rest = key.slice(first + 1);
+  const second = rest.indexOf("\u0000");
+  return {
+    workspaceId: key.slice(0, first),
+    kind: rest.slice(0, second),
+    id: rest.slice(second + 1),
+  };
+}
+
+function metaKey(workspaceId, k) {
+  return `${workspaceId}\u0000${k}`;
+}
+
+function splitMetaKey(key) {
   const index = key.indexOf("\u0000");
-  return { kind: key.slice(0, index), id: key.slice(index + 1) };
+  return { workspaceId: key.slice(0, index), k: key.slice(index + 1) };
 }
 
 function clone(value) {
@@ -70,15 +87,21 @@ function requireStore() {
 
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS app_items (
+    workspace_id text NOT NULL DEFAULT 'ws_demo',
     kind text NOT NULL,
     id text NOT NULL,
     data jsonb NOT NULL,
-    PRIMARY KEY (kind, id)
+    PRIMARY KEY (workspace_id, kind, id)
   )`,
+  `ALTER TABLE app_items ADD COLUMN IF NOT EXISTS workspace_id text NOT NULL DEFAULT 'ws_demo'`,
+  `CREATE INDEX IF NOT EXISTS idx_app_items_workspace ON app_items(workspace_id, kind)`,
   `CREATE TABLE IF NOT EXISTS app_meta (
-    k text PRIMARY KEY,
-    v jsonb NOT NULL
+    workspace_id text NOT NULL DEFAULT 'ws_demo',
+    k text NOT NULL,
+    v jsonb NOT NULL,
+    PRIMARY KEY (workspace_id, k)
   )`,
+  `ALTER TABLE app_meta ADD COLUMN IF NOT EXISTS workspace_id text NOT NULL DEFAULT 'ws_demo'`,
   `CREATE TABLE IF NOT EXISTS users (
     id text PRIMARY KEY,
     email text UNIQUE,
@@ -89,8 +112,10 @@ const SCHEMA_STATEMENTS = [
     avatar_url text,
     wallet_address text UNIQUE,
     created_at text NOT NULL,
-    last_login_at text
+    last_login_at text,
+    workspace_id text NOT NULL DEFAULT 'ws_demo'
   )`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_id text NOT NULL DEFAULT 'ws_demo'`,
   `CREATE TABLE IF NOT EXISTS auth_sessions (
     token_hash text PRIMARY KEY,
     user_id text NOT NULL,
@@ -110,10 +135,44 @@ const SCHEMA_STATEMENTS = [
   "CREATE INDEX IF NOT EXISTS idx_auth_challenges_address ON auth_challenges(address)",
 ];
 
+// Upgrade a single-workspace table in place. Existing rows become ws_demo.
+async function ensurePrimaryKey(client, table, columns) {
+  const result = await client.query(`
+    SELECT a.attname
+    FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+    WHERE c.conrelid = $1::regclass AND c.contype = 'p'
+    ORDER BY a.attnum
+  `, [table]);
+  const actual = result.rows.map((row) => row.attname);
+  if (actual.length === columns.length && columns.every((column) => actual.includes(column))) return;
+  await client.query(`ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${table}_pkey`);
+  await client.query(`ALTER TABLE ${table} ADD PRIMARY KEY (${columns.join(",")})`);
+}
+
+const SCHEMA_LOCK = 728395;
+
+// Schema work runs once per instance under an advisory lock so two cold
+// serverless instances do not race on the same ALTER TABLE.
 async function ensureSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
-      for (const statement of SCHEMA_STATEMENTS) await pool.query(statement);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        if (process.env.PG_NO_LOCK !== "1") {
+          await client.query("SELECT pg_advisory_xact_lock($1)", [SCHEMA_LOCK]);
+        }
+        for (const statement of SCHEMA_STATEMENTS) await client.query(statement);
+        await ensurePrimaryKey(client, "app_items", ["workspace_id", "kind", "id"]);
+        await ensurePrimaryKey(client, "app_meta", ["workspace_id", "k"]);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
     })().catch((error) => {
       schemaPromise = null;
       throw error;
@@ -131,8 +190,8 @@ export async function beginRequest() {
       await client.query("SELECT pg_advisory_xact_lock($1)", [WORKSPACE_LOCK]);
     }
 
-    const items = await client.query("SELECT kind, id, data FROM app_items");
-    const meta = await client.query("SELECT k, v FROM app_meta");
+    const items = await client.query("SELECT workspace_id, kind, id, data FROM app_items");
+    const meta = await client.query("SELECT workspace_id, k, v FROM app_meta");
     const users = await client.query(`SELECT ${USER_COLUMNS_SQL} FROM users`);
     const sessions = await client.query("SELECT token_hash, user_id, created_at, expires_at FROM auth_sessions");
     const challenges = await client.query("SELECT nonce, address, message, created_at, expires_at, used FROM auth_challenges");
@@ -140,7 +199,7 @@ export async function beginRequest() {
     const store = {
       client,
       finished: false,
-      resetItems: false,
+      resetWorkspaces: new Set(),
       items: new Map(),
       meta: new Map(),
       users: new Map(),
@@ -162,13 +221,14 @@ export async function beginRequest() {
     };
 
     for (const row of items.rows) {
-      store.items.set(itemKey(row.kind, row.id), {
+      store.items.set(itemKey(row.workspace_id, row.kind, row.id), {
+        workspace_id: row.workspace_id,
         kind: row.kind,
         id: row.id,
         data: row.data,
       });
     }
-    for (const row of meta.rows) store.meta.set(row.k, row.v);
+    for (const row of meta.rows) store.meta.set(metaKey(row.workspace_id, row.k), row.v);
     for (const row of users.rows) {
       const user = { ...row };
       store.users.set(user.id, user);
@@ -226,42 +286,58 @@ export async function endRequest(store) {
   store.finished = true;
   const { client } = store;
   try {
-    if (store.resetItems) {
-      await client.query("DELETE FROM app_items");
-      await client.query("DELETE FROM app_meta");
-      for (const row of store.items.values()) {
-        await client.query(
-          "INSERT INTO app_items (kind, id, data) VALUES ($1, $2, $3::jsonb)",
-          [row.kind, row.id, JSON.stringify(row.data)],
-        );
+    if (store.resetWorkspaces.size) {
+      for (const workspaceId of store.resetWorkspaces) {
+        await client.query("DELETE FROM app_items WHERE workspace_id = $1", [workspaceId]);
+        await client.query("DELETE FROM app_meta WHERE workspace_id = $1", [workspaceId]);
+        for (const row of store.items.values()) {
+          if (row.workspace_id !== workspaceId) continue;
+          await client.query(
+            "INSERT INTO app_items (workspace_id, kind, id, data) VALUES ($1, $2, $3, $4::jsonb)",
+            [workspaceId, row.kind, row.id, JSON.stringify(row.data)],
+          );
+        }
+        for (const [key, value] of store.meta) {
+          const scoped = splitMetaKey(key);
+          if (scoped.workspaceId !== workspaceId) continue;
+          await client.query(
+            "INSERT INTO app_meta (workspace_id, k, v) VALUES ($1, $2, $3::jsonb)",
+            [scoped.workspaceId, scoped.k, JSON.stringify(value)],
+          );
+        }
       }
-      for (const [key, value] of store.meta) {
-        await client.query(
-          "INSERT INTO app_meta (k, v) VALUES ($1, $2::jsonb)",
-          [key, JSON.stringify(value)],
-        );
-      }
-    } else {
+    }
+
+    {
       for (const key of store.deletedItems) {
-        const { kind, id } = splitItemKey(key);
-        await client.query("DELETE FROM app_items WHERE kind = $1 AND id = $2", [kind, id]);
+        const { workspaceId, kind, id } = splitItemKey(key);
+        if (store.resetWorkspaces.has(workspaceId)) continue;
+        await client.query(
+          "DELETE FROM app_items WHERE workspace_id = $1 AND kind = $2 AND id = $3",
+          [workspaceId, kind, id],
+        );
       }
       for (const key of store.dirtyItems) {
         const row = store.items.get(key);
         if (!row) continue;
+        if (store.resetWorkspaces.has(row.workspace_id)) continue;
         await client.query(
-          "INSERT INTO app_items (kind, id, data) VALUES ($1, $2, $3::jsonb) ON CONFLICT (kind, id) DO UPDATE SET data = EXCLUDED.data",
-          [row.kind, row.id, JSON.stringify(row.data)],
+          "INSERT INTO app_items (workspace_id, kind, id, data) VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT (workspace_id, kind, id) DO UPDATE SET data = EXCLUDED.data",
+          [row.workspace_id, row.kind, row.id, JSON.stringify(row.data)],
         );
       }
       for (const key of store.deletedMeta) {
-        await client.query("DELETE FROM app_meta WHERE k = $1", [key]);
+        const { workspaceId, k } = splitMetaKey(key);
+        if (store.resetWorkspaces.has(workspaceId)) continue;
+        await client.query("DELETE FROM app_meta WHERE workspace_id = $1 AND k = $2", [workspaceId, k]);
       }
       for (const key of store.dirtyMeta) {
         if (!store.meta.has(key)) continue;
+        const { workspaceId, k } = splitMetaKey(key);
+        if (store.resetWorkspaces.has(workspaceId)) continue;
         await client.query(
-          "INSERT INTO app_meta (k, v) VALUES ($1, $2::jsonb) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v",
-          [key, JSON.stringify(store.meta.get(key))],
+          "INSERT INTO app_meta (workspace_id, k, v) VALUES ($1, $2, $3::jsonb) ON CONFLICT (workspace_id, k) DO UPDATE SET v = EXCLUDED.v",
+          [workspaceId, k, JSON.stringify(store.meta.get(key))],
         );
       }
     }
@@ -274,7 +350,7 @@ export async function endRequest(store) {
       if (!user) continue;
       await client.query(`
         INSERT INTO users (${USER_COLUMNS_SQL})
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (id) DO UPDATE SET
           email = EXCLUDED.email,
           name = EXCLUDED.name,
@@ -284,7 +360,8 @@ export async function endRequest(store) {
           avatar_url = EXCLUDED.avatar_url,
           wallet_address = EXCLUDED.wallet_address,
           created_at = EXCLUDED.created_at,
-          last_login_at = EXCLUDED.last_login_at
+          last_login_at = EXCLUDED.last_login_at,
+          workspace_id = EXCLUDED.workspace_id
       `, USER_COLUMNS.map((column) => user[column] ?? null));
     }
 
@@ -340,23 +417,27 @@ export async function endRequest(store) {
 
 export function getMeta(key, fallback = null) {
   const store = requireStore();
-  return store.meta.has(key) ? clone(store.meta.get(key)) : fallback;
+  const scoped = metaKey(currentWorkspaceId(), key);
+  return store.meta.has(scoped) ? clone(store.meta.get(scoped)) : fallback;
 }
 
 export function setMeta(key, value) {
   const store = requireStore();
-  store.meta.set(key, clone(value));
-  store.dirtyMeta.add(key);
-  store.deletedMeta.delete(key);
+  const scoped = metaKey(currentWorkspaceId(), key);
+  store.meta.set(scoped, clone(value));
+  store.dirtyMeta.add(scoped);
+  store.deletedMeta.delete(scoped);
 }
 
 export function loadAll() {
   const store = requireStore();
+  const workspaceId = currentWorkspaceId();
   const out = {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
     receipts: [], escrows: [],
   };
   for (const row of store.items.values()) {
+    if (row.workspace_id !== workspaceId) continue;
     if (out[row.kind]) out[row.kind].push(clone(row.data));
   }
   out.obligations.sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
@@ -368,8 +449,9 @@ export function loadAll() {
 
 export function put(kind, item) {
   const store = requireStore();
-  const key = itemKey(kind, item.id);
-  store.items.set(key, { kind, id: item.id, data: clone(item) });
+  const workspaceId = currentWorkspaceId();
+  const key = itemKey(workspaceId, kind, item.id);
+  store.items.set(key, { workspace_id: workspaceId, kind, id: item.id, data: clone(item) });
   store.dirtyItems.add(key);
   store.deletedItems.delete(key);
   return item;
@@ -381,10 +463,23 @@ export function putMany(kind, items) {
 
 export function remove(kind, id) {
   const store = requireStore();
-  const key = itemKey(kind, id);
+  const key = itemKey(currentWorkspaceId(), kind, id);
   store.items.delete(key);
   store.dirtyItems.delete(key);
   store.deletedItems.add(key);
+}
+
+// Key lookup happens before the request knows its workspace, so it scans every
+// workspace in the snapshot. Seeded keys get unique secrets per workspace.
+export function findKeyBySecret(secret) {
+  const store = requireStore();
+  for (const row of store.items.values()) {
+    if (row.kind !== "keys") continue;
+    if (row.data?.secret === secret) {
+      return { key: clone(row.data), workspace_id: row.workspace_id };
+    }
+  }
+  return null;
 }
 
 export function getUser(id) {
@@ -424,6 +519,7 @@ export function createUser(user) {
     wallet_address: user.wallet_address || null,
     created_at: user.created_at,
     last_login_at: user.last_login_at || null,
+    workspace_id: user.workspace_id || `ws_${randomBytes(8).toString("hex")}`,
   };
   if (row.email && store.usersByEmail.has(row.email)) throw new Error("email_taken");
   if (row.google_sub && store.usersByGoogleSub.has(row.google_sub)) throw new Error("google_taken");
@@ -551,14 +647,38 @@ export function seeded() {
 export function seedDatabase(force = false) {
   const store = requireStore();
   if (seeded() && !force) return false;
-  store.items.clear();
-  store.meta.clear();
-  store.dirtyItems.clear();
-  store.deletedItems.clear();
-  store.dirtyMeta.clear();
-  store.deletedMeta.clear();
-  store.resetItems = true;
+  const workspaceId = currentWorkspaceId();
+  const prefix = `${workspaceId}\u0000`;
+
+  for (const key of [...store.items.keys()]) {
+    if (!key.startsWith(prefix)) continue;
+    store.items.delete(key);
+    store.dirtyItems.delete(key);
+    store.deletedItems.delete(key);
+  }
+  for (const key of [...store.meta.keys()]) {
+    if (!key.startsWith(prefix)) continue;
+    store.meta.delete(key);
+    store.dirtyMeta.delete(key);
+    store.deletedMeta.delete(key);
+  }
+  for (const key of [...store.deletedItems]) {
+    if (key.startsWith(prefix)) store.deletedItems.delete(key);
+  }
+  for (const key of [...store.deletedMeta]) {
+    if (key.startsWith(prefix)) store.deletedMeta.delete(key);
+  }
+  store.resetWorkspaces.add(workspaceId);
+
   const seed = buildSeed(Date.now());
+  if (workspaceId !== DEMO_WORKSPACE) {
+    for (const key of seed.keys || []) {
+      key.secret = `rfy_live_${randomBytes(14).toString("hex")}`;
+      key.prefix = key.secret.slice(0, 13);
+    }
+    seed.meta.api_calls = 0;
+    seed.meta.streak_weeks = 1;
+  }
   for (const kind of ITEM_KINDS) {
     for (const item of seed[kind] || []) put(kind, item);
   }

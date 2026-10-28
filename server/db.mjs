@@ -29,6 +29,7 @@ export const loadAll = (...args) => impl.loadAll(...args);
 export const put = (...args) => impl.put(...args);
 export const putMany = (...args) => impl.putMany(...args);
 export const remove = (...args) => impl.remove(...args);
+export const findKeyBySecret = (...args) => impl.findKeyBySecret(...args);
 
 export const getUser = (...args) => impl.getUser(...args);
 export const findUserByEmail = (...args) => impl.findUserByEmail(...args);

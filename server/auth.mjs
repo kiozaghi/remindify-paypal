@@ -7,6 +7,7 @@ import {
   deleteAuthSession, findUserByEmail, findUserByGoogleSub, findUserByWallet,
   getAuthSession, updateUser,
 } from "./db.mjs";
+import { provisionWorkspace } from "./provision.mjs";
 
 const SESSION_COOKIE = "remindify_session";
 const OAUTH_COOKIE = "remindify_oauth";
@@ -127,13 +128,25 @@ function startSession(req, res, userId) {
   return expiresAt;
 }
 
+// Accounts from before workspace isolation stay in the demo workspace so their
+// existing rows remain visible. New accounts are created with a private
+// workspace and get a seeded copy of the demo register on first sign-in.
+function ensureWorkspaceForUser(user) {
+  if (!user) return user;
+  return provisionWorkspace(user);
+}
+
 export function getSessionFromRequest(req) {
   const token = readCookie(req, SESSION_COOKIE);
   if (!token) return null;
   const tokenHash = hashToken(token);
   const session = getAuthSession(tokenHash);
   if (!session) return null;
-  return { tokenHash, user: publicUser(session.user) };
+  return {
+    tokenHash,
+    user: publicUser(session.user),
+    workspace_id: session.user.workspace_id,
+  };
 }
 
 function limited(req, path, max = 20) {
@@ -299,7 +312,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       return true;
     }
     const { salt, hash } = hashPassword(password);
-    const user = createUser({
+    const user = ensureWorkspaceForUser(createUser({
       id: uid("usr"),
       email,
       name: String(input.name || nameFromEmail(email)).trim().slice(0, 80) || nameFromEmail(email),
@@ -307,7 +320,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       password_salt: salt,
       created_at: nowIso(),
       last_login_at: nowIso(),
-    });
+    }));
     startSession(req, res, user.id);
     send(res, 201, { user: publicUser(user) });
     return true;
@@ -339,7 +352,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       send(res, 401, { error: "invalid_credentials", message: "Email or password is incorrect." });
       return true;
     }
-    const fresh = updateUser(user.id, { last_login_at: nowIso() });
+    const fresh = ensureWorkspaceForUser(updateUser(user.id, { last_login_at: nowIso() }));
     startSession(req, res, user.id);
     send(res, 200, { user: publicUser(fresh) });
     return true;
@@ -392,7 +405,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
     try {
       const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${originFor(req)}/api/auth/google/callback`;
       const profile = await googleProfile(code, redirectUri);
-      const user = findOrCreateGoogleUser(profile);
+      const user = ensureWorkspaceForUser(findOrCreateGoogleUser(profile));
       startSession(req, res, user.id);
       appendCookie(res, cleared);
       redirect(res, "/today");
@@ -454,7 +467,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       send(res, 401, { error: "invalid_signature", message: "That signature didn't verify. Please try again." });
       return true;
     }
-    const user = findOrCreateWalletUser(address);
+    const user = ensureWorkspaceForUser(findOrCreateWalletUser(address));
     startSession(req, res, user.id);
     send(res, 200, { user: publicUser(user) });
     return true;

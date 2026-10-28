@@ -1,8 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSeed } from "./seed.mjs";
+import { currentWorkspaceId, DEMO_WORKSPACE } from "./workspace.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.REMINDIFY_DATA_DIR
@@ -13,21 +15,24 @@ const DB_PATH = process.env.REMINDIFY_DB || join(DATA_DIR, "remindify.db");
 mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
+db.exec("PRAGMA journal_mode = WAL;");
 db.exec(`
-  PRAGMA journal_mode = WAL;
   CREATE TABLE IF NOT EXISTS items (
+    workspace_id TEXT NOT NULL DEFAULT 'ws_demo',
     kind TEXT NOT NULL,
     id TEXT NOT NULL,
     data TEXT NOT NULL,
-    PRIMARY KEY (kind, id)
+    PRIMARY KEY (workspace_id, kind, id)
   );
   CREATE TABLE IF NOT EXISTS meta (
-    k TEXT PRIMARY KEY,
-    v TEXT NOT NULL
+    workspace_id TEXT NOT NULL DEFAULT 'ws_demo',
+    k TEXT NOT NULL,
+    v TEXT NOT NULL,
+    PRIMARY KEY (workspace_id, k)
   );
 
-  -- Auth is deliberately stored outside the demo workspace. A demo reset clears
-  -- items and meta, but never signs the operator out or deletes an account.
+  -- Auth is deliberately stored outside any single workspace. A workspace
+  -- reset never signs the operator out or deletes an account.
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE,
@@ -38,7 +43,8 @@ db.exec(`
     avatar_url TEXT,
     wallet_address TEXT UNIQUE,
     created_at TEXT NOT NULL,
-    last_login_at TEXT
+    last_login_at TEXT,
+    workspace_id TEXT NOT NULL DEFAULT 'ws_demo'
   );
   CREATE TABLE IF NOT EXISTS auth_sessions (
     token_hash TEXT PRIMARY KEY,
@@ -59,26 +65,79 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_auth_challenges_address ON auth_challenges(address);
 `);
 
+function columns(table) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name);
+}
+
+// Upgrade a single-workspace database in place. Existing rows become the demo
+// workspace, so no data is dropped.
+function migrate() {
+  if (!columns("items").includes("workspace_id")) {
+    db.exec(`
+      BEGIN;
+      DROP TABLE IF EXISTS items_legacy;
+      ALTER TABLE items RENAME TO items_legacy;
+      CREATE TABLE items (
+        workspace_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (workspace_id, kind, id)
+      );
+      INSERT INTO items (workspace_id, kind, id, data)
+        SELECT 'ws_demo', kind, id, data FROM items_legacy;
+      DROP TABLE items_legacy;
+      COMMIT;
+    `);
+  }
+  if (!columns("meta").includes("workspace_id")) {
+    db.exec(`
+      BEGIN;
+      DROP TABLE IF EXISTS meta_legacy;
+      ALTER TABLE meta RENAME TO meta_legacy;
+      CREATE TABLE meta (
+        workspace_id TEXT NOT NULL,
+        k TEXT NOT NULL,
+        v TEXT NOT NULL,
+        PRIMARY KEY (workspace_id, k)
+      );
+      INSERT INTO meta (workspace_id, k, v)
+        SELECT 'ws_demo', k, v FROM meta_legacy;
+      DROP TABLE meta_legacy;
+      COMMIT;
+    `);
+  }
+  if (!columns("users").includes("workspace_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'ws_demo'");
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_items_workspace ON items(workspace_id, kind);
+    CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind);
+  `);
+}
+
+migrate();
+
 const upsert = db.prepare(
-  "INSERT INTO items (kind, id, data) VALUES (?, ?, ?) ON CONFLICT(kind, id) DO UPDATE SET data = excluded.data"
+  "INSERT INTO items (workspace_id, kind, id, data) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_id, kind, id) DO UPDATE SET data = excluded.data"
 );
-const insertMany = (kind, rows) => {
-  for (const row of rows) upsert.run(kind, row.id, JSON.stringify(row));
+const insertMany = (kind, rows, workspaceId = currentWorkspaceId()) => {
+  for (const row of rows) upsert.run(workspaceId, kind, row.id, JSON.stringify(row));
 };
 
 export function getMeta(key, fallback = null) {
-  const row = db.prepare("SELECT v FROM meta WHERE k = ?").get(key);
+  const row = db.prepare("SELECT v FROM meta WHERE workspace_id = ? AND k = ?").get(currentWorkspaceId(), key);
   return row ? JSON.parse(row.v) : fallback;
 }
 
 export function setMeta(key, value) {
   db.prepare(
-    "INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
-  ).run(key, JSON.stringify(value));
+    "INSERT INTO meta (workspace_id, k, v) VALUES (?, ?, ?) ON CONFLICT(workspace_id, k) DO UPDATE SET v = excluded.v"
+  ).run(currentWorkspaceId(), key, JSON.stringify(value));
 }
 
 export function loadAll() {
-  const rows = db.prepare("SELECT kind, data FROM items").all();
+  const rows = db.prepare("SELECT kind, data FROM items WHERE workspace_id = ?").all(currentWorkspaceId());
   const out = {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
     receipts: [], escrows: [],
@@ -95,7 +154,7 @@ export function loadAll() {
 }
 
 export function put(kind, item) {
-  upsert.run(kind, item.id, JSON.stringify(item));
+  upsert.run(currentWorkspaceId(), kind, item.id, JSON.stringify(item));
   return item;
 }
 
@@ -104,12 +163,30 @@ export function putMany(kind, items) {
 }
 
 export function remove(kind, id) {
-  db.prepare("DELETE FROM items WHERE kind = ? AND id = ?").run(kind, id);
+  db.prepare("DELETE FROM items WHERE workspace_id = ? AND kind = ? AND id = ?")
+    .run(currentWorkspaceId(), kind, id);
+}
+
+// Key lookup happens before the request knows its workspace, so it scans every
+// workspace. Seeded keys get unique secrets per workspace, so this is
+// unambiguous.
+export function findKeyBySecret(secret) {
+  const rows = db.prepare("SELECT workspace_id, data FROM items WHERE kind = 'keys'").all();
+  for (const row of rows) {
+    let key;
+    try {
+      key = JSON.parse(row.data);
+    } catch {
+      continue;
+    }
+    if (key.secret === secret) return { key, workspace_id: row.workspace_id };
+  }
+  return null;
 }
 
 const USER_COLUMNS = [
   "id", "email", "name", "password_hash", "password_salt", "google_sub",
-  "avatar_url", "wallet_address", "created_at", "last_login_at",
+  "avatar_url", "wallet_address", "created_at", "last_login_at", "workspace_id",
 ].join(", ");
 
 export function getUser(id) {
@@ -129,9 +206,10 @@ export function findUserByWallet(address) {
 }
 
 export function createUser(user) {
+  const workspaceId = user.workspace_id || `ws_${randomBytes(8).toString("hex")}`;
   db.prepare(`
-    INSERT INTO users (id, email, name, password_hash, password_salt, google_sub, avatar_url, wallet_address, created_at, last_login_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, email, name, password_hash, password_salt, google_sub, avatar_url, wallet_address, created_at, last_login_at, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     user.id,
     user.email || null,
@@ -143,6 +221,7 @@ export function createUser(user) {
     user.wallet_address || null,
     user.created_at,
     user.last_login_at || null,
+    workspaceId,
   );
   return getUser(user.id);
 }
@@ -209,12 +288,22 @@ export function seeded() {
 
 export function seedDatabase(force = false) {
   if (seeded() && !force) return false;
-  db.exec("DELETE FROM items; DELETE FROM meta;");
+  const workspaceId = currentWorkspaceId();
+  db.prepare("DELETE FROM items WHERE workspace_id = ?").run(workspaceId);
+  db.prepare("DELETE FROM meta WHERE workspace_id = ?").run(workspaceId);
   const seed = buildSeed(Date.now());
+  if (workspaceId !== DEMO_WORKSPACE) {
+    for (const key of seed.keys || []) {
+      key.secret = `rfy_live_${randomBytes(14).toString("hex")}`;
+      key.prefix = key.secret.slice(0, 13);
+    }
+    seed.meta.api_calls = 0;
+    seed.meta.streak_weeks = 1;
+  }
   for (const kind of [
     "obligations", "agents", "approvals", "runs", "providers", "events", "keys", "receipts", "escrows",
   ]) {
-    insertMany(kind, seed[kind] || []);
+    insertMany(kind, seed[kind] || [], workspaceId);
   }
   for (const [key, value] of Object.entries(seed.meta)) setMeta(key, value);
   setMeta("seeded", true);

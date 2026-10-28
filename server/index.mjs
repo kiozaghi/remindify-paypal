@@ -10,7 +10,7 @@ import {
 } from "./engine.mjs";
 import {
   loadAll, put, putMany, getMeta, setMeta, seedDatabase, pruneAuth,
-  beginRequest, runWithStore, endRequest, abortRequest, isPostgres,
+  beginRequest, runWithStore, endRequest, abortRequest, isPostgres, findKeyBySecret,
 } from "./db.mjs";
 import { parseCapture } from "./parse.mjs";
 import {
@@ -18,6 +18,7 @@ import {
   fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
 } from "./trust.mjs";
 import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
+import { setWorkspace } from "./workspace.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -104,11 +105,13 @@ function normalizeObligation(input) {
   };
 }
 
+// A machine key identifies its workspace, so resolve both together. The lookup
+// scans every workspace because the workspace is unknown until the secret
+// matches.
 function keyFromRequest(req) {
   const header = req.headers.authorization || "";
   if (!header.startsWith("Bearer ")) return null;
-  const token = header.slice(7).trim();
-  return loadAll().keys.find((k) => k.secret === token) || null;
+  return findKeyBySecret(header.slice(7).trim());
 }
 
 function machineObligations() {
@@ -146,13 +149,17 @@ async function handleRequest(req, res) {
 
     // ---------- Machine-native API (agent first) ----------
     if (path.startsWith("/api/v1/")) {
-      const key = keyFromRequest(req);
-      if (!key) {
+      const resolved = keyFromRequest(req);
+      if (!resolved) {
         return send(res, 401, {
           error: "unauthorized",
           hint: "Pass a Remindify key: Authorization: Bearer rfy_live_...",
         });
       }
+      setWorkspace(resolved.workspace_id);
+      seedDatabase();
+      ensureTrustDemo();
+      const key = resolved.key;
       setMeta("api_calls", (getMeta("api_calls", 0) || 0) + 1);
       const state = buildState();
 
@@ -295,6 +302,9 @@ async function handleRequest(req, res) {
           message: "Sign in to open your workspace.",
         });
       }
+      setWorkspace(session.workspace_id);
+      seedDatabase();
+      ensureTrustDemo();
       req.auth = session;
     }
 
