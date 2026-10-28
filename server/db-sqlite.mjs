@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSeed } from "./seed.mjs";
 import { currentWorkspaceId, DEMO_WORKSPACE } from "./workspace.mjs";
+import { digestSecret, keyMatchesSecret } from "./keys.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.REMINDIFY_DATA_DIR
@@ -171,6 +172,7 @@ export function remove(kind, id) {
 // workspace. Seeded keys get unique secrets per workspace, so this is
 // unambiguous.
 export function findKeyBySecret(secret) {
+  const digest = digestSecret(secret);
   const rows = db.prepare("SELECT workspace_id, data FROM items WHERE kind = 'keys'").all();
   for (const row of rows) {
     let key;
@@ -179,7 +181,7 @@ export function findKeyBySecret(secret) {
     } catch {
       continue;
     }
-    if (key.secret === secret) return { key, workspace_id: row.workspace_id };
+    if (keyMatchesSecret(key, secret, digest)) return { key, workspace_id: row.workspace_id };
   }
   return null;
 }
@@ -293,10 +295,9 @@ export function seedDatabase(force = false) {
   db.prepare("DELETE FROM meta WHERE workspace_id = ?").run(workspaceId);
   const seed = buildSeed(Date.now());
   if (workspaceId !== DEMO_WORKSPACE) {
-    for (const key of seed.keys || []) {
-      key.secret = `rfy_live_${randomBytes(14).toString("hex")}`;
-      key.prefix = key.secret.slice(0, 13);
-    }
+    // Seeded demo keys are public credentials; a real workspace starts with no
+    // keys and issues its own.
+    seed.keys = [];
     seed.meta.api_calls = 0;
     seed.meta.streak_weeks = 1;
   }

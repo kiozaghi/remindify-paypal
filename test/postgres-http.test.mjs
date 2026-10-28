@@ -50,11 +50,11 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
     assert.equal(response.status, 201);
   }
 
-  async function issueKey(cookie, name) {
+  async function issueKey(cookie, name, scopes) {
     const response = await fetch(`${base}/api/keys`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(scopes ? { name, scopes } : { name }),
     });
     assert.equal(response.status, 201);
     return (await response.json()).key.secret;
@@ -91,6 +91,7 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
     const first = await state(cookieA);
     assert.ok(first.obligations.length > 0);
     assert.ok(first.agents.length > 0);
+    assert.ok(first.keys.every((item) => !item.secret && !item.secret_hash));
 
     response = await fetch(`${base}/api/trust`, { headers: { cookie: cookieA } });
     assert.equal(response.status, 200);
@@ -107,6 +108,22 @@ test("Vercel-style handler keeps each account's workspace isolated in Postgres",
     assert.ok((await machineTitles(keyA)).includes("A-only renewal"));
     assert.ok(!(await machineTitles(keyB)).includes("A-only renewal"));
     assert.ok((await machineTitles(keyB)).includes("B-only renewal"));
+
+    const readOnlyKey = await issueKey(cookieA, "Read-only key", ["obligations:read"]);
+    response = await fetch(`${base}/api/v1/agents`, {
+      headers: { authorization: `Bearer ${readOnlyKey}` },
+    });
+    assert.equal(response.status, 403);
+    response = await fetch(`${base}/api/v1/obligations`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${readOnlyKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ title: "should be denied" }),
+    });
+    assert.equal(response.status, 403);
+
+    const used = await state(cookieA);
+    assert.ok(used.keys.find((item) => item.name === "A agent key").last_used);
+    assert.ok(used.keys.every((item) => !item.secret && !item.secret_hash));
 
     response = await fetch(`${base}/api/demo/reset`, {
       method: "POST",

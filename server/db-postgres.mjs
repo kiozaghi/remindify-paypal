@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { buildSeed } from "./seed.mjs";
 import { currentWorkspaceId, DEMO_WORKSPACE } from "./workspace.mjs";
+import { digestSecret, keyMatchesSecret } from "./keys.mjs";
 
 const { Pool } = pg;
 
@@ -473,9 +474,10 @@ export function remove(kind, id) {
 // workspace in the snapshot. Seeded keys get unique secrets per workspace.
 export function findKeyBySecret(secret) {
   const store = requireStore();
+  const digest = digestSecret(secret);
   for (const row of store.items.values()) {
     if (row.kind !== "keys") continue;
-    if (row.data?.secret === secret) {
+    if (keyMatchesSecret(row.data, secret, digest)) {
       return { key: clone(row.data), workspace_id: row.workspace_id };
     }
   }
@@ -672,10 +674,9 @@ export function seedDatabase(force = false) {
 
   const seed = buildSeed(Date.now());
   if (workspaceId !== DEMO_WORKSPACE) {
-    for (const key of seed.keys || []) {
-      key.secret = `rfy_live_${randomBytes(14).toString("hex")}`;
-      key.prefix = key.secret.slice(0, 13);
-    }
+    // Seeded demo keys are public credentials; a real workspace starts with no
+    // keys and issues its own.
+    seed.keys = [];
     seed.meta.api_calls = 0;
     seed.meta.streak_weeks = 1;
   }

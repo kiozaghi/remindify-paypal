@@ -19,6 +19,7 @@ import {
 } from "./trust.mjs";
 import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
 import { setWorkspace } from "./workspace.mjs";
+import { digestSecret, publicKey, KEY_SCOPES } from "./keys.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -114,6 +115,18 @@ function keyFromRequest(req) {
   return findKeyBySecret(header.slice(7).trim());
 }
 
+function keyHasScope(key, scope) {
+  return Array.isArray(key.scopes) && key.scopes.includes(scope);
+}
+
+function scopeDenied(res, scope) {
+  return send(res, 403, {
+    error: "missing_scope",
+    scope,
+    message: `This key does not carry ${scope}.`,
+  });
+}
+
 function machineObligations() {
   const state = buildState();
   return state.obligations
@@ -160,10 +173,14 @@ async function handleRequest(req, res) {
       seedDatabase();
       ensureTrustDemo();
       const key = resolved.key;
+      const usedAt = new Date().toISOString();
+      put("keys", { ...key, last_used: usedAt });
+      key.last_used = usedAt;
       setMeta("api_calls", (getMeta("api_calls", 0) || 0) + 1);
       const state = buildState();
 
       if (path === "/api/v1/obligations" && req.method === "GET") {
+        if (!keyHasScope(key, "obligations:read")) return scopeDenied(res, "obligations:read");
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
           verb: "read obligations", object: "API", detail: "GET /v1/obligations",
@@ -177,6 +194,7 @@ async function handleRequest(req, res) {
       }
 
       if (path === "/api/v1/obligations" && req.method === "POST") {
+        if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
         const input = await body(req);
         if (!input.title) return send(res, 422, { error: "title_required" });
         const ob = normalizeObligation({ ...input, source: "api", channel: "api" });
@@ -192,6 +210,7 @@ async function handleRequest(req, res) {
 
       const completeMatch = path.match(/^\/api\/v1\/obligations\/([^/]+)\/complete$/);
       if (completeMatch && req.method === "POST") {
+        if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
         const input = await body(req);
         const result = completeObligation(completeMatch[1], {
           proof: input.proof || "Completed via API",
@@ -210,12 +229,14 @@ async function handleRequest(req, res) {
 
       const patchMatch = path.match(/^\/api\/v1\/obligations\/([^/]+)$/);
       if (patchMatch && req.method === "GET") {
+        if (!keyHasScope(key, "obligations:read")) return scopeDenied(res, "obligations:read");
         const ob = buildState().obligations.find((o) => o.id === patchMatch[1]);
         if (!ob) return send(res, 404, { error: "not_found" });
         return send(res, 200, { obligation: ob });
       }
 
       if (path === "/api/v1/risk" && req.method === "GET") {
+        if (!keyHasScope(key, "risk:read")) return scopeDenied(res, "risk:read");
         const obs = state.obligations.filter((o) => o.status === "active");
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
@@ -241,6 +262,7 @@ async function handleRequest(req, res) {
       }
 
       if (path === "/api/v1/trust" && req.method === "GET") {
+        if (!keyHasScope(key, "risk:read")) return scopeDenied(res, "risk:read");
         const trust = trustSnapshot();
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
@@ -258,6 +280,7 @@ async function handleRequest(req, res) {
       }
 
       if (path === "/api/v1/trust/receipts" && req.method === "POST") {
+        if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
         const input = await body(req);
         if (!input.obligation_id) return send(res, 422, { error: "obligation_id_required" });
         const result = createReceipt({
@@ -271,6 +294,7 @@ async function handleRequest(req, res) {
       }
 
       if (path === "/api/v1/agents" && req.method === "GET") {
+        if (!keyHasScope(key, "agents:read")) return scopeDenied(res, "agents:read");
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
           verb: "read the agent roster", object: "The bench",
@@ -495,14 +519,17 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/keys" && req.method === "POST") {
-      const { name } = await body(req);
+      const { name, scopes } = await body(req);
       const secret = `rfy_live_${randomBytes(14).toString("hex")}`;
+      const requested = Array.isArray(scopes)
+        ? [...new Set(scopes.filter((scope) => KEY_SCOPES.includes(scope)))]
+        : [];
       const key = {
         id: uid("key"),
         name: (name || "New agent key").slice(0, 40),
         prefix: secret.slice(0, 13),
-        secret,
-        scopes: ["obligations:read", "obligations:write", "risk:read"],
+        secret_hash: digestSecret(secret),
+        scopes: requested.length ? requested : [...KEY_SCOPES],
         created_at: new Date().toISOString(),
         last_used: null,
       };
@@ -511,7 +538,7 @@ async function handleRequest(req, res) {
         actor_type: "human", actor: "Solomon Tigabu", verb: "issued an agent key",
         object: key.name, detail: key.prefix + "…", kind: "human",
       });
-      return send(res, 201, { state: buildState(), key });
+      return send(res, 201, { state: buildState(), key: { ...publicKey(key), secret } });
     }
 
     const keyMatch = path.match(/^\/api\/keys\/([^/]+)$/);
@@ -610,7 +637,11 @@ async function handleRequest(req, res) {
 
     if (path === "/api/export" && req.method === "GET") {
       const data = loadAll();
-      return send(res, 200, { exported_at: new Date().toISOString(), ...data });
+      return send(res, 200, {
+        exported_at: new Date().toISOString(),
+        ...data,
+        keys: data.keys.map(publicKey),
+      });
     }
 
     if (path.startsWith("/api/")) return send(res, 404, { error: "not_found", path });

@@ -22,7 +22,7 @@ export default function Access() {
   if (!state) return null;
 
   const key = state.keys[0];
-  const token = key?.secret || "rfy_live_xxxxxxxxxxxxxxxx";
+  const token = newKey?.secret || key?.secret || "rfy_live_xxxxxxxxxxxxxxxx";
 
   const copy = async (text: string, label: string) => {
     try {
@@ -48,10 +48,14 @@ export default function Access() {
   };
 
   const testCall = async () => {
-    if (!key?.secret) return;
+    const secret = newKey?.secret || key?.secret;
+    if (!secret) {
+      toast("Create a key first", "The full secret is only shown once, at issue time.", "warn");
+      return;
+    }
     setTesting(true);
     try {
-      const res = await fetch("/api/v1/risk", { headers: { authorization: `Bearer ${key.secret}` } });
+      const res = await fetch("/api/v1/risk", { headers: { authorization: `Bearer ${secret}` } });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Call failed");
       toast(
@@ -179,7 +183,7 @@ await rf.obligations.create({
               <div className="new-key-banner">
                 <div>
                   <strong>Copy this key now</strong>
-                  <em>It won't be shown again. Stored hashed in production.</em>
+                  <em>Shown once. Only a hash and this prefix are stored.</em>
                   <code>{newKey.secret}</code>
                 </div>
                 <button className="btn btn-lime btn-sm" onClick={() => copy(newKey.secret, "New key")}>
@@ -190,6 +194,15 @@ await rf.obligations.create({
             )}
 
             <div className="key-table">
+              {state.keys.length === 0 && (
+                <div className="key-row">
+                  <span className="key-icon"><Icon name="key" size={15} /></span>
+                  <div className="key-main">
+                    <strong>No keys yet</strong>
+                    <code>Issue one above to give an agent scoped access.</code>
+                  </div>
+                </div>
+              )}
               {state.keys.map((k) => (
                 <div className="key-row" key={k.id}>
                   <span className="key-icon"><Icon name="key" size={15} /></span>
@@ -205,9 +218,6 @@ await rf.obligations.create({
                     <span>Last used</span>
                     <strong>{k.last_used ? timeAgo(k.last_used, new Date(state.now).getTime()) : "Never"}</strong>
                   </div>
-                  <button className="tiny-icon" title="Copy key" onClick={() => k.secret && copy(k.secret, k.name)}>
-                    <Icon name="copy" size={14} />
-                  </button>
                   <button className="tiny-icon danger" title="Revoke" onClick={() => actions.deleteKey(k.id)}>
                     <Icon name="trash" size={14} />
                   </button>

@@ -1,5 +1,6 @@
 import { loadAll, put, getMeta, setMeta, remove } from "./db.mjs";
 import { fileReceiptForCompletion, trustSnapshot } from "./trust.mjs";
+import { publicKey } from "./keys.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -110,7 +111,7 @@ export function buildState() {
     runs,
     providers: data.providers,
     events: data.events.slice(0, 60),
-    keys: data.keys,
+    keys: data.keys.map(publicKey),
     receipts: trust.receipts,
     escrows: trust.escrows,
     trust: {

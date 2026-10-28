@@ -136,7 +136,7 @@ public/fonts/        self-hosted fonts
 
 **Local development and Docker** use SQLite at `data/remindify.db`. Use **Reset demo** (clock chip, after time travel) or `POST /api/demo/reset` to restore the seeded workspace. Export everything with `GET /api/export`. Point the store elsewhere with `REMINDIFY_DATA_DIR` or `REMINDIFY_DB`.
 
-**Vercel** uses Postgres. Set `DATABASE_URL` (or one of Vercel's `POSTGRES_*` variables) and the server switches stores automatically. The Postgres store creates its tables on first use, loads a request-scoped snapshot inside a transaction, and flushes it before the response ends. Writes are serialized with a Postgres advisory lock so the single shared demo workspace stays consistent across serverless instances.
+**Vercel** uses Postgres. Set `DATABASE_URL` (or one of Vercel's `POSTGRES_*` variables) and the server switches stores automatically. The Postgres store creates its tables on first use, loads a request-scoped snapshot inside a transaction, and flushes it before the response ends. Writes are serialized with a Postgres advisory lock so requests from every workspace stay consistent across serverless instances.
 
 Accounts and sessions live in separate `users`, `auth_sessions` and `auth_challenges` tables in both stores. A demo reset never deletes users or signs anyone out.
 
@@ -376,18 +376,18 @@ curl -X POST http://localhost:4178/api/v1/trust/receipts \
 
 ## API
 
-All machine endpoints require `Authorization: Bearer rfy_live_...`.
+All machine endpoints require `Authorization: Bearer rfy_live_...`. Issued keys are stored as a SHA-256 digest plus a display prefix; the full secret is returned once, in the creation response, and never again. New workspaces start with no keys so every credential is one the operator issued. The seeded demo workspace keeps its plaintext demo keys so the public demo works out of the box. Requests outside a key's scopes fail with `403 {"error":"missing_scope"}`.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/obligations` | Full register with risk, owner, autonomy, proof and recurrence. |
-| `POST` | `/api/v1/obligations` | Create an obligation. `title` and `due_at` required. |
-| `GET` | `/api/v1/obligations/:id` | One obligation with history and risk. |
-| `POST` | `/api/v1/obligations/:id/complete` | File proof and advance the schedule. |
-| `GET` | `/api/v1/risk` | Coverage, exposure, counts and top risks. |
-| `GET` | `/api/v1/agents` | Roster with scopes and autonomy ceilings. |
-| `GET` | `/api/v1/trust` | Receipts, escrows, networks and trust stats. |
-| `POST` | `/api/v1/trust/receipts` | File a proof receipt from an agent. |
+| Method | Path | Scope | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/obligations` | `obligations:read` | Full register with risk, owner, autonomy, proof and recurrence. |
+| `POST` | `/api/v1/obligations` | `obligations:write` | Create an obligation. `title` and `due_at` required. |
+| `GET` | `/api/v1/obligations/:id` | `obligations:read` | One obligation with history and risk. |
+| `POST` | `/api/v1/obligations/:id/complete` | `obligations:write` | File proof and advance the schedule. |
+| `GET` | `/api/v1/risk` | `risk:read` | Coverage, exposure, counts and top risks. |
+| `GET` | `/api/v1/agents` | `agents:read` | Roster with scopes and autonomy ceilings. |
+| `GET` | `/api/v1/trust` | `risk:read` | Receipts, escrows, networks and trust stats. |
+| `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. |
 
 App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
 
@@ -462,7 +462,7 @@ Open `http://localhost:4178`. The database is created, seeded and protected by t
 
 For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it, and set `PUBLIC_ORIGIN=https://your-domain.example` plus `COOKIE_SECURE=true` behind HTTPS. Public demos should use a fresh API key and should not expose the seeded demo key.
 
-Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until key hashing, shared rate limiting and password reset are added.
+Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until shared rate limiting and password reset are added.
 
 ---
 
@@ -471,7 +471,7 @@ Accounts get separate workspaces, but this is still a prototype. Do not run it a
 This is a complete product prototype, not a hardened multi-tenant service. Before charging money:
 
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
-- add key hashing, shared rate limiting, idempotency keys and per-scope enforcement on the machine API;
+- add a shared rate-limit store, idempotency keys and key expiry/rotation on the machine API (keys are already hashed and scope-enforced);
 - add email verification and a password-reset flow;
 - make webhooks signed and retryable, and add an outbox;
 - encrypt proof documents at rest and add retention/deletion controls;
