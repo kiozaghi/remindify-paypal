@@ -23,8 +23,8 @@ import AgentDrawer from "./components/AgentDrawer";
 import { CommandPalette, Toasts } from "./components/CommandPalette";
 import { CreateAgentModal, DeleteAccountModal, HireModal, NewObligationModal } from "./components/Modals";
 import { TemplatesModal } from "./components/TemplatesModal";
-import { clockLabel } from "./lib/format";
-import { api } from "./lib/api";
+import { clockLabel, download } from "./lib/format";
+import { api, request } from "./lib/api";
 
 const NAV = [
   {
@@ -64,11 +64,12 @@ const TITLES: Record<string, { title: string; sub: string }> = {
 };
 
 function Shell() {
-  const { state, loading, route, navigate, overlays, setOverlays, actions } = useApp();
+  const { state, loading, route, navigate, overlays, setOverlays, actions, toast } = useApp();
   const { user, config, logout } = useAuth();
   const [mobileNav, setMobileNav] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [verifyState, setVerifyState] = useState<"idle" | "sending" | "sent">("idle");
 
   const displayUser = user?.name || state?.user || "Operator";
@@ -90,6 +91,22 @@ function Shell() {
     setSigningOut(true);
     await logout();
     navigateTo("home");
+  };
+
+  const exportRegister = async () => {
+    setExporting(true);
+    try {
+      const data = await request("/api/export");
+      download(
+        `remindify-export-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(data, null, 2)
+      );
+      toast("Export ready", "A JSON copy of the register is downloading.", "success");
+    } catch (error: any) {
+      toast("Export failed", error?.message || "Try again.", "warn");
+    } finally {
+      setExporting(false);
+    }
   };
 
   useEffect(() => {
@@ -225,6 +242,10 @@ function Shell() {
                 <span className="eyebrow">Signed in</span>
                 <strong>{displayUser}</strong>
                 <em>{displayDetail}</em>
+                <button onClick={exportRegister} disabled={exporting} role="menuitem">
+                  <Icon name="download" size={13} />
+                  {exporting ? "Building export…" : "Export my data"}
+                </button>
                 <button onClick={handleSignOut} disabled={signingOut} role="menuitem">
                   <Icon name="power" size={13} />
                   {signingOut ? "Signing out…" : "Sign out"}
