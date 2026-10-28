@@ -137,7 +137,9 @@ Body:
 
 Return any `2xx` and include `{"proof": "your-proof-reference"}` (or `receipt_url`) to file it as evidence. A non-2xx response, timeout or network error records a **failed** run, leaves the obligation open, and surfaces the error in the passport. A `2xx` without a proof reference is recorded as `connector_<status>` so the gap is visible.
 
-Without a connector the agent is draft-only: sweeps produce plans, approvals are recorded but nothing runs, and nothing is marked complete. Executor URLs are checked so they resolve to a public address; redirects are refused. `EXECUTOR_ALLOW_LOCAL=1` permits `http://localhost` for local development only. The signing secret is stored server-side, stripped from state, exports and API responses, and rotated whenever you reconnect.
+Transient failures (network errors, timeouts, `408`, `429` and `5xx`) are retried up to three times with exponential backoff; other `4xx` answers are final. Each attempt carries a fresh timestamp and signature plus `x-remindify-attempt`, so an executor can dedupe on `x-remindify-run` while still verifying every request.
+
+Without a connector the agent is draft-only: sweeps produce plans, approvals are recorded but nothing runs, and nothing is marked complete. Executor URLs are resolved and checked for a public address, and that address is pinned for the send, so a second DNS answer cannot bounce the call inward. Redirects are refused. `EXECUTOR_ALLOW_LOCAL=1` permits `http://localhost` for local development only. The signing secret is stored server-side, stripped from state, exports and API responses, and rotated whenever you reconnect.
 
 ---
 
@@ -533,7 +535,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
 - add an outbox and replay-safe job runner around the machine API and connectors (keys are already hashed, scoped, expiring and rate-limited, and mutating calls accept idempotency keys);
 - add email verification and a password-reset flow;
-- add retry/backoff and an outbox to the signed execution connectors, and verify the resolved address again at fetch time to close DNS-rebinding gaps;
+- add a durable outbox so connector retries survive a restart (calls now retry transient failures inline with backoff and pin the validated address on every attempt);
 - encrypt proof documents at rest and add retention/deletion controls;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
 - connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;

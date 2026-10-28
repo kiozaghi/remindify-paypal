@@ -217,6 +217,7 @@ async function executeAction(agent, ob, { action, detail, note }) {
     proof: outcome.ok ? outcome.proof : null,
     duration_ms: Date.now() - started,
     connector_status: outcome.status || null,
+    attempts: outcome.attempts || 1,
     error: outcome.ok ? null : outcome.error,
   });
   if (!outcome.ok) {

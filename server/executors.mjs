@@ -1,10 +1,25 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { promises as dns } from "node:dns";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { getMeta } from "./db.mjs";
 import { currentWorkspaceId } from "./workspace.mjs";
 
 const TIMEOUT_MS = Number(process.env.EXECUTOR_TIMEOUT_MS) || 8000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
+const MAX_ATTEMPTS = 5;
+
+function attemptBudget() {
+  const configured = Number(process.env.EXECUTOR_ATTEMPTS);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.min(MAX_ATTEMPTS, Math.floor(configured))
+    : 3;
+}
+
+function retryBase() {
+  const configured = Number(process.env.EXECUTOR_RETRY_BASE_MS);
+  return Number.isFinite(configured) && configured >= 0 ? Math.min(5000, Math.floor(configured)) : 300;
+}
 
 export function newExecutorSecret() {
   return `rfy_exec_${randomBytes(24).toString("hex")}`;
@@ -12,9 +27,10 @@ export function newExecutorSecret() {
 
 // Executor URLs are user-supplied fetch targets, so they get the same
 // treatment as any outbound webhook: https only, no credentials in the URL,
-// and a resolved address that is not on a private network. Redirects are
-// refused at fetch time so a public host cannot bounce the request inward.
-export async function validateExecutorUrl(raw) {
+// and a resolved address that is not on a private network. The resolved
+// address is returned so the send pins it instead of letting the transport
+// resolve the host again (a second lookup is where DNS rebinding slips in).
+export async function resolveExecutorTarget(raw) {
   let url;
   try {
     url = new URL(String(raw));
@@ -32,7 +48,7 @@ export async function validateExecutorUrl(raw) {
   if (isLocal && process.env.EXECUTOR_ALLOW_LOCAL !== "1") {
     return { ok: false, error: "Local addresses are blocked for executors." };
   }
-  if (isLocal) return { ok: true, url: url.toString() };
+  if (isLocal) return { ok: true, url, address: null, family: null };
 
   let addresses;
   try {
@@ -43,7 +59,14 @@ export async function validateExecutorUrl(raw) {
   if (!addresses.length || addresses.some((entry) => isPrivateAddress(entry.address))) {
     return { ok: false, error: "That host resolves to a private address." };
   }
-  return { ok: true, url: url.toString() };
+  return { ok: true, url, address: addresses[0].address, family: addresses[0].family };
+}
+
+export async function validateExecutorUrl(raw) {
+  const target = await resolveExecutorTarget(raw);
+  return target.ok
+    ? { ok: true, url: target.url.toString() }
+    : { ok: false, error: target.error };
 }
 
 export function isPrivateAddress(ip) {
@@ -91,16 +114,10 @@ export async function executeWithConnector({ runId, agent, obligation, action, d
   if (!connectorConfigured(agent)) {
     return { configured: false, ok: false, error: "No executor is connected to this agent." };
   }
-  const check = await validateExecutorUrl(agent.executor_url);
-  if (!check.ok) {
-    return { configured: true, ok: false, status: 0, error: check.error };
-  }
 
-  const issuedAt = Date.now();
-  const rawBody = JSON.stringify({
+  const base = {
     event: "obligation.execute",
     run_id: runId,
-    issued_at: new Date(issuedAt).toISOString(),
     workspace: {
       id: currentWorkspaceId(),
       name: getMeta("workspace", "Your desk"),
@@ -118,34 +135,50 @@ export async function executeWithConnector({ runId, agent, obligation, action, d
     },
     action,
     detail,
-  });
+  };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const budget = attemptBudget();
+  let outcome;
+  for (let attempt = 1; attempt <= budget; attempt++) {
+    outcome = await sendAttempt({ agent, base, runId, attempt });
+    outcome.attempts = attempt;
+    if (outcome.ok || !outcome.transient) break;
+    if (attempt < budget) {
+      const delay = retryBase() * 2 ** (attempt - 1);
+      if (delay > 0) await sleep(delay);
+    }
+  }
+  if (!outcome.ok && outcome.attempts > 1) {
+    outcome.error = `${outcome.error} (tried ${outcome.attempts} times)`;
+  }
+  delete outcome.transient;
+  return outcome;
+}
+
+async function sendAttempt({ agent, base, runId, attempt }) {
+  // Re-resolve on every attempt and pin the address we validated.
+  const target = await resolveExecutorTarget(agent.executor_url);
+  if (!target.ok) {
+    return { configured: true, ok: false, status: 0, error: target.error, transient: false };
+  }
+
+  const issuedAt = Date.now();
+  const rawBody = JSON.stringify({ ...base, issued_at: new Date(issuedAt).toISOString() });
+  const headers = {
+    "content-type": "application/json",
+    "user-agent": "Remindify-Executor/1",
+    "x-remindify-event": "obligation.execute",
+    "x-remindify-run": runId,
+    "x-remindify-timestamp": String(issuedAt),
+    "x-remindify-signature": `sha256=${signExecutorRequest(agent.executor_secret, issuedAt, rawBody)}`,
+    "x-remindify-attempt": String(attempt),
+  };
+
   try {
-    const response = await fetch(check.url, {
-      method: "POST",
-      redirect: "error",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        "user-agent": "Remindify-Executor/1",
-        "x-remindify-event": "obligation.execute",
-        "x-remindify-run": runId,
-        "x-remindify-timestamp": String(issuedAt),
-        "x-remindify-signature": `sha256=${signExecutorRequest(
-          agent.executor_secret,
-          issuedAt,
-          rawBody
-        )}`,
-      },
-      body: rawBody,
-    });
-
-    const text = await readLimited(response);
+    const response = await sendSigned({ target, headers, body: rawBody });
     let payload = null;
     try {
-      payload = text ? JSON.parse(text) : null;
+      payload = response.text ? JSON.parse(response.text) : null;
     } catch {
       payload = null;
     }
@@ -157,6 +190,7 @@ export async function executeWithConnector({ runId, agent, obligation, action, d
         ok: false,
         status: response.status,
         error: `Executor answered ${response.status}${reason}`,
+        transient: response.status === 408 || response.status === 429 || response.status >= 500,
       };
     }
 
@@ -169,32 +203,77 @@ export async function executeWithConnector({ runId, agent, obligation, action, d
       ok: true,
       status: response.status,
       proof: String(proof).slice(0, 300),
+      transient: false,
     };
   } catch (error) {
     const message =
-      error?.name === "AbortError"
+      error?.timedOut || error?.code === "ETIMEDOUT"
         ? `Executor timed out after ${TIMEOUT_MS}ms.`
         : `Executor unreachable (${error?.code || error?.message || "network error"}).`;
-    return { configured: true, ok: false, status: 0, error: message };
-  } finally {
-    clearTimeout(timer);
+    return { configured: true, ok: false, status: 0, error: message, transient: true };
   }
 }
 
-async function readLimited(response) {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  try {
-    while (total < MAX_RESPONSE_BYTES) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      chunks.push(Buffer.from(value));
+function sendSigned({ target, headers, body }) {
+  return new Promise((resolve, reject) => {
+    const url = target.url;
+    const hostname = url.hostname.replace(/^\[|\]$/g, "");
+    const transport = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const options = {
+      method: "POST",
+      hostname,
+      port: url.port || undefined,
+      path: `${url.pathname || "/"}${url.search}`,
+      headers: { ...headers, "content-length": Buffer.byteLength(body) },
+    };
+    if (url.protocol === "https:") options.servername = hostname;
+    if (target.address) {
+      options.lookup = (host, lookupOptions, callback) => {
+        if (lookupOptions && typeof lookupOptions === "object" && lookupOptions.all) {
+          return callback(null, [{ address: target.address, family: target.family }]);
+        }
+        return callback(null, target.address, target.family);
+      };
     }
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-  return Buffer.concat(chunks).subarray(0, MAX_RESPONSE_BYTES).toString("utf8");
+
+    let settled = false;
+    let timer;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+
+    const req = transport(options, (res) => {
+      const chunks = [];
+      let total = 0;
+      res.on("data", (chunk) => {
+        total += chunk.length;
+        if (total <= MAX_RESPONSE_BYTES) chunks.push(chunk);
+      });
+      res.on("end", () =>
+        finish(resolve, {
+          status: res.statusCode || 0,
+          ok: (res.statusCode || 0) >= 200 && (res.statusCode || 0) < 300,
+          text: Buffer.concat(chunks).subarray(0, MAX_RESPONSE_BYTES).toString("utf8"),
+        })
+      );
+      res.on("error", (error) => finish(reject, error));
+    });
+
+    timer = setTimeout(() => {
+      const error = new Error(`Executor timed out after ${TIMEOUT_MS}ms.`);
+      error.code = "ETIMEDOUT";
+      error.timedOut = true;
+      req.destroy(error);
+    }, TIMEOUT_MS);
+
+    req.on("error", (error) => finish(reject, error));
+    req.end(body);
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
