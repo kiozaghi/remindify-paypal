@@ -6,16 +6,17 @@ import {
 } from "./lib/seo";
 import type { Route } from "./lib/router";
 import { routePath } from "./lib/router";
+import { DOCS_PAGES, docsHref, docsMeta, docsPage } from "./docs/pages";
 
-export { CONTENT_PAGES, SHELL_PAGES, PAGE_META, FAQS, PLANS, PRODUCTS, SIDES, DELEGATION, COMMUNITY_PACKS, routePath, canonicalFor };
+export { CONTENT_PAGES, SHELL_PAGES, PAGE_META, FAQS, PLANS, PRODUCTS, SIDES, DELEGATION, COMMUNITY_PACKS, routePath, canonicalFor, DOCS_PAGES, docsHref };
 
 export type HeadOptions = {
   verification?: { google?: string; bing?: string };
 };
 
 /** Server-render the public body for a page. Used only at build time. */
-export function renderPage(page: Route): string {
-  return renderToString(<Landing page={page} onNavigate={() => {}} />);
+export function renderPage(page: Route, slug?: string): string {
+  return renderToString(<Landing page={page} slug={slug} onNavigate={() => {}} />);
 }
 
 function escapeHtml(value: string) {
@@ -31,12 +32,13 @@ function meta(attribute: "name" | "property", key: string, content: string) {
 }
 
 /** Static <head> for a prerendered page or an app shell. */
-export function headTags(page: Route, origin: string, options: HeadOptions = {}): string {
+export function headTags(page: Route, origin: string, options: HeadOptions = {}, slug?: string): string {
   const base = origin.replace(/\/$/, "");
-  const pageMeta = PAGE_META[page];
-  const canonical = canonicalFor(page, base);
+  const knownDoc = page !== "docs" || !slug || Boolean(docsPage(slug));
+  const pageMeta = page === "docs" ? docsMeta(slug) : PAGE_META[page];
+  const canonical = canonicalFor(page, base, slug);
   const image = `${base}/og.png`;
-  const robots = pageMeta.index
+  const robots = pageMeta.index && knownDoc
     ? "index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
     : "noindex,nofollow";
 
@@ -69,7 +71,7 @@ export function headTags(page: Route, origin: string, options: HeadOptions = {})
     `<link rel="alternate" type="application/xml" title="Sitemap" href="/sitemap.xml" />`,
   ];
 
-  if (pageMeta.index) tags.push(`<link rel="canonical" href="${escapeHtml(canonical)}" />`);
+  if (pageMeta.index && knownDoc) tags.push(`<link rel="canonical" href="${escapeHtml(canonical)}" />`);
   if (options.verification?.google) {
     tags.push(meta("name", "google-site-verification", options.verification.google));
   }
@@ -77,7 +79,7 @@ export function headTags(page: Route, origin: string, options: HeadOptions = {})
     tags.push(meta("name", "msvalidate.01", options.verification.bing));
   }
 
-  const json = JSON.stringify(structuredData(page, base)).replace(/</g, "\\u003c");
+  const json = JSON.stringify(structuredData(page, base, slug)).replace(/</g, "\\u003c");
   tags.push(`<script type="application/ld+json" id="remindify-jsonld">${json}</script>`);
 
   return tags.join("\n    ");

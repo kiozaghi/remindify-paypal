@@ -3,15 +3,19 @@ import type { Route } from "../lib/router";
 import type { Navigate } from "./Chrome";
 import HomePage from "./HomePage";
 import { AboutPage, LegalPage, PricingPage, SecurityPage } from "./Pages";
+import DocsPage from "../docs/DocsPage";
 
 export default function Landing({
-  page, onNavigate, user,
+  page, onNavigate, user, slug,
 }: {
   page: Route;
   onNavigate: Navigate;
   user?: AuthUser | null;
+  slug?: string;
 }) {
   switch (page) {
+    case "docs":
+      return <DocsPage slug={slug} onNavigate={onNavigate} user={user} />;
     case "pricing":
       return <PricingPage onNavigate={onNavigate} user={user} />;
     case "security":

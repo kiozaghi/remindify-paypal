@@ -20,6 +20,7 @@ const seo = await import(pathToFileURL(join(root, "dist-ssr", "entry-server.js")
 const {
   CONTENT_PAGES, SHELL_PAGES, PAGE_META,
   FAQS, PLANS, PRODUCTS, SIDES, DELEGATION, COMMUNITY_PACKS,
+  DOCS_PAGES, docsHref,
   renderPage, headTags, routePath, canonicalFor,
 } = seo;
 
@@ -42,9 +43,9 @@ const verification = {
   bing: process.env.BING_SITE_VERIFICATION || undefined,
 };
 
-function htmlFor(page, body) {
+function htmlFor(page, body, slug) {
   return template
-    .replace(SEO_BLOCK, () => headTags(page, origin, { verification }))
+    .replace(SEO_BLOCK, () => headTags(page, origin, { verification }, slug))
     .replace(
       '<div id="root"></div>',
       `<div id="root">${body}</div>`,
@@ -64,25 +65,40 @@ for (const page of CONTENT_PAGES) {
   await writeRoute(routePath(page), htmlFor(page, renderPage(page)));
 }
 
+// ---------- Developer docs ----------
+await writeRoute(docsHref(""), htmlFor("docs", renderPage("docs"), ""));
+for (const doc of DOCS_PAGES) {
+  if (!doc.slug) continue;
+  await writeRoute(docsHref(doc.slug), htmlFor("docs", renderPage("docs", doc.slug), doc.slug));
+}
+
 // ---------- App and auth shells (noindex, hydrated on the client) ----------
 for (const page of SHELL_PAGES) {
   await writeRoute(routePath(page), htmlFor(page, ""));
 }
 
 // ---------- Sitemap ----------
+const sitemapEntries = [
+  ...CONTENT_PAGES.map((page) => ({
+    loc: canonicalFor(page, origin),
+    priority: page === "home" ? "1.0" : page === "pricing" ? "0.9" : "0.7",
+    changefreq: page === "home" || page === "pricing" ? "weekly" : "monthly",
+  })),
+  ...DOCS_PAGES.map((doc) => ({
+    loc: canonicalFor("docs", origin, doc.slug),
+    priority: doc.slug ? "0.6" : "0.8",
+    changefreq: "monthly",
+  })),
+];
+
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${CONTENT_PAGES.map((page) => {
-  const loc = canonicalFor(page, origin);
-  const priority = page === "home" ? "1.0" : page === "pricing" ? "0.9" : "0.7";
-  const changefreq = page === "home" || page === "pricing" ? "weekly" : "monthly";
-  return `  <url>
-    <loc>${loc}</loc>
+${sitemapEntries.map((entry) => `  <url>
+    <loc>${entry.loc}</loc>
     <lastmod>${builtAt}</lastmod>
-    <changefreq>${changefreq}</changefreq>
-    <priority>${priority}</priority>
-  </url>`;
-}).join("\n")}
+    <changefreq>${entry.changefreq}</changefreq>
+    <priority>${entry.priority}</priority>
+  </url>`).join("\n")}
 </urlset>
 `;
 await writeFile(join(dist, "sitemap.xml"), sitemap);
@@ -109,6 +125,10 @@ const pageIndex = CONTENT_PAGES.map((page) => {
   return `- [${meta.label}](${canonicalFor(page, origin)}): ${meta.description}`;
 }).join("\n");
 
+const docsIndex = DOCS_PAGES.map((doc) => {
+  return `- [${doc.label}](${canonicalFor("docs", origin, doc.slug)}): ${doc.description}`;
+}).join("\n");
+
 const llms = `# Remindify
 
 > Remindify is one calm register for both kinds of weight: the people you love and the money you can't lose. Renewals, filings, school terms and birthdays, with humans and agents who can actually do the work, community calendar packs, and verifiable proof.
@@ -129,6 +149,9 @@ Key facts:
 
 ## Pages
 ${pageIndex}
+
+## Developer docs
+${docsIndex}
 
 ## Machine-readable
 - [Sitemap](${origin}/sitemap.xml)
@@ -240,6 +263,16 @@ URL: ${canonicalFor(page, origin)}
 ${meta.description}`;
 }).join("\n\n")}
 
+## Developer documentation
+
+The docs hub is at ${origin}/docs. The full text follows.
+
+${DOCS_PAGES.map((doc) => `### ${doc.label}
+URL: ${canonicalFor("docs", origin, doc.slug)}
+Group: ${doc.group}
+
+${doc.body}`).join("\n\n---\n\n")}
+
 ## Contact
 
 - General: hello@remindify.app
@@ -280,4 +313,4 @@ const notFound = `<!doctype html>
 `;
 await writeFile(join(dist, "404.html"), notFound);
 
-console.log(`[seo] prerendered ${CONTENT_PAGES.length} pages + ${SHELL_PAGES.length} shells for ${origin}`);
+console.log(`[seo] prerendered ${CONTENT_PAGES.length} pages + ${DOCS_PAGES.length} docs + ${SHELL_PAGES.length} shells for ${origin}`);

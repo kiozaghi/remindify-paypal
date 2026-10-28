@@ -30,6 +30,7 @@ const LINKS: Array<{ label: string; page: PublicRoute; section?: string }> = [
   { label: "Product", page: "home", section: "product" },
   { label: "Trust", page: "home", section: "trust" },
   { label: "Pricing", page: "pricing" },
+  { label: "Docs", page: "docs" },
   { label: "About", page: "about" },
 ];
 
@@ -251,6 +252,7 @@ export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?
           <a href={routeHref("about")} onClick={spaClick(() => goPublic("about"))}>About</a>
           <a href={routeHref("security")} onClick={spaClick(() => goPublic("security"))}>Security &amp; trust</a>
           <a href={routeHref("pricing")} onClick={spaClick(() => goPublic("pricing"))}>Pricing</a>
+          <a href={routeHref("docs")} onClick={spaClick(() => goPublic("docs"))}>Developer docs</a>
           <a href={routeHref("home", { section: "story" })} onClick={spaClick(() => goPublic("home", "story"))}>Manifesto</a>
         </div>
 

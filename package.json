@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Remindify \u2014 the autonomy layer for everything that comes back.",
+  "description": "Remindify — the autonomy layer for everything that comes back.",
   "engines": {
     "node": ">=22"
   },
@@ -23,6 +23,7 @@
     "seo": "node scripts/seo.mjs"
   },
   "dependencies": {
+    "marked": "^18.1.2",
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",
     "react": "^19.1.0",

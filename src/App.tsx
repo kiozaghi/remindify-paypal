@@ -346,8 +346,8 @@ function Root() {
   }, []);
 
   useEffect(() => {
-    applySeo(location.page);
-  }, [location.page]);
+    applySeo(location.page, location.params.get("slug") || undefined);
+  }, [location]);
 
   useEffect(() => {
     if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
@@ -383,7 +383,13 @@ function Root() {
     // Public pages are prerendered to static HTML. Render the same markup while
     // the session check runs so hydration is clean and visitors see content first.
     if (isPublicRoute(location.page) && !isAuthRoute(location.page)) {
-      return <Landing page={location.page} onNavigate={navigateTo} />;
+      return (
+        <Landing
+          page={location.page}
+          slug={location.params.get("slug") || undefined}
+          onNavigate={navigateTo}
+        />
+      );
     }
     return <BootScreen />;
   }
@@ -413,7 +419,13 @@ function Root() {
         />
       );
     }
-    return <Landing page={location.page} onNavigate={navigateTo} />;
+    return (
+      <Landing
+        page={location.page}
+        slug={location.params.get("slug") || undefined}
+        onNavigate={navigateTo}
+      />
+    );
   }
 
   if (isAuthRoute(location.page)) {
@@ -439,7 +451,14 @@ function Root() {
     );
   }
 
-  return <Landing page={location.page} onNavigate={navigateTo} user={user} />;
+  return (
+    <Landing
+      page={location.page}
+      slug={location.params.get("slug") || undefined}
+      onNavigate={navigateTo}
+      user={user}
+    />
+  );
 }
 
 export default function App() {

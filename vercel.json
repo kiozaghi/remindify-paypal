@@ -28,7 +28,9 @@
     { "source": "/market", "destination": "/market/index.html" },
     { "source": "/activity", "destination": "/activity/index.html" },
     { "source": "/trust", "destination": "/trust/index.html" },
-    { "source": "/access", "destination": "/access/index.html" }
+    { "source": "/access", "destination": "/access/index.html" },
+    { "source": "/docs", "destination": "/docs/index.html" },
+    { "source": "/docs/(.*)", "destination": "/docs/$1/index.html" }
   ],
   "headers": [
     {
