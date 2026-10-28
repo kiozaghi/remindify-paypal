@@ -21,6 +21,7 @@ import {
 import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
 import { emailConfigured } from "./email.mjs";
 import { sendDailyDigest } from "./digest.mjs";
+import { pruneActivity } from "./retention.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
@@ -956,7 +957,7 @@ const SWEEP_BUDGET_MS = 20_000;
 async function sweepAllWorkspaces() {
   const summary = {
     workspaces: 0, skipped: 0, deferred: 0, scanned: 0, proposed: 0, executed: 0, drafted: 0, blocked: 0, failed: 0,
-    digests: 0, digest_failed: 0,
+    digests: 0, digest_failed: 0, pruned_events: 0, pruned_runs: 0,
   };
   const workspaces = workspacesWithKind("obligations");
   const deadline = Date.now() + SWEEP_BUDGET_MS;
@@ -986,6 +987,13 @@ async function sweepAllWorkspaces() {
           summary.digest_failed += digest.failed || 0;
         } catch {
           summary.digest_failed += 1;
+        }
+        try {
+          const pruned = pruneActivity();
+          summary.pruned_events += pruned.events;
+          summary.pruned_runs += pruned.runs;
+        } catch {
+          // Retention is best-effort: a failed prune must not fail the sweep.
         }
       } finally {
         setMeta("sweep_lease_until", new Date(0).toISOString());
