@@ -429,7 +429,7 @@ Both are **reference implementations and unaudited**. They are deployed to Base 
 | `base-sepolia` | `RemindifyAttestations` | [`0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9`](https://sepolia.basescan.org/address/0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9) |
 | `base-sepolia` | `RemindifyEscrow` | [`0x647F30587B925F1aFb71D3C9CE25CfbDA17872db`](https://sepolia.basescan.org/address/0x647F30587B925F1aFb71D3C9CE25CfbDA17872db) |
 
-Deployment records, including transaction hashes and block numbers, are written to `contracts/deployments/<network>.json`.
+Both contracts show an exact-match source verification on Basescan. Deployment records, including transaction hashes and block numbers, are written to `contracts/deployments/<network>.json`.
 
 They compile with `solc 0.8.24`, which is pinned as a dev dependency:
 
