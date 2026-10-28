@@ -1,0 +1,28 @@
+{
+  "network": "base-sepolia",
+  "label": "Base Sepolia",
+  "chain_id": 84532,
+  "rpc": "https://sepolia.base.org",
+  "rpc_env": "BASE_SEPOLIA_RPC_URL",
+  "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  "testnet": true,
+  "dry_run": false,
+  "created_at": "2026-10-28T22:31:09.993Z",
+  "deployer": "0xb785D757670D7558BdBd2907B79EbD2Cd4657d09",
+  "balance_native": "0.0001",
+  "attestation": {
+    "address": "0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9",
+    "tx_hash": "0xfeb2fe9c036b1a6593e109d2ea6455c5aedf27f38501a23e61e5abb38c8af42e",
+    "block_number": 51524044
+  },
+  "escrow": {
+    "address": "0x647F30587B925F1aFb71D3C9CE25CfbDA17872db",
+    "tx_hash": "0x95434f17de43479295912f393b57d4da7027b17f86d703062ccccd79dd43e588",
+    "block_number": 51524053
+  },
+  "env": {
+    "BASE_SEPOLIA_RPC_URL": "https://sepolia.base.org",
+    "BASE_SEPOLIA_ATTESTATION_CONTRACT": "0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9",
+    "BASE_SEPOLIA_ESCROW_CONTRACT": "0x647F30587B925F1aFb71D3C9CE25CfbDA17872db"
+  }
+}

@@ -422,7 +422,16 @@ When an address is present, the server checks transaction receipts against the c
 
 `contracts/RemindifyAttestations.sol` verifies the EIP-712 signature onchain and stores `anchored[receiptId]`. `contracts/RemindifyEscrow.sol` is a minimal USDC escrow that releases only when the attestation registry says the proof receipt is anchored.
 
-Both are **reference implementations, unaudited and not deployed**. They compile with `solc 0.8.24`, which is pinned as a dev dependency:
+Both are **reference implementations and unaudited**. They are deployed to Base Sepolia only; nothing is deployed to mainnet.
+
+| Network | Contract | Address |
+| --- | --- | --- |
+| `base-sepolia` | `RemindifyAttestations` | [`0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9`](https://sepolia.basescan.org/address/0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9) |
+| `base-sepolia` | `RemindifyEscrow` | [`0x647F30587B925F1aFb71D3C9CE25CfbDA17872db`](https://sepolia.basescan.org/address/0x647F30587B925F1aFb71D3C9CE25CfbDA17872db) |
+
+Deployment records, including transaction hashes and block numbers, are written to `contracts/deployments/<network>.json`.
+
+They compile with `solc 0.8.24`, which is pinned as a dev dependency:
 
 ```bash
 npm run contracts:compile
