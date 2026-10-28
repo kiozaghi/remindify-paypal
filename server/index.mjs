@@ -19,6 +19,7 @@ import {
   fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
 } from "./trust.mjs";
 import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
+import { emailConfigured } from "./email.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
@@ -764,9 +765,21 @@ async function handleRequest(req, res) {
         });
       }
       const { plan } = await body(req);
-      if (!setPlan(plan)) {
+      const target = PLANS[String(plan || "").toLowerCase()];
+      if (!target) {
         return send(res, 422, { error: "unknown_plan", plans: Object.keys(PLANS) });
       }
+      // A paid plan needs a confirmed address for invoices and dunning. Wallet
+      // accounts have no address to confirm, and without an email provider
+      // nobody can confirm, so the gate only applies when both exist.
+      const user = req.auth?.user;
+      if (target.price > 0 && emailConfigured() && user?.email && !user.email_verified) {
+        return send(res, 403, {
+          error: "email_unverified",
+          message: "Confirm your email address before choosing a paid plan.",
+        });
+      }
+      setPlan(target.key);
       return send(res, 200, { billing: billingSummary(), state: buildState() });
     }
 

@@ -280,7 +280,9 @@ Reset email goes through a single HTTPS webhook, so the app holds no SMTP creden
 
 ### Email confirmation
 
-Signup sends a confirmation link to `/login?verify=…` when email is configured. The token is hashed, single-use and valid for 24 hours; a resend replaces the previous link. `POST /api/auth/verify/request` (signed in) sends or resends it, and `POST /api/auth/verify/confirm` with `{ "token" }` records `email_verified_at`. Google sign-ins and password resets count as confirmed because both prove control of the address. Confirmation is soft during preview: the register shows an in-app banner and Resend button, but unverified accounts keep full access. Wallet accounts have no email and never see the banner.
+Signup sends a confirmation link to `/login?verify=…` when email is configured. The token is hashed, single-use and valid for 24 hours; a resend replaces the previous link. `POST /api/auth/verify/request` (signed in) sends or resends it, and `POST /api/auth/verify/confirm` with `{ "token" }` records `email_verified_at`. Google sign-ins and password resets count as confirmed because both prove control of the address. Confirmation is soft for the register: unverified accounts keep full access and only see an in-app banner with a Resend button. Wallet accounts have no email and never see the banner.
+
+Plan changes are stricter once `EMAIL_WEBHOOK_URL` is set: `POST /api/billing/plan` answers `403 {"error":"email_unverified"}` when an email account asks for a paid plan without confirming first. Downgrades to Free and wallet-only accounts stay open, and without an email provider nobody could confirm, so the gate stays open in that preview configuration.
 
 ### Account deletion
 
@@ -583,7 +585,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
 - add a durable job runner for machine API writes (keys are hashed, scoped, expiring and rate-limited, mutating calls accept idempotency keys, connector retries persist in an outbox, and scheduled sweeps are replay-safe);
-- gate paid plans or shared workspaces on a confirmed email (confirmation is recorded today, but the preview keeps access open);
+- build shared workspaces and membership; paid plan changes are already gated on a confirmed email, but there is no sharing surface yet;
 - encrypt proof documents at rest and add retention/deletion controls;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
 - connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;
