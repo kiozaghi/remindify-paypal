@@ -19,8 +19,9 @@ import {
 } from "./trust.mjs";
 import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
 import { setWorkspace } from "./workspace.mjs";
-import { digestSecret, publicKey, KEY_SCOPES } from "./keys.mjs";
+import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
+import { takeRateLimit } from "./ratelimit.mjs";
 import {
   billingSummary, canSwitchPlans, keyLimitReached, meterApiCall, PLANS, setPlan,
 } from "./billing.mjs";
@@ -57,18 +58,20 @@ function send(res, status, payload, type = "application/json; charset=utf-8") {
   if (cookies) headers["set-cookie"] = cookies;
   res.writeHead(status, headers);
   if (typeof payload === "string" || Buffer.isBuffer(payload)) return res.end(payload);
-  res.end(JSON.stringify(payload));
+  return res.end(JSON.stringify(payload));
 }
 
 async function body(req) {
+  if (req.parsedBody !== undefined) return req.parsedBody;
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
     if (raw.length > 1_000_000) throw new Error("Body too large");
   }
-  if (!raw) return {};
+  req.rawBody = raw;
+  if (!raw) return (req.parsedBody = {});
   try {
-    return JSON.parse(raw);
+    return (req.parsedBody = JSON.parse(raw));
   } catch {
     throw new Error("Invalid JSON");
   }
@@ -131,6 +134,52 @@ function scopeDenied(res, scope) {
   });
 }
 
+const IDEMPOTENCY_TTL = 24 * 3600 * 1000;
+
+function idempotencySlot(key, header) {
+  return `idem:${key.id}:${digestSecret(header)}`;
+}
+
+// Reads the body once and decides whether this call is a first attempt or a
+// replay, before any side effect runs. A repeated key with the same body gets
+// the stored response; a different body is a conflict.
+async function idempotencyGuard(req, key) {
+  const header = String(req.headers["idempotency-key"] || "").trim().slice(0, 200);
+  const input = await body(req);
+  if (!header) return { key, header: "", input, hash: "", replay: null, conflict: false };
+  const hash = digestSecret(req.rawBody || "");
+  const record = getMeta(idempotencySlot(key, header), null);
+  const fresh = record && Date.now() - new Date(record.at).getTime() <= IDEMPOTENCY_TTL;
+  if (!fresh) return { key, header, input, hash, replay: null, conflict: false };
+  return { key, header, input, hash, replay: record, conflict: record.hash !== hash };
+}
+
+function replayIdempotent(res, pending) {
+  if (pending.conflict) {
+    send(res, 409, {
+      error: "idempotency_conflict",
+      message: "That Idempotency-Key was already used with a different body.",
+    });
+    return true;
+  }
+  if (pending.replay) {
+    res.setHeader("idempotent-replay", "true");
+    send(res, pending.replay.status, pending.replay.payload);
+    return true;
+  }
+  return false;
+}
+
+function rememberIdempotent(pending, status, payload) {
+  if (!pending.header) return;
+  setMeta(idempotencySlot(pending.key, pending.header), {
+    hash: pending.hash,
+    status,
+    payload,
+    at: new Date().toISOString(),
+  });
+}
+
 function machineObligations() {
   const state = buildState();
   return state.obligations
@@ -177,6 +226,24 @@ async function handleRequest(req, res) {
       seedDatabase();
       ensureTrustDemo();
       const key = resolved.key;
+      if (keyExpired(key)) {
+        return send(res, 401, {
+          error: "key_expired",
+          message: "This key expired. Rotate it in Agent access.",
+        });
+      }
+      const burst = takeRateLimit(key.id);
+      res.setHeader("x-ratelimit-limit", String(burst.limit));
+      res.setHeader("x-ratelimit-remaining", String(burst.remaining));
+      if (!burst.allowed) {
+        res.setHeader("retry-after", String(burst.retry_after));
+        return send(res, 429, {
+          error: "rate_limited",
+          limit: burst.limit,
+          retry_after: burst.retry_after,
+          message: `Too many requests: ${burst.limit} per minute for this key.`,
+        });
+      }
       const meter = meterApiCall();
       if (!meter.allowed) {
         return send(res, 429, {
@@ -208,7 +275,9 @@ async function handleRequest(req, res) {
 
       if (path === "/api/v1/obligations" && req.method === "POST") {
         if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
-        const input = await body(req);
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+        const input = pending.input;
         if (!input.title) return send(res, 422, { error: "title_required" });
         const ob = normalizeObligation({ ...input, source: "api", channel: "api" });
         put("obligations", ob);
@@ -218,13 +287,17 @@ async function handleRequest(req, res) {
           detail: input.due_at ? `Due ${new Date(ob.due_at).toDateString()}` : "Due in 14 days",
           kind: "api", channel: "api",
         });
-        return send(res, 201, { obligation: enrichObligation(ob, virtualNow()) });
+        const payload = { obligation: enrichObligation(ob, virtualNow()) };
+        rememberIdempotent(pending, 201, payload);
+        return send(res, 201, payload);
       }
 
       const completeMatch = path.match(/^\/api\/v1\/obligations\/([^/]+)\/complete$/);
       if (completeMatch && req.method === "POST") {
         if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
-        const input = await body(req);
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+        const input = pending.input;
         const result = completeObligation(completeMatch[1], {
           proof: input.proof || "Completed via API",
           note: input.note || "",
@@ -237,6 +310,7 @@ async function handleRequest(req, res) {
           verb: "completed via API", object: result.obligation.title,
           detail: input.proof || "Proof filed", kind: "api", channel: "api",
         });
+        rememberIdempotent(pending, 200, result);
         return send(res, 200, result);
       }
 
@@ -294,7 +368,9 @@ async function handleRequest(req, res) {
 
       if (path === "/api/v1/trust/receipts" && req.method === "POST") {
         if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
-        const input = await body(req);
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+        const input = pending.input;
         if (!input.obligation_id) return send(res, 422, { error: "obligation_id_required" });
         const result = createReceipt({
           ...input,
@@ -303,7 +379,9 @@ async function handleRequest(req, res) {
           channel: "api",
         });
         if (!result.ok) return send(res, 422, result);
-        return send(res, 201, { receipt: result.receipt });
+        const payload = { receipt: result.receipt };
+        rememberIdempotent(pending, 201, payload);
+        return send(res, 201, payload);
       }
 
       if (path === "/api/v1/agents" && req.method === "GET") {
@@ -576,7 +654,7 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/keys" && req.method === "POST") {
-      const { name, scopes } = await body(req);
+      const { name, scopes, expires_in_days } = await body(req);
       const billing = billingSummary();
       if (keyLimitReached(loadAll().keys.length)) {
         return send(res, 402, {
@@ -590,6 +668,10 @@ async function handleRequest(req, res) {
       const requested = Array.isArray(scopes)
         ? [...new Set(scopes.filter((scope) => KEY_SCOPES.includes(scope)))]
         : [];
+      const requestedDays = Number(expires_in_days);
+      const days = Number.isFinite(requestedDays) && requestedDays > 0
+        ? Math.max(1, Math.min(365, Math.floor(requestedDays)))
+        : 90;
       const key = {
         id: uid("key"),
         name: (name || "New agent key").slice(0, 40),
@@ -597,21 +679,51 @@ async function handleRequest(req, res) {
         secret_hash: digestSecret(secret),
         scopes: requested.length ? requested : [...KEY_SCOPES],
         created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + days * 86400000).toISOString(),
         last_used: null,
       };
       put("keys", key);
       logEvent({
         actor_type: "human", actor: "Solomon Tigabu", verb: "issued an agent key",
-        object: key.name, detail: key.prefix + "…", kind: "human",
+        object: key.name, detail: `${key.prefix}… · expires in ${days} days`, kind: "human",
       });
       return send(res, 201, { state: buildState(), key: { ...publicKey(key), secret } });
+    }
+
+    const rotateMatch = path.match(/^\/api\/keys\/([^/]+)\/rotate$/);
+    if (rotateMatch && req.method === "POST") {
+      const existing = loadAll().keys.find((k) => k.id === rotateMatch[1]);
+      if (!existing) return send(res, 404, { error: "not_found" });
+      const secret = `rfy_live_${randomBytes(14).toString("hex")}`;
+      const key = {
+        ...existing,
+        prefix: secret.slice(0, 13),
+        secret_hash: digestSecret(secret),
+        rotated_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 90 * 86400000).toISOString(),
+      };
+      delete key.secret;
+      put("keys", key);
+      logEvent({
+        actor_type: "human", actor: "Solomon Tigabu", verb: "rotated an agent key",
+        object: key.name, detail: `${key.prefix}… · the old secret no longer works`, kind: "human",
+      });
+      return send(res, 200, { state: buildState(), key: { ...publicKey(key), secret } });
     }
 
     const keyMatch = path.match(/^\/api\/keys\/([^/]+)$/);
     if (keyMatch && req.method === "DELETE") {
       const data = loadAll();
+      const revoked = data.keys.find((k) => k.id === keyMatch[1]);
       const { remove } = await import("./db.mjs");
       remove("keys", keyMatch[1]);
+      if (revoked) {
+        logEvent({
+          actor_type: "human", actor: "Solomon Tigabu", verb: "revoked an agent key",
+          object: revoked.name, detail: `${revoked.prefix}… · every client using it is locked out`,
+          kind: "human",
+        });
+      }
       return send(res, 200, { state: buildState() });
     }
 

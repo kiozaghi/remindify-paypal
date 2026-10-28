@@ -91,7 +91,7 @@ That structure is what makes it safe to hand recurring work to software. It is a
 
 - Every agent has a **passport**: scopes, trust, autonomy ceiling and a machine-readable JSON export.
 - The same register is available over **REST** (`/api/v1/*`) and **MCP** (`mcp/server.mjs`).
-- Machine calls are attributed to a key, logged in the same event stream as human actions, and rate-limited by scope in production.
+- Machine calls are attributed to a key, logged in the same event stream as human actions, metered against the plan and rate-limited per key.
 - Agents can read, create and complete obligations — but completion without proof is rejected by the MCP tool contract.
 - Autonomy above an agent’s ceiling still requires a human approval.
 
@@ -420,18 +420,22 @@ curl -X POST http://localhost:4178/api/v1/trust/receipts \
 
 ## API
 
-All machine endpoints require `Authorization: Bearer rfy_live_...`. Issued keys are stored as a SHA-256 digest plus a display prefix; the full secret is returned once, in the creation response, and never again. New workspaces start with no keys so every credential is one the operator issued. The seeded demo workspace keeps its plaintext demo keys so the public demo works out of the box. Requests outside a key's scopes fail with `403 {"error":"missing_scope"}`.
+All machine endpoints require `Authorization: Bearer rfy_live_...`. Issued keys are stored as a SHA-256 digest plus a display prefix; the full secret is returned once, in the creation response, and never again. New keys expire after 90 days by default and can be rotated in Agent access (or `POST /api/keys/:id/rotate`), which replaces the secret and resets the expiry while keeping the key's name and scopes. Expired keys fail with `401 {"error":"key_expired"}`. New workspaces start with no keys so every credential is one the operator issued. The seeded demo workspace keeps its plaintext demo keys so the public demo works out of the box. Requests outside a key's scopes fail with `403 {"error":"missing_scope"}`.
+
+Every response carries `x-ratelimit-limit` and `x-ratelimit-remaining`; a key that exceeds its per-minute window gets `429 {"error":"rate_limited"}` with `Retry-After`. The limit is 600 requests per minute per key and can be changed with `MACHINE_RATE_LIMIT`. The counter lives in workspace meta, so it holds across instances sharing the same database.
+
+Mutating machine calls accept an `Idempotency-Key` header. A retry with the same key and body within 24 hours replays the original response and sets `Idempotent-Replay: true`; reusing the key with a different body returns `409 {"error":"idempotency_conflict"}`. This is how a retrying agent avoids creating or completing an obligation twice.
 
 | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/api/v1/obligations` | `obligations:read` | Full register with risk, owner, autonomy, proof and recurrence. |
-| `POST` | `/api/v1/obligations` | `obligations:write` | Create an obligation. `title` and `due_at` required. |
+| `POST` | `/api/v1/obligations` | `obligations:write` | Create an obligation. `title` and `due_at` required. Idempotent. |
 | `GET` | `/api/v1/obligations/:id` | `obligations:read` | One obligation with history and risk. |
-| `POST` | `/api/v1/obligations/:id/complete` | `obligations:write` | File proof and advance the schedule. |
+| `POST` | `/api/v1/obligations/:id/complete` | `obligations:write` | File proof and advance the schedule. Idempotent. |
 | `GET` | `/api/v1/risk` | `risk:read` | Coverage, exposure, counts and top risks. |
 | `GET` | `/api/v1/agents` | `agents:read` | Roster with scopes and autonomy ceilings. |
 | `GET` | `/api/v1/trust` | `risk:read` | Receipts, escrows, networks and trust stats. |
-| `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. |
+| `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. Idempotent. |
 
 App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/agents/:id/executor`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
 
@@ -518,7 +522,7 @@ Open `http://localhost:4178`. The database is created, seeded and protected by t
 
 For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it, and set `PUBLIC_ORIGIN=https://your-domain.example` plus `COOKIE_SECURE=true` behind HTTPS. Public demos should use a fresh API key and should not expose the seeded demo key.
 
-Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until shared rate limiting and password reset are added.
+Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until email verification and password reset are added.
 
 ---
 
@@ -527,7 +531,7 @@ Accounts get separate workspaces, but this is still a prototype. Do not run it a
 This is a complete product prototype, not a hardened multi-tenant service. Before charging money:
 
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
-- add a shared rate-limit store, idempotency keys and key expiry/rotation on the machine API (keys are already hashed and scope-enforced);
+- add an outbox and replay-safe job runner around the machine API and connectors (keys are already hashed, scoped, expiring and rate-limited, and mutating calls accept idempotency keys);
 - add email verification and a password-reset flow;
 - add retry/backoff and an outbox to the signed execution connectors, and verify the resolved address again at fetch time to close DNS-rebinding gaps;
 - encrypt proof documents at rest and add retention/deletion controls;

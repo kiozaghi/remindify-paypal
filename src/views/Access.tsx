@@ -22,6 +22,10 @@ export default function Access() {
   if (!state) return null;
 
   const key = state.keys[0];
+  const lastRotation = state.keys.reduce<string>((latest, k) => {
+    const at = k.rotated_at || k.created_at;
+    return !latest || new Date(at).getTime() > new Date(latest).getTime() ? at : latest;
+  }, "");
   const token = newKey?.secret || key?.secret || "rfy_live_xxxxxxxxxxxxxxxx";
 
   const copy = async (text: string, label: string) => {
@@ -45,6 +49,11 @@ export default function Access() {
       setNewKey(res.key);
       setKeyName("");
     }
+  };
+
+  const rotate = async (id: string) => {
+    const res = await actions.rotateKey(id);
+    if (res?.key) setNewKey(res.key);
   };
 
   const testCall = async () => {
@@ -218,6 +227,13 @@ await rf.obligations.create({
                     <span>Last used</span>
                     <strong>{k.last_used ? timeAgo(k.last_used, new Date(state.now).getTime()) : "Never"}</strong>
                   </div>
+                  <div className="key-used">
+                    <span>Expires</span>
+                    <strong>{k.expires_at ? dateShort(k.expires_at) : "No expiry"}</strong>
+                  </div>
+                  <button className="tiny-icon" title="Rotate secret" onClick={() => rotate(k.id)}>
+                    <Icon name="refresh" size={14} />
+                  </button>
                   <button className="tiny-icon danger" title="Revoke" onClick={() => actions.deleteKey(k.id)}>
                     <Icon name="trash" size={14} />
                   </button>
@@ -243,6 +259,9 @@ await rf.obligations.create({
                 </div>
               ))}
             </div>
+            <p className="key-note">
+              <Icon name="repeat" size={12} /> Mutating calls accept an <code>Idempotency-Key</code> header; a retry within 24h replays the first response.
+            </p>
           </section>
 
           <section className="panel">
@@ -322,15 +341,17 @@ await rf.obligations.create({
               <div><span className="eyebrow">Guardrails</span><h3>Boring on purpose</h3></div>
             </header>
             <ul className="security-list">
-              <li><Icon name="check" size={12} /> Scoped, expiring keys</li>
-              <li><Icon name="check" size={12} /> Every write attributed + replayable</li>
+              <li><Icon name="check" size={12} /> Scoped keys with an expiry date</li>
+              <li><Icon name="check" size={12} /> Idempotency keys, per-key rate limits</li>
+              <li><Icon name="check" size={12} /> Every write attributed to a key</li>
               <li><Icon name="check" size={12} /> Human approval above your ceiling</li>
               <li><Icon name="check" size={12} /> Full export, no lock-in</li>
             </ul>
             <div className="security-foot">
               <span>Schema</span><strong>v1 · stable</strong>
               <span>Retention</span><strong>7 years</strong>
-              <span>Last key rotation</span><strong>{dateShort(state.keys[0]?.created_at || state.now)}</strong>
+              <span>Last key rotation</span>
+              <strong>{lastRotation ? dateShort(lastRotation) : "—"}</strong>
             </div>
           </section>
         </aside>

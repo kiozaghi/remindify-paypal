@@ -29,8 +29,14 @@ export function keyMatchesSecret(key, secret, digest = digestSecret(secret)) {
   return false;
 }
 
-export function publicKey(key) {
+export function keyExpired(key, now = Date.now()) {
+  if (!key || !key.expires_at) return false;
+  const at = new Date(key.expires_at).getTime();
+  return Number.isFinite(at) && at <= now;
+}
+
+export function publicKey(key, now = Date.now()) {
   if (!key) return null;
   const { secret, secret_hash, ...rest } = key;
-  return rest;
+  return { ...rest, expired: keyExpired(key, now) };
 }

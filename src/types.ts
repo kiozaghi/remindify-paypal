@@ -157,6 +157,9 @@ export interface ApiKey {
   scopes: string[];
   created_at: string;
   last_used: string | null;
+  expires_at?: string | null;
+  rotated_at?: string | null;
+  expired?: boolean;
 }
 
 export interface TrustNetwork {

@@ -169,6 +169,12 @@ function makeActions(
         toast("Agent key issued", "Copy it now — it's only shown once.", "agent");
         return res;
       }),
+    rotateKey: (id: string) =>
+      run(async () => {
+        const res = await api.rotateKey(id);
+        toast("Key rotated", "The old secret stopped working. Copy the new one now.", "agent");
+        return res;
+      }),
     deleteKey: (id: string) =>
       run(async () => {
         const res = await api.deleteKey(id);

@@ -64,6 +64,7 @@ export const api = {
     request(`/api/agents/${id}/executor`, "POST", { url }),
   hire: (payload: any) => request("/api/hire", "POST", payload),
   createKey: (name: string) => request("/api/keys", "POST", { name }),
+  rotateKey: (id: string) => request(`/api/keys/${id}/rotate`, "POST", {}),
   deleteKey: (id: string) => request(`/api/keys/${id}`, "DELETE"),
   sweep: () => request("/api/demo/sweep", "POST", {}),
   advance: (days: number) => request("/api/demo/advance", "POST", { days }),
