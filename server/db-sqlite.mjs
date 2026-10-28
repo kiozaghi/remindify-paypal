@@ -64,6 +64,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_auth_challenges_address ON auth_challenges(address);
+  CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
 `);
 
 function columns(table) {
@@ -260,6 +269,29 @@ export function deleteAuthSession(tokenHash) {
   db.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").run(tokenHash);
 }
 
+export function deleteAuthSessionsForUser(userId) {
+  db.prepare("DELETE FROM auth_sessions WHERE user_id = ?").run(userId);
+}
+
+export function createAuthToken({ tokenHash, userId, purpose, createdAt, expiresAt }) {
+  db.prepare(`
+    INSERT INTO auth_tokens (token_hash, user_id, purpose, created_at, expires_at, used)
+    VALUES (?, ?, ?, ?, ?, 0)
+  `).run(tokenHash, userId, purpose, createdAt, expiresAt);
+}
+
+export function consumeAuthToken(tokenHash, purpose) {
+  const row = db.prepare(`
+    SELECT token_hash, user_id, purpose, created_at, expires_at, used
+    FROM auth_tokens WHERE token_hash = ?
+  `).get(tokenHash);
+  if (!row || row.used || row.purpose !== purpose) return null;
+  if (row.expires_at <= new Date().toISOString()) return null;
+  const claimed = db.prepare("UPDATE auth_tokens SET used = 1 WHERE token_hash = ? AND used = 0").run(tokenHash);
+  if (!claimed.changes) return null;
+  return row;
+}
+
 export function createAuthChallenge({ nonce, address, message, createdAt, expiresAt }) {
   db.prepare(`
     INSERT INTO auth_challenges (nonce, address, message, created_at, expires_at, used)
@@ -282,6 +314,7 @@ export function pruneAuth() {
   const now = new Date().toISOString();
   db.prepare("DELETE FROM auth_sessions WHERE expires_at <= ?").run(now);
   db.prepare("DELETE FROM auth_challenges WHERE expires_at <= ?").run(now);
+  db.prepare("DELETE FROM auth_tokens WHERE expires_at <= ?").run(now);
 }
 
 export function seeded() {

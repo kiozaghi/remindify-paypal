@@ -39,6 +39,10 @@ export const api = {
   authLogin: (payload: { email: string; password: string }) =>
     request<{ user: AuthUser }>("/api/auth/login", "POST", payload),
   authLogout: () => request<{ ok: true }>("/api/auth/logout", "POST", {}),
+  authRequestReset: (email: string) =>
+    request<{ ok: true; message: string }>("/api/auth/reset/request", "POST", { email }),
+  authResetPassword: (payload: { token: string; password: string }) =>
+    request<{ ok: true; message: string }>("/api/auth/reset/confirm", "POST", payload),
   walletChallenge: (address: string) =>
     request<{ address: string; nonce: string; message: string; expires_at: string }>(
       "/api/auth/wallet/challenge",

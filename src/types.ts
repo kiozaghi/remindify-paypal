@@ -15,6 +15,7 @@ export interface AuthConfig {
   email: boolean;
   google: boolean;
   wallet: boolean;
+  reset?: boolean;
 }
 
 export interface Risk {

@@ -3,16 +3,18 @@ import {
 } from "node:crypto";
 import { getAddress, isAddress, verifyMessage } from "viem";
 import {
-  consumeAuthChallenge, createAuthChallenge, createAuthSession, createUser,
-  deleteAuthSession, findUserByEmail, findUserByGoogleSub, findUserByWallet,
-  getAuthSession, updateUser,
+  consumeAuthChallenge, consumeAuthToken, createAuthChallenge, createAuthSession,
+  createAuthToken, createUser, deleteAuthSession, deleteAuthSessionsForUser,
+  findUserByEmail, findUserByGoogleSub, findUserByWallet, getAuthSession, updateUser,
 } from "./db.mjs";
+import { emailConfigured, sendEmail } from "./email.mjs";
 import { provisionWorkspace } from "./provision.mjs";
 
 const SESSION_COOKIE = "remindify_session";
 const OAUTH_COOKIE = "remindify_oauth";
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
 const CHALLENGE_SECONDS = 60 * 10;
+const RESET_SECONDS = 60 * 30;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const attempts = new Map();
@@ -277,6 +279,7 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       email: true,
       google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
       wallet: true,
+      reset: emailConfigured(),
     });
     return true;
   }
@@ -363,6 +366,93 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
     if (session) deleteAuthSession(session.tokenHash);
     appendCookie(res, serializeCookie(req, SESSION_COOKIE, "", { maxAge: 0 }));
     send(res, 200, { ok: true });
+    return true;
+  }
+
+  // Password reset. The response never says whether an account exists, and the
+  // token is stored as a digest, so an attacker with the database cannot use it.
+  if (path === "/api/auth/reset/request" && req.method === "POST") {
+    if (limited(req, path, 5)) {
+      send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
+      return true;
+    }
+    if (!emailConfigured()) {
+      send(res, 503, {
+        error: "email_not_configured",
+        message: "Password reset isn't available on this build yet. Ask the operator to connect email.",
+      });
+      return true;
+    }
+    const input = await body(req);
+    const email = cleanEmail(input.email);
+    const generic = {
+      ok: true,
+      message: "If that email has an account, a reset link is on its way.",
+    };
+    if (!EMAIL_RE.test(email) || email.length > 254) {
+      send(res, 202, generic);
+      return true;
+    }
+    const user = findUserByEmail(email);
+    if (user) {
+      const token = randomBytes(32).toString("base64url");
+      createAuthToken({
+        tokenHash: hashToken(token),
+        userId: user.id,
+        purpose: "reset",
+        createdAt: nowIso(),
+        expiresAt: new Date(Date.now() + RESET_SECONDS * 1000).toISOString(),
+      });
+      const link = `${originFor(req)}/login?reset=${encodeURIComponent(token)}`;
+      try {
+        await sendEmail({
+          to: email,
+          subject: "Reset your Remindify password",
+          text: [
+            "Someone asked to reset the password for your Remindify account.",
+            "",
+            `Set a new password here (valid for 30 minutes): ${link}`,
+            "",
+            "If this wasn't you, ignore this message. Your password is unchanged.",
+          ].join("\n"),
+        });
+      } catch (error) {
+        console.error("Password reset email failed:", error?.message || error);
+      }
+    }
+    send(res, 202, generic);
+    return true;
+  }
+
+  if (path === "/api/auth/reset/confirm" && req.method === "POST") {
+    if (limited(req, path, 10)) {
+      send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
+      return true;
+    }
+    const input = await body(req);
+    const token = String(input.token || "");
+    const password = String(input.password || "");
+    if (!token || token.length > 200) {
+      send(res, 400, { error: "invalid_token", message: "That reset link is invalid. Request a new one." });
+      return true;
+    }
+    if (password.length < 8 || password.length > 256) {
+      send(res, 422, { error: "weak_password", message: "Use a password between 8 and 256 characters." });
+      return true;
+    }
+    const record = consumeAuthToken(hashToken(token), "reset");
+    if (!record) {
+      send(res, 400, {
+        error: "invalid_token",
+        message: "That reset link is invalid or has expired. Request a new one.",
+      });
+      return true;
+    }
+    const { salt, hash } = hashPassword(password);
+    updateUser(record.user_id, { password_hash: hash, password_salt: salt });
+    deleteAuthSessionsForUser(record.user_id);
+    appendCookie(res, serializeCookie(req, SESSION_COOKIE, "", { maxAge: 0 }));
+    send(res, 200, { ok: true, message: "Password updated. Sign in with the new one." });
     return true;
   }
 

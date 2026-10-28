@@ -48,7 +48,7 @@ If a CLI deployment is blocked because the latest Git commit author is not a mem
 | Surface | What it does |
 | --- | --- |
 | **Public site** | Story-led landing page, pricing, security model, about, privacy, terms and auth screens, all in the same warm editorial system. |
-| **Accounts** | Email/password, Google OAuth and wallet sign-in; 30-day HttpOnly sessions; every app API route is gated. |
+| **Accounts** | Email/password, Google OAuth and wallet sign-in; emailed single-use password reset; 30-day HttpOnly sessions; every app API route is gated. |
 | **Today** | Greeting, live approvals, closest-to-the-edge obligations, portfolio pulse, agent wire, failsafe policy. |
 | **Obligations** | The register. Search, filter by risk/owner/autonomy, inline autonomy control, risk meters, due dates, backups. |
 | **Capture** | Paste a letter, email or messy note, or drop a text-based PDF. A deterministic parser extracts obligations, dates, amounts, recurrence, provider and category — then asks you to review before scheduling. No external AI API is called; text-based PDFs are read in the browser, while scanned PDFs need OCR or a vision service. |
@@ -184,7 +184,7 @@ public/fonts/        self-hosted fonts
 
 **Vercel** uses Postgres. Set `DATABASE_URL` (or one of Vercel's `POSTGRES_*` variables) and the server switches stores automatically. The Postgres store creates its tables on first use, loads a request-scoped snapshot inside a transaction, and flushes it before the response ends. Writes are serialized with a Postgres advisory lock so requests from every workspace stay consistent across serverless instances.
 
-Accounts and sessions live in separate `users`, `auth_sessions` and `auth_challenges` tables in both stores. A demo reset never deletes users or signs anyone out.
+Accounts and sessions live in separate `users`, `auth_sessions`, `auth_challenges` and `auth_tokens` tables in both stores. A demo reset never deletes users or signs anyone out.
 
 To run against a local Postgres instead of SQLite:
 
@@ -250,6 +250,12 @@ https://your-domain.example/api/auth/google/callback
 ```
 
 Then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Use `GOOGLE_REDIRECT_URI` if the callback differs from `${PUBLIC_ORIGIN}/api/auth/google/callback`. Without credentials, the Google button shows a short configuration notice and email/wallet remain available.
+
+### Password reset
+
+`POST /api/auth/reset/request` accepts `{ "email" }` and always answers `202` with the same message, so it never reveals whether an account exists. For a real account it stores a SHA-256 digest of a 32-byte token with a 30-minute expiry and emails a link to `/login?reset=…`. `POST /api/auth/reset/confirm` accepts `{ "token", "password" }`, consumes the token once (expired, reused or wrong-purpose tokens fail with `400`), updates the scrypt hash and deletes every existing session for that account.
+
+Reset email goes through a single HTTPS webhook, so the app holds no SMTP credentials. Point `EMAIL_WEBHOOK_URL` at an adapter that accepts `{ to, subject, text }`, and set `EMAIL_WEBHOOK_SECRET` to sign it. Signed requests carry `x-remindify-timestamp` and `x-remindify-signature: sha256=<HMAC of "<timestamp>.<raw body>">`. Without `EMAIL_WEBHOOK_URL` the endpoints return `503 email_not_configured` and the “Forgot password?” link stays hidden.
 
 ### API protection
 
@@ -524,7 +530,7 @@ Open `http://localhost:4178`. The database is created, seeded and protected by t
 
 For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it, and set `PUBLIC_ORIGIN=https://your-domain.example` plus `COOKIE_SECURE=true` behind HTTPS. Public demos should use a fresh API key and should not expose the seeded demo key.
 
-Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until email verification and password reset are added.
+Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until email verification is added.
 
 ---
 
@@ -534,7 +540,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
 - add an outbox and replay-safe job runner around the machine API and connectors (keys are already hashed, scoped, expiring and rate-limited, and mutating calls accept idempotency keys);
-- add email verification and a password-reset flow;
+- add email verification (password reset is in: hashed, single-use, 30-minute tokens delivered through a signed HTTPS email webhook);
 - add a durable outbox so connector retries survive a restart (calls now retry transient failures inline with backoff and pin the validated address on every attempt);
 - encrypt proof documents at rest and add retention/deletion controls;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;

@@ -350,6 +350,7 @@ function Root() {
           mode={location.page === "signup" ? "signup" : "login"}
           next={location.params.get("next") || undefined}
           notice={location.params.get("notice")}
+          resetToken={location.params.get("reset")}
           onNavigate={navigateTo}
         />
       );

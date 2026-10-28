@@ -131,9 +131,18 @@ const SCHEMA_STATEMENTS = [
     expires_at text NOT NULL,
     used integer NOT NULL DEFAULT 0
   )`,
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash text PRIMARY KEY,
+    user_id text NOT NULL,
+    purpose text NOT NULL,
+    created_at text NOT NULL,
+    expires_at text NOT NULL,
+    used integer NOT NULL DEFAULT 0
+  )`,
   "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)",
   "CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at)",
   "CREATE INDEX IF NOT EXISTS idx_auth_challenges_address ON auth_challenges(address)",
+  "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id)",
 ];
 
 // Upgrade a single-workspace table in place. Existing rows become ws_demo.
@@ -196,6 +205,7 @@ export async function beginRequest() {
     const users = await client.query(`SELECT ${USER_COLUMNS_SQL} FROM users`);
     const sessions = await client.query("SELECT token_hash, user_id, created_at, expires_at FROM auth_sessions");
     const challenges = await client.query("SELECT nonce, address, message, created_at, expires_at, used FROM auth_challenges");
+    const tokens = await client.query("SELECT token_hash, user_id, purpose, created_at, expires_at, used FROM auth_tokens");
 
     const store = {
       client,
@@ -209,6 +219,7 @@ export async function beginRequest() {
       usersByWallet: new Map(),
       sessions: new Map(),
       challenges: new Map(),
+      tokens: new Map(),
       dirtyItems: new Set(),
       deletedItems: new Set(),
       dirtyMeta: new Set(),
@@ -219,6 +230,8 @@ export async function beginRequest() {
       deletedSessions: new Set(),
       dirtyChallenges: new Set(),
       deletedChallenges: new Set(),
+      dirtyTokens: new Set(),
+      deletedTokens: new Set(),
     };
 
     for (const row of items.rows) {
@@ -237,6 +250,7 @@ export async function beginRequest() {
     }
     for (const row of sessions.rows) store.sessions.set(row.token_hash, { ...row });
     for (const row of challenges.rows) store.challenges.set(row.nonce, { ...row });
+    for (const row of tokens.rows) store.tokens.set(row.token_hash, { ...row });
 
     return store;
   } catch (error) {
@@ -404,6 +418,31 @@ export async function endRequest(store) {
         challenge.created_at,
         challenge.expires_at,
         challenge.used,
+      ]);
+    }
+
+    for (const tokenHash of store.deletedTokens) {
+      await client.query("DELETE FROM auth_tokens WHERE token_hash = $1", [tokenHash]);
+    }
+    for (const tokenHash of store.dirtyTokens) {
+      const token = store.tokens.get(tokenHash);
+      if (!token) continue;
+      await client.query(`
+        INSERT INTO auth_tokens (token_hash, user_id, purpose, created_at, expires_at, used)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (token_hash) DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          purpose = EXCLUDED.purpose,
+          created_at = EXCLUDED.created_at,
+          expires_at = EXCLUDED.expires_at,
+          used = EXCLUDED.used
+      `, [
+        token.token_hash,
+        token.user_id,
+        token.purpose,
+        token.created_at,
+        token.expires_at,
+        token.used,
       ]);
     }
 
@@ -598,6 +637,41 @@ export function deleteAuthSession(tokenHash) {
   store.deletedSessions.add(tokenHash);
 }
 
+export function deleteAuthSessionsForUser(userId) {
+  const store = requireStore();
+  for (const [tokenHash, session] of store.sessions) {
+    if (session.user_id !== userId) continue;
+    store.sessions.delete(tokenHash);
+    store.dirtySessions.delete(tokenHash);
+    store.deletedSessions.add(tokenHash);
+  }
+}
+
+export function createAuthToken({ tokenHash, userId, purpose, createdAt, expiresAt }) {
+  const store = requireStore();
+  store.tokens.set(tokenHash, {
+    token_hash: tokenHash,
+    user_id: userId,
+    purpose,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    used: 0,
+  });
+  store.dirtyTokens.add(tokenHash);
+  store.deletedTokens.delete(tokenHash);
+}
+
+export function consumeAuthToken(tokenHash, purpose) {
+  const store = requireStore();
+  const token = store.tokens.get(tokenHash);
+  if (!token || token.used || token.purpose !== purpose) return null;
+  if (token.expires_at <= new Date().toISOString()) return null;
+  const next = { ...token, used: 1 };
+  store.tokens.set(tokenHash, next);
+  store.dirtyTokens.add(tokenHash);
+  return { ...next };
+}
+
 export function createAuthChallenge({ nonce, address, message, createdAt, expiresAt }) {
   const store = requireStore();
   store.challenges.set(nonce, {
@@ -638,6 +712,13 @@ export function pruneAuth() {
       store.challenges.delete(nonce);
       store.dirtyChallenges.delete(nonce);
       store.deletedChallenges.add(nonce);
+    }
+  }
+  for (const [tokenHash, token] of store.tokens) {
+    if (token.expires_at <= now) {
+      store.tokens.delete(tokenHash);
+      store.dirtyTokens.delete(tokenHash);
+      store.deletedTokens.add(tokenHash);
     }
   }
 }
