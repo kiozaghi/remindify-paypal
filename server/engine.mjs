@@ -1,4 +1,4 @@
-import { loadAll, put, getMeta, setMeta, remove } from "./db.mjs";
+import { loadAll, put, getMeta, setMeta, remove, isPostgres } from "./db.mjs";
 import { fileReceiptForCompletion, trustSnapshot } from "./trust.mjs";
 import { publicKey } from "./keys.mjs";
 import { planForWorkspace, usage } from "./billing.mjs";
@@ -153,6 +153,7 @@ export function buildState() {
     workspace: getMeta("workspace", "Exopya Studio"),
     user: getMeta("user", "Solomon Tigabu"),
     plan: getMeta("plan", "Studio"),
+    storage: isPostgres ? "cloud" : "local",
     obligations,
     agents,
     approvals,

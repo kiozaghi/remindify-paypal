@@ -489,6 +489,7 @@ export interface AppState {
   workspace: string;
   user: string;
   plan: string;
+  storage: "local" | "cloud";
   obligations: Obligation[];
   agents: Agent[];
   approvals: Approval[];

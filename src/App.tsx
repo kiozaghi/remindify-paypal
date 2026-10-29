@@ -131,6 +131,13 @@ function Shell() {
   const titles = TITLES[route] || TITLES.today;
   const pending = state.stats.pending_approvals;
   const offset = state.clock_offset_days;
+  const workspaceInitials = state.workspace
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase() || "·";
 
   const resetTime = async () => {
     setResetting(true);
@@ -176,10 +183,10 @@ function Shell() {
             </div>
           </div>
           <div className="workspace-card">
-            <span className="workspace-avatar">EX</span>
+            <span className="workspace-avatar">{workspaceInitials}</span>
             <div>
               <strong>{state.workspace}</strong>
-              <em>{state.plan} plan · local</em>
+              <em>{state.plan} plan · {state.storage}</em>
             </div>
             <Icon name="chevronDown" size={14} />
           </div>
