@@ -4,18 +4,32 @@ This walkthrough creates an agent key and completes a full loop: read the regist
 
 ## Before you start
 
-- Node.js 22 or newer if you run Remindify locally.
-- A workspace. Sign up at `/signup`, or use the seeded demo workspace.
+- A workspace. Sign up at [remindify-xi.vercel.app/signup](https://remindify-xi.vercel.app/signup), or run Remindify locally.
+- Node.js 22 or newer only if you run Remindify locally.
 - About ten minutes.
 
-## 1. Run Remindify locally
+## 1. Pick a base URL
+
+| Where | Base URL | Setup |
+| --- | --- | --- |
+| Hosted preview | `https://remindify-xi.vercel.app` | Sign up in the browser; nothing to install |
+| Local | `http://localhost:4178` | `npm install && npm run dev` |
+
+The hosted preview is a real deployment, not a mock: accounts, machine keys and the REST API work over HTTPS. Two conveniences are switched off there because it has no OAuth client or email webhook — Google sign-in and password reset. Use email and password, keep the password safe, and treat the workspace as demo data. [Environment variables](/docs/reference/environment) lists what a full deployment configures.
+
+```bash
+export REMINDIFY_URL=https://remindify-xi.vercel.app
+# or: export REMINDIFY_URL=http://localhost:4178
+```
+
+### Run locally instead
 
 ```bash
 npm install
 npm run dev
 ```
 
-The API listens on `http://localhost:4178`; Vite serves the app on `http://localhost:5173` and proxies `/api` to the server. To serve the built app from one port:
+Vite serves the app on `http://localhost:5173` and proxies `/api` to the server on `4178`. To serve the built app from one port:
 
 ```bash
 npm run build
@@ -51,7 +65,7 @@ The four scopes are:
 New keys default to all four if you omit `scopes`:
 
 ```bash
-curl -X POST http://localhost:4178/api/keys \
+curl -X POST "$REMINDIFY_URL/api/keys" \
   -H "content-type: application/json" \
   -H "cookie: remindify_session=..." \
   -d '{"name":"registrar","scopes":["obligations:read","obligations:write"],"expires_in_days":90}'
@@ -62,7 +76,6 @@ The response contains `key.secret` exactly once.
 ## 4. Read the register
 
 ```bash
-export REMINDIFY_URL=http://localhost:4178
 export REMINDIFY_KEY=rfy_live_...
 
 curl "$REMINDIFY_URL/api/v1/obligations" \
@@ -170,6 +183,8 @@ If your client is Claude Desktop, Cursor or another MCP host, skip the HTTP clie
   }
 }
 ```
+
+The MCP server is a local stdio process in this repository, so the `args` path is always local. Set `REMINDIFY_URL` to the hosted base URL to drive the hosted workspace, or to `http://localhost:4178` for a local one.
 
 Tools: `list_obligations`, `get_obligation`, `create_obligation`, `complete_obligation`, `portfolio_risk`, `list_agents`, `list_trust`.
 
