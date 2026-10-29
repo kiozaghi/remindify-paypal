@@ -1,9 +1,9 @@
 export const APP_ROUTES = [
-  "today", "obligations", "capture", "agents", "market", "activity", "trust", "access",
+  "today", "obligations", "capture", "agents", "market", "seller", "activity", "trust", "access",
 ] as const;
 
 export const PUBLIC_ROUTES = [
-  "home", "pricing", "security", "about", "privacy", "terms", "login", "signup",
+  "home", "pricing", "security", "about", "privacy", "terms", "docs", "login", "signup",
 ] as const;
 
 export type AppRoute = typeof APP_ROUTES[number];
@@ -24,6 +24,7 @@ const ROUTE_PATHS: Record<Route, string> = {
   about: "/about",
   privacy: "/privacy",
   terms: "/terms",
+  docs: "/docs",
   login: "/login",
   signup: "/signup",
   today: "/today",
@@ -31,6 +32,7 @@ const ROUTE_PATHS: Record<Route, string> = {
   capture: "/capture",
   agents: "/agents",
   market: "/market",
+  seller: "/seller",
   activity: "/activity",
   trust: "/trust",
   access: "/access",
@@ -50,6 +52,10 @@ export function routePath(page: Route) {
 /** A crawlable href for a page. Section links on the home page become real anchors. */
 export function routeHref(page: Route, params?: Record<string, string>) {
   if (page === "home" && params?.section) return `/#${params.section}`;
+  if (page === "docs" && params?.slug) {
+    const slug = params.slug.replace(/^\/+|\/+$/g, "");
+    if (slug) return `/docs/${slug}`;
+  }
   const rest = params ? Object.entries(params).filter(([key]) => key !== "section") : [];
   const query = new URLSearchParams(rest).toString();
   return `${routePath(page)}${query ? `?${query}` : ""}`;
@@ -93,6 +99,10 @@ export function readLocation(): LocationState {
   if (legacy) return legacy;
 
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  const docs = path.match(/^\/docs(?:\/(.+))?$/);
+  if (docs) {
+    return { page: "docs", params: new URLSearchParams(docs[1] ? { slug: docs[1] } : {}) };
+  }
   const page = path === "/" ? "home" : (asRoute(path.replace(/^\//, "")) ?? "home");
   return { page, params: new URLSearchParams(window.location.search) };
 }

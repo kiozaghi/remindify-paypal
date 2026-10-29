@@ -1,5 +1,10 @@
 import { loadAll, put, getMeta, setMeta, remove } from "./db.mjs";
 import { fileReceiptForCompletion, trustSnapshot } from "./trust.mjs";
+import { publicKey } from "./keys.mjs";
+import { planForWorkspace, usage } from "./billing.mjs";
+import { connectorConfigured, executeWithConnector, publicAgent } from "./executors.mjs";
+import { dueOutboxJobs, enqueueConnectorRetry, outboxBackoff, outboxLeaseMs } from "./outbox.mjs";
+import { sellerSnapshot } from "./seller.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -47,12 +52,44 @@ export function enrichObligation(ob, now) {
   return { ...ob, risk, due_label: new Date(ob.due_at).toISOString() };
 }
 
+const RUN_WINDOW = 30 * DAY;
+
+function tallyRuns(runs, since) {
+  const totals = new Map();
+  for (const run of runs) {
+    const tally = totals.get(run.agent_id) || { runs: 0, done: 0, failed: 0, proofs: 0 };
+    if (new Date(run.created_at).getTime() >= since) {
+      tally.runs++;
+      if (run.status === "done") {
+        tally.done++;
+        if (run.proof) tally.proofs++;
+      } else if (run.status === "failed") {
+        tally.failed++;
+      }
+    }
+    totals.set(run.agent_id, tally);
+  }
+  return totals;
+}
+
+export function agentStats(agent, tally = { runs: 0, done: 0, failed: 0, proofs: 0 }) {
+  const attempts = tally.done + tally.failed;
+  return {
+    ...agent,
+    runs_30d: tally.runs,
+    success_rate: attempts ? Math.round((tally.done / attempts) * 1000) / 10 : null,
+    proofs_30d: tally.proofs,
+  };
+}
+
 export function buildState() {
   const data = loadAll();
   const now = virtualNow();
   const obligations = data.obligations.map((ob) => enrichObligation(ob, now));
   const byId = Object.fromEntries(obligations.map((o) => [o.id, o]));
-  const agentsById = Object.fromEntries(data.agents.map((a) => [a.id, a]));
+  const runTallies = tallyRuns(data.runs, now - RUN_WINDOW);
+  const agents = data.agents.map((agent) => publicAgent(agentStats(agent, runTallies.get(agent.id))));
+  const agentsById = Object.fromEntries(agents.map((a) => [a.id, a]));
 
   const approvals = data.approvals.map((a) => ({
     ...a,
@@ -80,8 +117,14 @@ export function buildState() {
     Math.min(99, Math.round(100 - avgRisk * 0.62 + (withBackup / Math.max(1, active.length)) * 6))
   );
 
-  const savedYear = Math.round(
-    data.runs.filter((r) => r.status === "done").length * 0.35 + 1842
+  const agentTotals = [...runTallies.values()].reduce(
+    (acc, tally) => ({
+      runs: acc.runs + tally.runs,
+      done: acc.done + tally.done,
+      failed: acc.failed + tally.failed,
+      proofs: acc.proofs + tally.proofs,
+    }),
+    { runs: 0, done: 0, failed: 0, proofs: 0 }
   );
 
   const stats = {
@@ -94,13 +137,14 @@ export function buildState() {
     coverage,
     delegated: active.filter((o) => o.owner_kind === "agent").length,
     with_backup: withBackup,
-    saved_year: savedYear,
-    agent_runs_30d: data.agents.reduce((s, a) => s + (a.runs_30d || 0), 0),
-    hours_saved: Math.round(data.agents.reduce((s, a) => s + (a.hours_saved || 0), 0)),
-    streak_weeks: getMeta("streak_weeks", 14),
+    agent_runs_30d: agentTotals.runs,
+    agent_done_30d: agentTotals.done,
+    agent_failed_30d: agentTotals.failed,
+    agent_proofs_30d: agentTotals.proofs,
   };
 
   const trust = trustSnapshot(data);
+  const seller = sellerSnapshot(now);
 
   return {
     now: new Date(now).toISOString(),
@@ -110,12 +154,12 @@ export function buildState() {
     user: getMeta("user", "Solomon Tigabu"),
     plan: getMeta("plan", "Studio"),
     obligations,
-    agents: data.agents,
+    agents,
     approvals,
     runs,
     providers: data.providers,
     events: data.events.slice(0, 60),
-    keys: data.keys,
+    keys: data.keys.map(publicKey),
     receipts: trust.receipts,
     escrows: trust.escrows,
     trust: {
@@ -123,8 +167,10 @@ export function buildState() {
       stats: trust.stats,
       guardrails: trust.guardrails,
     },
+    seller,
     stats,
-    api_calls: getMeta("api_calls", 0),
+    api_calls: usage().calls,
+    api_calls_limit: planForWorkspace().call_limit,
   };
 }
 
@@ -149,11 +195,228 @@ export function logRun(run) {
     proof: null,
     duration_ms: 1800,
     cost: 0,
+    connector_status: null,
+    error: null,
     created_at: new Date().toISOString(),
     ...run,
   };
   put("runs", item);
   return item;
+}
+
+async function executeAction(agent, ob, { action, detail, note }) {
+  const runId = uid("run");
+  const started = Date.now();
+  const outcome = await executeWithConnector({ runId, agent, obligation: ob, action, detail });
+  if (!outcome.configured) {
+    return { configured: false, ok: false, error: outcome.error };
+  }
+  let queued = false;
+  if (!outcome.ok && outcome.retryable) {
+    const job = enqueueConnectorRetry({
+      runId, agent, obligation: ob, action, detail, note, error: outcome.error,
+    });
+    queued = Boolean(job);
+    if (queued) {
+      logEvent({
+        actor_type: "system",
+        actor_id: null,
+        actor: "Remindify",
+        verb: "queued a connector retry",
+        object: ob.title,
+        detail: `${outcome.error} · the job is saved and will resume when the executor is reachable`,
+        kind: "automation",
+      });
+    }
+  }
+  logRun({
+    id: runId,
+    agent_id: agent.id,
+    obligation_id: ob.id,
+    action,
+    detail: outcome.ok ? `${detail} · ${outcome.proof}` : `${detail} · ${outcome.error}`,
+    status: outcome.ok ? "done" : "failed",
+    proof: outcome.ok ? outcome.proof : null,
+    duration_ms: Date.now() - started,
+    connector_status: outcome.status || null,
+    attempts: outcome.attempts || 1,
+    retry_queued: queued,
+    error: outcome.ok ? null : outcome.error,
+  });
+  if (!outcome.ok) {
+    logEvent({
+      actor_type: "agent",
+      actor_id: agent.id,
+      actor: agent.name,
+      verb: "could not execute",
+      object: ob.title,
+      detail: outcome.error,
+      kind: "automation",
+    });
+    return { configured: true, ok: false, error: outcome.error, queued };
+  }
+  logEvent({
+    actor_type: "agent",
+    actor_id: agent.id,
+    actor: agent.name,
+    verb: "executed through its connector",
+    object: ob.title,
+    detail: `${outcome.proof} · HTTP ${outcome.status}`,
+    kind: "automation",
+  });
+  completeObligation(ob.id, { proof: outcome.proof, note, by: agent.name, auto: true });
+  return { configured: true, ok: true, proof: outcome.proof, status: outcome.status };
+}
+
+let draining = false;
+
+// Retries are persisted as workspace items, so a restart only delays them.
+// The job keeps its run id, and executors are expected to dedupe on
+// x-remindify-run, because a crash between claim and completion can redeliver.
+export async function drainOutbox({ now = Date.now(), limit = 5 } = {}) {
+  if (draining) return { skipped: true, processed: 0, results: [] };
+  draining = true;
+  const results = [];
+  try {
+    for (const pending of dueOutboxJobs(now, limit)) {
+      const data = loadAll();
+      const job = (data.outbox || []).find((entry) => entry.id === pending.id);
+      if (!job || job.status !== "pending") continue;
+      const agent = data.agents.find((entry) => entry.id === job.agent_id);
+      const ob = data.obligations.find((entry) => entry.id === job.obligation_id);
+
+      if (!agent || !connectorConfigured(agent) || !ob || ["done", "archived"].includes(ob.status)) {
+        job.status = "failed";
+        job.last_error = !agent
+          ? "The agent was removed before the retry."
+          : !connectorConfigured(agent)
+            ? "The agent no longer has an executor connected."
+            : "The obligation closed before the retry.";
+        job.updated_at = new Date().toISOString();
+        put("outbox", job);
+        logEvent({
+          actor_type: "system",
+          actor_id: null,
+          actor: "Remindify",
+          verb: "dropped a queued retry",
+          object: ob?.title || job.obligation_id,
+          detail: job.last_error,
+          kind: "automation",
+        });
+        results.push({ id: job.id, status: "failed" });
+        continue;
+      }
+
+      const claimAt = Date.now();
+      job.attempts = (job.attempts || 0) + 1;
+      job.updated_at = new Date(claimAt).toISOString();
+      job.next_at = new Date(claimAt + outboxLeaseMs()).toISOString();
+      put("outbox", job);
+
+      const started = Date.now();
+      const outcome = await executeWithConnector({
+        runId: job.run_id,
+        agent,
+        obligation: ob,
+        action: job.action,
+        detail: job.detail,
+      });
+      const duration = Date.now() - started;
+
+      if (outcome.ok) {
+        job.status = "done";
+        job.proof = outcome.proof;
+        job.connector_status = outcome.status || null;
+        job.last_error = null;
+        job.updated_at = new Date().toISOString();
+        put("outbox", job);
+        logRun({
+          id: uid("run"),
+          outbox_id: job.id,
+          agent_id: agent.id,
+          obligation_id: ob.id,
+          action: job.action,
+          detail: `${job.detail} · ${outcome.proof}`,
+          status: "done",
+          proof: outcome.proof,
+          duration_ms: duration,
+          connector_status: outcome.status || null,
+          attempts: outcome.attempts || 1,
+        });
+        logEvent({
+          actor_type: "agent",
+          actor_id: agent.id,
+          actor: agent.name,
+          verb: "executed after a queued retry",
+          object: ob.title,
+          detail: `${outcome.proof} · attempt ${job.attempts}/${job.max_attempts}`,
+          kind: "automation",
+        });
+        completeObligation(ob.id, { proof: outcome.proof, note: job.note, by: agent.name, auto: true });
+        results.push({ id: job.id, status: "done" });
+        continue;
+      }
+
+      if (outcome.retryable && job.attempts < job.max_attempts) {
+        job.status = "pending";
+        job.last_error = outcome.error;
+        job.next_at = new Date(Date.now() + outboxBackoff(job.attempts)).toISOString();
+        job.updated_at = new Date().toISOString();
+        put("outbox", job);
+        logEvent({
+          actor_type: "system",
+          actor_id: null,
+          actor: "Remindify",
+          verb: "scheduled another retry",
+          object: ob.title,
+          detail: `${outcome.error} · attempt ${job.attempts}/${job.max_attempts}`,
+          kind: "automation",
+        });
+        results.push({ id: job.id, status: "pending" });
+        continue;
+      }
+
+      job.status = "failed";
+      job.last_error = outcome.error;
+      job.updated_at = new Date().toISOString();
+      put("outbox", job);
+      logRun({
+        id: uid("run"),
+        outbox_id: job.id,
+        agent_id: agent.id,
+        obligation_id: ob.id,
+        action: job.action,
+        detail: `${job.detail} · ${outcome.error}`,
+        status: "failed",
+        proof: null,
+        duration_ms: duration,
+        connector_status: outcome.status || null,
+        attempts: outcome.attempts || 1,
+        error: outcome.error,
+      });
+      logEvent({
+        actor_type: "agent",
+        actor_id: agent.id,
+        actor: agent.name,
+        verb: "could not execute",
+        object: ob.title,
+        detail: `${outcome.error} · gave up after ${job.attempts} queued attempts`,
+        kind: "automation",
+      });
+      results.push({ id: job.id, status: "failed" });
+    }
+  } finally {
+    draining = false;
+  }
+  return { skipped: false, processed: results.length, results };
+}
+
+function executorHost(agent) {
+  try {
+    return new URL(agent.executor_url).host;
+  } catch {
+    return "connected";
+  }
 }
 
 const NEXT = { day: 1, week: 7, month: 30, quarter: 91, year: 365 };
@@ -245,7 +508,7 @@ function proposalFor(ob, agent) {
   return templates[ob.category] || templates.other;
 }
 
-export function sweep({ actor = "Remy", silent = false } = {}) {
+export async function sweep({ actor = "Remy", silent = false } = {}) {
   const data = loadAll();
   const now = virtualNow();
   const pendingIds = new Set(
@@ -254,6 +517,8 @@ export function sweep({ actor = "Remy", silent = false } = {}) {
   let proposed = 0;
   let executed = 0;
   let drafted = 0;
+  let blocked = 0;
+  let failed = 0;
 
   const candidates = data.obligations
     .filter((o) => o.status === "active" && o.agent_id)
@@ -273,31 +538,34 @@ export function sweep({ actor = "Remy", silent = false } = {}) {
     if (recent) continue;
 
     if (o.autonomy === "autopilot") {
-      logRun({
-        agent_id: agent.id,
-        obligation_id: o.id,
-        action: `Executed ${o.autonomy === "autopilot" ? "on autopilot" : "step"}`,
-        detail: `${proposalFor(o, agent)} Done without a human in the loop.`,
-        status: "done",
-        proof: `auto_${o.id}_receipt.pdf`,
-        duration_ms: 3200,
-      });
-      logEvent({
-        actor_type: "agent",
-        actor_id: agent.id,
-        actor: agent.name,
-        verb: "executed on autopilot",
-        object: o.title,
-        detail: `Risk ${risk.score} · ${risk.days <= 0 ? "due now" : `due in ${Math.ceil(risk.days)}d`}`,
-        kind: "automation",
-      });
-      completeObligation(o.id, {
-        proof: `auto_${o.id}_receipt.pdf`,
+      if (!connectorConfigured(agent)) {
+        logRun({
+          agent_id: agent.id,
+          obligation_id: o.id,
+          action: "Drafted the execution plan",
+          detail: `${proposalFor(o, agent)} No executor is connected, so nothing ran.`,
+          status: "drafted",
+          duration_ms: 0,
+        });
+        logEvent({
+          actor_type: "agent",
+          actor_id: agent.id,
+          actor: agent.name,
+          verb: "drafted a plan, not an action",
+          object: o.title,
+          detail: "No executor connected · risk " + risk.score,
+          kind: "draft",
+        });
+        blocked += 1;
+        continue;
+      }
+      const outcome = await executeAction(agent, o, {
+        action: "Executed the obligation",
+        detail: proposalFor(o, agent),
         note: "Autopilot within mandate",
-        by: agent.name,
-        auto: true,
       });
-      executed += 1;
+      if (outcome.ok) executed += 1;
+      else failed += 1;
     } else if (o.autonomy === "approve" && !pendingIds.has(o.id)) {
       const approval = {
         id: uid("ap"),
@@ -309,7 +577,12 @@ export function sweep({ actor = "Remy", silent = false } = {}) {
         cost: o.amount || 0,
         evidence: [
           { label: "Risk assessment", detail: `${risk.band} · score ${risk.score} · ${Math.ceil(risk.days)} days out` },
-          { label: "Prepared payload", detail: `${o.provider} · verified details` },
+          {
+            label: "Execution channel",
+            detail: connectorConfigured(agent)
+              ? `Connected · ${executorHost(agent)}`
+              : "Not connected — approving records your decision, but nothing runs.",
+          },
         ],
         risk: o.consequence || "Missed deadline.",
         status: "pending",
@@ -358,20 +631,23 @@ export function sweep({ actor = "Remy", silent = false } = {}) {
   }
 
   if (!silent) {
+    const parts = [`${proposed} approvals`, `${executed} executed`, `${drafted} plans`];
+    if (blocked) parts.push(`${blocked} waiting on an executor`);
+    if (failed) parts.push(`${failed} failed`);
     logEvent({
       actor_type: actor === "Remy" ? "system" : "human",
       actor_id: null,
       actor,
       verb: "swept the portfolio",
       object: "All agents",
-      detail: `${proposed} approvals · ${executed} executed · ${drafted} plans`,
+      detail: parts.join(" · "),
       kind: "system",
     });
   }
-  return { proposed, executed, drafted, scanned: candidates.length };
+  return { proposed, executed, drafted, blocked, failed, scanned: candidates.length };
 }
 
-export function applyApproval(id, decision, note = "") {
+export async function applyApproval(id, decision, note = "") {
   const data = loadAll();
   const approval = data.approvals.find((a) => a.id === id);
   if (!approval) return { ok: false, error: "Approval not found" };
@@ -380,30 +656,10 @@ export function applyApproval(id, decision, note = "") {
   approval.status = decision === "approve" ? "approved" : "denied";
   approval.decided_at = new Date().toISOString();
   approval.decision_note = note;
-  put("approvals", approval);
 
-  if (decision === "approve") {
-    logRun({
-      agent_id: approval.agent_id,
-      obligation_id: approval.obligation_id,
-      action: "Executed the approved action",
-      detail: `${approval.title} · approved by Solomon. ${approval.proposed_action} carried out.`,
-      status: "done",
-      proof: `${approval.proposed_action.replace(".", "_")}_confirmation.pdf`,
-      duration_ms: 4200,
-      cost: approval.cost ? 0 : 0,
-    });
-    if (ob) {
-      ob.last_approved_at = new Date().toISOString();
-      put("obligations", ob);
-      completeObligation(ob.id, {
-        proof: `${approval.proposed_action.replace(".", "_")}_confirmation.pdf`,
-        note: "Approved by Solomon · executed by agent",
-        by: agent?.name || "Agent",
-        auto: true,
-      });
-    }
-  } else {
+  if (decision !== "approve") {
+    approval.executed = false;
+    put("approvals", approval);
     logEvent({
       actor_type: "human",
       actor_id: null,
@@ -413,8 +669,55 @@ export function applyApproval(id, decision, note = "") {
       detail: note || "No reason given",
       kind: "approval",
     });
+    return { ok: true, approval, executed: false };
   }
-  return { ok: true, approval };
+
+  if (!ob || !agent || !connectorConfigured(agent)) {
+    approval.executed = false;
+    if (ob) {
+      ob.last_approved_at = approval.decided_at;
+      put("obligations", ob);
+    }
+    put("approvals", approval);
+    logEvent({
+      actor_type: "human",
+      actor_id: null,
+      actor: "Solomon Tigabu",
+      verb: "approved a proposed action",
+      object: ob?.title || approval.title,
+      detail: "No executor connected — the decision is recorded, nothing ran.",
+      kind: "approval",
+    });
+    return {
+      ok: true,
+      approval,
+      executed: false,
+      message: "Approved and recorded. No executor is connected, so the obligation stays open for you.",
+    };
+  }
+
+  ob.last_approved_at = approval.decided_at;
+  put("obligations", ob);
+  const outcome = await executeAction(agent, ob, {
+    action: "Executed the approved action",
+    detail: approval.summary || approval.title,
+    note: "Approved by Solomon · executed by agent",
+  });
+  approval.executed = outcome.ok;
+  if (!outcome.ok) approval.execution_error = outcome.error;
+  put("approvals", approval);
+  return {
+    ok: true,
+    approval,
+    executed: outcome.ok,
+    queued: outcome.ok ? undefined : Boolean(outcome.queued),
+    error: outcome.ok ? undefined : outcome.error,
+    message: outcome.ok
+      ? "The agent ran it through its connector and filed proof."
+      : `Approved, but execution failed: ${outcome.error}${
+          outcome.queued ? " The job is saved and will retry." : ""
+        }`,
+  };
 }
 
 export function snoozeObligation(id, days = 3) {
@@ -436,7 +739,7 @@ export function snoozeObligation(id, days = 3) {
   return { ok: true };
 }
 
-export function runObligation(id) {
+export async function runObligation(id) {
   const data = loadAll();
   const ob = data.obligations.find((o) => o.id === id);
   if (!ob) return { ok: false, error: "Not found" };
@@ -444,31 +747,50 @@ export function runObligation(id) {
   if (!agent) return { ok: false, error: "No agent assigned" };
   const risk = riskFor(ob);
   if (ob.autonomy === "autopilot") {
+    if (connectorConfigured(agent)) {
+      const outcome = await executeAction(agent, ob, {
+        action: "Ran the obligation on autopilot",
+        detail: proposalFor(ob, agent),
+        note: "Manual run · autopilot",
+      });
+      if (!outcome.ok) {
+        return {
+          ok: false,
+          error: "executor_failed",
+          queued: Boolean(outcome.queued),
+          message: outcome.queued
+            ? `${outcome.error} The job is saved and will retry when the executor is reachable.`
+            : outcome.error,
+        };
+      }
+      return {
+        ok: true,
+        executed: true,
+        message: `${agent.name} ran it through its connector and filed proof.`,
+      };
+    }
     logRun({
       agent_id: agent.id,
       obligation_id: ob.id,
-      action: "Ran the obligation on autopilot",
-      detail: proposalFor(ob, agent),
-      status: "done",
-      proof: `run_${ob.id}_confirmation.pdf`,
-      duration_ms: 3600,
+      action: "Drafted the execution plan",
+      detail: `${proposalFor(ob, agent)} No executor is connected, so nothing ran.`,
+      status: "drafted",
+      duration_ms: 0,
     });
     logEvent({
       actor_type: "agent",
       actor_id: agent.id,
       actor: agent.name,
-      verb: "ran it end-to-end",
+      verb: "drafted a plan",
       object: ob.title,
-      detail: `Manual run · risk ${risk.score}`,
-      kind: "automation",
+      detail: `No executor connected · risk ${risk.score}`,
+      kind: "draft",
     });
-    completeObligation(ob.id, {
-      proof: `run_${ob.id}_confirmation.pdf`,
-      note: "Manual run · autopilot",
-      by: agent.name,
-      auto: true,
-    });
-    return { ok: true, message: `${agent.name} completed it on autopilot and filed proof.` };
+    return {
+      ok: true,
+      executed: false,
+      message: `${agent.name} drafted a plan, but no executor is connected yet.`,
+    };
   }
 
   if (ob.autonomy === "approve") {
@@ -484,7 +806,12 @@ export function runObligation(id) {
       cost: ob.amount || 0,
       evidence: [
         { label: "Risk assessment", detail: `${risk.band} · score ${risk.score} · ${Math.ceil(risk.days)} days out` },
-        { label: "Prepared payload", detail: `${ob.provider} · verified details` },
+        {
+          label: "Execution channel",
+          detail: connectorConfigured(agent)
+            ? `Connected · ${executorHost(agent)}`
+            : "Not connected — approving records your decision, but nothing runs.",
+        },
       ],
       risk: ob.consequence || "Missed deadline.",
       status: "pending",

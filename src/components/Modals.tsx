@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { useApp } from "../store";
+import { useAuth } from "../auth";
+import { api, request } from "../lib/api";
 import { Icon } from "./Icon";
 import { Field, Modal, Monogram, CategoryTile, RiskMeter } from "./ui";
-import { CATEGORIES, AUTONOMY, money, dueLabel, TONES } from "../lib/format";
+import { CATEGORIES, AUTONOMY, money, dueLabel, TONES, download } from "../lib/format";
 
 const RECS = [
   { value: "none", label: "One-off" },
@@ -351,6 +353,122 @@ export function HireModal() {
       <div className="hire-terms">
         <p><Icon name="shield" size={12} /> {provider.name} sees only this obligation: title, deadline, provider and the documents you attach.</p>
         <p><Icon name="receipt" size={12} /> Proof is required before funds release. If it's rejected, the bench replaces it free.</p>
+      </div>
+    </Modal>
+  );
+}
+
+export function DeleteAccountModal() {
+  const { overlays, setOverlays } = useApp();
+  const { user } = useAuth();
+  const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!overlays.deleteAccount) return null;
+
+  const needsPassword = Boolean(user?.providers.includes("email"));
+  const canDelete = confirm.trim().toLowerCase() === "delete" && (!needsPassword || password.length > 0);
+
+  const close = () => {
+    setOverlays((o) => ({ ...o, deleteAccount: false }));
+    setConfirm("");
+    setPassword("");
+    setError(null);
+  };
+
+  const downloadCopy = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const data = await request("/api/export");
+      download(
+        `remindify-export-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(data, null, 2)
+      );
+    } catch (err: any) {
+      setError(err?.message || "The export didn't build. Try again before deleting.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!canDelete || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteAccount({
+        confirm: confirm.trim(),
+        password: needsPassword ? password : undefined,
+      });
+      window.location.assign("/");
+    } catch (err: any) {
+      setError(err?.message || "That didn't go through. Nothing was deleted.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Delete this account?"
+      eyebrow="Data control"
+      onClose={busy ? () => {} : close}
+      width={560}
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={close} disabled={busy}>Keep my account</button>
+          <button className="btn btn-danger" onClick={remove} disabled={!canDelete || busy}>
+            <Icon name="trash" size={15} />
+            {busy ? "Deleting…" : "Delete everything"}
+          </button>
+        </>
+      }
+    >
+      <div className="form-stack">
+        <div className="danger-note">
+          <Icon name="alert" size={16} />
+          <p>
+            This erases your private register for good — obligations, agents, approvals, receipts,
+            escrows, API keys and machine credentials. Sign-in sessions are revoked and the account
+            itself is removed. It cannot be undone.
+          </p>
+        </div>
+
+        <p className="danger-copy">
+          Want a copy first? Export includes everything currently in the register.
+        </p>
+        <button className="btn btn-ghost btn-sm" onClick={downloadCopy} disabled={exporting}>
+          <Icon name="download" size={14} /> {exporting ? "Building export…" : "Download my data"}
+        </button>
+
+        <Field label="Type delete to confirm" hint="case-insensitive">
+          <input
+            autoFocus
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="delete"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={busy}
+          />
+        </Field>
+
+        {needsPassword && (
+          <Field label="Current password">
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              disabled={busy}
+            />
+          </Field>
+        )}
+
+        {error && <p className="danger-error" role="alert">{error}</p>}
       </div>
     </Modal>
   );

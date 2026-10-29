@@ -2,22 +2,41 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   buildState, completeObligation, sweep, applyApproval, snoozeObligation,
   runObligation, advanceClock, deleteObligation, logEvent, uid, virtualNow,
-  riskFor, enrichObligation,
+  riskFor, enrichObligation, drainOutbox,
 } from "./engine.mjs";
 import {
   loadAll, put, putMany, getMeta, setMeta, seedDatabase, pruneAuth,
-  beginRequest, runWithStore, endRequest, abortRequest, isPostgres,
+  beginRequest, runWithStore, endRequest, abortRequest, isPostgres, findKeyBySecret,
+  workspacesWithKind,
 } from "./db.mjs";
 import { parseCapture } from "./parse.mjs";
 import {
   anchorReceipt, commitEscrow, createEscrow, createReceipt, ensureTrustDemo,
   fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
 } from "./trust.mjs";
-import { handleAuthRoute, getSessionFromRequest } from "./auth.mjs";
+import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
+import { emailConfigured } from "./email.mjs";
+import {
+  sendDailyDigest, subscribeByToken, unsubscribeByToken, unsubscribePage,
+} from "./digest.mjs";
+import { pruneActivity } from "./retention.mjs";
+import { sanctionsConfigured, screenAddresses } from "./sanctions.mjs";
+import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
+import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
+import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
+import { takeRateLimit } from "./ratelimit.mjs";
+import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
+import {
+  billingSummary, canSwitchPlans, keyLimitReached, meterApiCall, PLANS, setPlan,
+} from "./billing.mjs";
+import {
+  acceptBooking, confirmPayoutReceived, declineBooking, requestPayout,
+  startBooking, submitBookingProof, updateSellerProfile,
+} from "./seller.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -39,6 +58,20 @@ const MIME = {
   ".ico": "image/x-icon",
 };
 
+// Baseline headers for every response, API and static. HSTS is only added
+// behind TLS so local development is never pinned.
+function applySecurityHeaders(req, res) {
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("content-security-policy", "frame-ancestors 'none'");
+  res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+  res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  if (proto === "https" || req.socket?.encrypted) {
+    res.setHeader("strict-transport-security", "max-age=15552000; includeSubDomains");
+  }
+}
+
 function send(res, status, payload, type = "application/json; charset=utf-8") {
   const headers = {
     "content-type": type,
@@ -51,18 +84,20 @@ function send(res, status, payload, type = "application/json; charset=utf-8") {
   if (cookies) headers["set-cookie"] = cookies;
   res.writeHead(status, headers);
   if (typeof payload === "string" || Buffer.isBuffer(payload)) return res.end(payload);
-  res.end(JSON.stringify(payload));
+  return res.end(JSON.stringify(payload));
 }
 
 async function body(req) {
+  if (req.parsedBody !== undefined) return req.parsedBody;
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
     if (raw.length > 1_000_000) throw new Error("Body too large");
   }
-  if (!raw) return {};
+  req.rawBody = raw;
+  if (!raw) return (req.parsedBody = {});
   try {
-    return JSON.parse(raw);
+    return (req.parsedBody = JSON.parse(raw));
   } catch {
     throw new Error("Invalid JSON");
   }
@@ -104,11 +139,71 @@ function normalizeObligation(input) {
   };
 }
 
+// A machine key identifies its workspace, so resolve both together. The lookup
+// scans every workspace because the workspace is unknown until the secret
+// matches.
 function keyFromRequest(req) {
   const header = req.headers.authorization || "";
   if (!header.startsWith("Bearer ")) return null;
-  const token = header.slice(7).trim();
-  return loadAll().keys.find((k) => k.secret === token) || null;
+  return findKeyBySecret(header.slice(7).trim());
+}
+
+function keyHasScope(key, scope) {
+  return Array.isArray(key.scopes) && key.scopes.includes(scope);
+}
+
+function scopeDenied(res, scope) {
+  return send(res, 403, {
+    error: "missing_scope",
+    scope,
+    message: `This key does not carry ${scope}.`,
+  });
+}
+
+const IDEMPOTENCY_TTL = 24 * 3600 * 1000;
+
+function idempotencySlot(key, header) {
+  return `idem:${key.id}:${digestSecret(header)}`;
+}
+
+// Reads the body once and decides whether this call is a first attempt or a
+// replay, before any side effect runs. A repeated key with the same body gets
+// the stored response; a different body is a conflict.
+async function idempotencyGuard(req, key) {
+  const header = String(req.headers["idempotency-key"] || "").trim().slice(0, 200);
+  const input = await body(req);
+  if (!header) return { key, header: "", input, hash: "", replay: null, conflict: false };
+  const hash = digestSecret(req.rawBody || "");
+  const record = getMeta(idempotencySlot(key, header), null);
+  const fresh = record && Date.now() - new Date(record.at).getTime() <= IDEMPOTENCY_TTL;
+  if (!fresh) return { key, header, input, hash, replay: null, conflict: false };
+  return { key, header, input, hash, replay: record, conflict: record.hash !== hash };
+}
+
+function replayIdempotent(res, pending) {
+  if (pending.conflict) {
+    send(res, 409, {
+      error: "idempotency_conflict",
+      message: "That Idempotency-Key was already used with a different body.",
+    });
+    return true;
+  }
+  if (pending.replay) {
+    res.setHeader("idempotent-replay", "true");
+    send(res, pending.replay.status, pending.replay.payload);
+    return true;
+  }
+  return false;
+}
+
+function rememberIdempotent(pending, status, payload) {
+  if (!pending.header) return;
+  setMeta(idempotencySlot(pending.key, pending.header), {
+    hash: pending.hash,
+    status,
+    payload,
+    at: new Date().toISOString(),
+  });
 }
 
 function machineObligations() {
@@ -135,6 +230,7 @@ function machineObligations() {
 }
 
 async function handleRequest(req, res) {
+  applySecurityHeaders(req, res);
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
 
@@ -146,17 +242,52 @@ async function handleRequest(req, res) {
 
     // ---------- Machine-native API (agent first) ----------
     if (path.startsWith("/api/v1/")) {
-      const key = keyFromRequest(req);
-      if (!key) {
+      const resolved = keyFromRequest(req);
+      if (!resolved) {
         return send(res, 401, {
           error: "unauthorized",
           hint: "Pass a Remindify key: Authorization: Bearer rfy_live_...",
         });
       }
-      setMeta("api_calls", (getMeta("api_calls", 0) || 0) + 1);
+      setWorkspace(resolved.workspace_id);
+      seedDatabase();
+      ensureTrustDemo();
+      const key = resolved.key;
+      if (keyExpired(key)) {
+        return send(res, 401, {
+          error: "key_expired",
+          message: "This key expired. Rotate it in Agent access.",
+        });
+      }
+      const burst = takeRateLimit(key.id);
+      res.setHeader("x-ratelimit-limit", String(burst.limit));
+      res.setHeader("x-ratelimit-remaining", String(burst.remaining));
+      if (!burst.allowed) {
+        res.setHeader("retry-after", String(burst.retry_after));
+        return send(res, 429, {
+          error: "rate_limited",
+          limit: burst.limit,
+          retry_after: burst.retry_after,
+          message: `Too many requests: ${burst.limit} per minute for this key.`,
+        });
+      }
+      const meter = meterApiCall();
+      if (!meter.allowed) {
+        return send(res, 429, {
+          error: "plan_limit",
+          plan: meter.plan.name,
+          period: meter.period,
+          limit: meter.limit,
+          message: `The ${meter.plan.name} plan includes ${meter.limit} machine calls per month.`,
+        });
+      }
+      const usedAt = new Date().toISOString();
+      put("keys", { ...key, last_used: usedAt });
+      key.last_used = usedAt;
       const state = buildState();
 
       if (path === "/api/v1/obligations" && req.method === "GET") {
+        if (!keyHasScope(key, "obligations:read")) return scopeDenied(res, "obligations:read");
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
           verb: "read obligations", object: "API", detail: "GET /v1/obligations",
@@ -170,7 +301,10 @@ async function handleRequest(req, res) {
       }
 
       if (path === "/api/v1/obligations" && req.method === "POST") {
-        const input = await body(req);
+        if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+        const input = pending.input;
         if (!input.title) return send(res, 422, { error: "title_required" });
         const ob = normalizeObligation({ ...input, source: "api", channel: "api" });
         put("obligations", ob);
@@ -180,12 +314,17 @@ async function handleRequest(req, res) {
           detail: input.due_at ? `Due ${new Date(ob.due_at).toDateString()}` : "Due in 14 days",
           kind: "api", channel: "api",
         });
-        return send(res, 201, { obligation: enrichObligation(ob, virtualNow()) });
+        const payload = { obligation: enrichObligation(ob, virtualNow()) };
+        rememberIdempotent(pending, 201, payload);
+        return send(res, 201, payload);
       }
 
       const completeMatch = path.match(/^\/api\/v1\/obligations\/([^/]+)\/complete$/);
       if (completeMatch && req.method === "POST") {
-        const input = await body(req);
+        if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+        const input = pending.input;
         const result = completeObligation(completeMatch[1], {
           proof: input.proof || "Completed via API",
           note: input.note || "",
@@ -198,17 +337,20 @@ async function handleRequest(req, res) {
           verb: "completed via API", object: result.obligation.title,
           detail: input.proof || "Proof filed", kind: "api", channel: "api",
         });
+        rememberIdempotent(pending, 200, result);
         return send(res, 200, result);
       }
 
       const patchMatch = path.match(/^\/api\/v1\/obligations\/([^/]+)$/);
       if (patchMatch && req.method === "GET") {
+        if (!keyHasScope(key, "obligations:read")) return scopeDenied(res, "obligations:read");
         const ob = buildState().obligations.find((o) => o.id === patchMatch[1]);
         if (!ob) return send(res, 404, { error: "not_found" });
         return send(res, 200, { obligation: ob });
       }
 
       if (path === "/api/v1/risk" && req.method === "GET") {
+        if (!keyHasScope(key, "risk:read")) return scopeDenied(res, "risk:read");
         const obs = state.obligations.filter((o) => o.status === "active");
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
@@ -234,6 +376,7 @@ async function handleRequest(req, res) {
       }
 
       if (path === "/api/v1/trust" && req.method === "GET") {
+        if (!keyHasScope(key, "risk:read")) return scopeDenied(res, "risk:read");
         const trust = trustSnapshot();
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
@@ -251,7 +394,10 @@ async function handleRequest(req, res) {
       }
 
       if (path === "/api/v1/trust/receipts" && req.method === "POST") {
-        const input = await body(req);
+        if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+        const input = pending.input;
         if (!input.obligation_id) return send(res, 422, { error: "obligation_id_required" });
         const result = createReceipt({
           ...input,
@@ -260,10 +406,13 @@ async function handleRequest(req, res) {
           channel: "api",
         });
         if (!result.ok) return send(res, 422, result);
-        return send(res, 201, { receipt: result.receipt });
+        const payload = { receipt: result.receipt };
+        rememberIdempotent(pending, 201, payload);
+        return send(res, 201, payload);
       }
 
       if (path === "/api/v1/agents" && req.method === "GET") {
+        if (!keyHasScope(key, "agents:read")) return scopeDenied(res, "agents:read");
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
           verb: "read the agent roster", object: "The bench",
@@ -285,6 +434,48 @@ async function handleRequest(req, res) {
     // ---------- App API ----------
     if (path === "/api/health") return send(res, 200, { ok: true, now: new Date().toISOString() });
 
+    // Serverless deployments have no background timer, so a scheduler calls
+    // this with the shared secret. It is the only app path that skips sessions.
+    // Vercel Cron sends GET; other schedulers may POST. Both carry the secret,
+    // so neither relies on a cookie.
+    const cronCall = req.method === "GET" || req.method === "POST";
+    if (path === "/api/cron/outbox" && cronCall) {
+      if (!process.env.OUTBOX_SECRET) return send(res, 404, { error: "not_found", path });
+      const given = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+      if (!outboxSecretMatches(given)) return send(res, 401, { error: "unauthorized" });
+      const result = await sweepOutbox();
+      return send(res, 200, { ok: true, ...result });
+    }
+
+    if (path === "/api/cron/sweep" && cronCall) {
+      if (!process.env.CRON_SECRET && !process.env.OUTBOX_SECRET) {
+        return send(res, 404, { error: "not_found", path });
+      }
+      const given = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+      if (!cronSecretMatches(given)) return send(res, 401, { error: "unauthorized" });
+      const result = await sweepAllWorkspaces();
+      return send(res, 200, { ok: true, ...result });
+    }
+
+    // Digest links are signed per recipient and work without a session, so a
+    // mailbox can opt out from the email itself and undo it from the page.
+    const digestPrefMatch = path.match(/^\/api\/digest\/(unsubscribe|subscribe)$/);
+    if (digestPrefMatch && req.method === "GET") {
+      const token = new URL(req.url, "http://localhost").searchParams.get("token") || "";
+      const result = digestPrefMatch[1] === "subscribe"
+        ? subscribeByToken(token)
+        : unsubscribeByToken(token);
+      const resubscribeUrl = result.ok && !result.enabled
+        ? `/api/digest/subscribe?token=${encodeURIComponent(token)}`
+        : null;
+      res.writeHead(result.ok ? 200 : 400, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      res.end(unsubscribePage(result, { resubscribeUrl }));
+      return;
+    }
+
     // Everything below this line is the signed-in workspace. The machine API
     // above keeps its own Bearer-key auth; auth routes and health stay public.
     if (path.startsWith("/api/")) {
@@ -295,6 +486,9 @@ async function handleRequest(req, res) {
           message: "Sign in to open your workspace.",
         });
       }
+      setWorkspace(session.workspace_id);
+      seedDatabase();
+      ensureTrustDemo();
       req.auth = session;
     }
 
@@ -373,7 +567,7 @@ async function handleRequest(req, res) {
 
     const runMatch = path.match(/^\/api\/obligations\/([^/]+)\/run$/);
     if (runMatch && req.method === "POST") {
-      const result = runObligation(runMatch[1]);
+      const result = await runObligation(runMatch[1]);
       return send(res, result.ok ? 200 : 400, { ...result, state: buildState() });
     }
 
@@ -386,7 +580,7 @@ async function handleRequest(req, res) {
     if (approvalMatch && req.method === "POST") {
       const { decision, note } = await body(req);
       if (!["approve", "deny"].includes(decision)) return send(res, 422, { error: "bad_decision" });
-      const result = applyApproval(approvalMatch[1], decision, note || "");
+      const result = await applyApproval(approvalMatch[1], decision, note || "");
       return send(res, result.ok ? 200 : 404, { ...result, state: buildState() });
     }
 
@@ -404,12 +598,9 @@ async function handleRequest(req, res) {
         capabilities: input.capabilities || ["execute"],
         autonomy_ceiling: input.autonomy_ceiling || "approve",
         trust: 80,
-        runs_30d: 0,
-        success_rate: 100,
         cost_per_run: 0,
         status: "active",
         scopes: input.scopes || ["obligations:read"],
-        hours_saved: 0,
         last_active: new Date().toISOString(),
         created_at: new Date().toISOString(),
         custom: true,
@@ -420,7 +611,8 @@ async function handleRequest(req, res) {
         object: agent.name, detail: `${agent.role} · ceiling ${agent.autonomy_ceiling}`,
         kind: "human",
       });
-      return send(res, 201, { state: buildState(), agent });
+      const state = buildState();
+      return send(res, 201, { state, agent: state.agents.find((a) => a.id === agent.id) });
     }
 
     const agentMatch = path.match(/^\/api\/agents\/([^/]+)$/);
@@ -433,7 +625,53 @@ async function handleRequest(req, res) {
         if (key in patch) agent[key] = patch[key];
       }
       put("agents", agent);
-      return send(res, 200, { state: buildState(), agent });
+      const state = buildState();
+      return send(res, 200, { state, agent: state.agents.find((a) => a.id === agent.id) });
+    }
+
+    const executorMatch = path.match(/^\/api\/agents\/([^/]+)\/executor$/);
+    if (executorMatch && req.method === "POST") {
+      const { url } = await body(req);
+      const data = loadAll();
+      const agent = data.agents.find((a) => a.id === executorMatch[1]);
+      if (!agent) return send(res, 404, { error: "not_found" });
+
+      if (url === null || url === undefined || url === "") {
+        delete agent.executor_url;
+        delete agent.executor_secret;
+        put("agents", agent);
+        logEvent({
+          actor_type: "human", actor: "Solomon Tigabu", verb: "disconnected an executor",
+          object: agent.name, detail: "The agent can draft and request approval, but not act.",
+          kind: "human",
+        });
+        const state = buildState();
+        return send(res, 200, { state, agent: state.agents.find((a) => a.id === agent.id) });
+      }
+
+      const check = await validateExecutorUrl(url);
+      if (!check.ok) {
+        return send(res, 422, { error: "invalid_executor", message: check.error });
+      }
+      const secret = newExecutorSecret();
+      agent.executor_url = check.url;
+      agent.executor_secret = secret;
+      put("agents", agent);
+      let host = "connector";
+      try {
+        host = new URL(check.url).host;
+      } catch {}
+      logEvent({
+        actor_type: "human", actor: "Solomon Tigabu", verb: "connected an executor",
+        object: agent.name, detail: `${host} · signed requests`,
+        kind: "human",
+      });
+      const state = buildState();
+      return send(res, 200, {
+        state,
+        agent: state.agents.find((a) => a.id === agent.id),
+        signing_secret: secret,
+      });
     }
 
     if (path === "/api/hire" && req.method === "POST") {
@@ -485,31 +723,107 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/keys" && req.method === "POST") {
-      const { name } = await body(req);
+      const { name, scopes, expires_in_days } = await body(req);
+      const billing = billingSummary();
+      if (keyLimitReached(loadAll().keys.length)) {
+        return send(res, 402, {
+          error: "plan_limit",
+          plan: billing.plan_name,
+          limit: billing.key_limit,
+          message: `The ${billing.plan_name} plan includes ${billing.key_limit} agent keys.`,
+        });
+      }
       const secret = `rfy_live_${randomBytes(14).toString("hex")}`;
+      const requested = Array.isArray(scopes)
+        ? [...new Set(scopes.filter((scope) => KEY_SCOPES.includes(scope)))]
+        : [];
+      const requestedDays = Number(expires_in_days);
+      const days = Number.isFinite(requestedDays) && requestedDays > 0
+        ? Math.max(1, Math.min(365, Math.floor(requestedDays)))
+        : 90;
       const key = {
         id: uid("key"),
         name: (name || "New agent key").slice(0, 40),
         prefix: secret.slice(0, 13),
-        secret,
-        scopes: ["obligations:read", "obligations:write", "risk:read"],
+        secret_hash: digestSecret(secret),
+        scopes: requested.length ? requested : [...KEY_SCOPES],
         created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + days * 86400000).toISOString(),
         last_used: null,
       };
       put("keys", key);
       logEvent({
         actor_type: "human", actor: "Solomon Tigabu", verb: "issued an agent key",
-        object: key.name, detail: key.prefix + "…", kind: "human",
+        object: key.name, detail: `${key.prefix}… · expires in ${days} days`, kind: "human",
       });
-      return send(res, 201, { state: buildState(), key });
+      return send(res, 201, { state: buildState(), key: { ...publicKey(key), secret } });
+    }
+
+    const rotateMatch = path.match(/^\/api\/keys\/([^/]+)\/rotate$/);
+    if (rotateMatch && req.method === "POST") {
+      const existing = loadAll().keys.find((k) => k.id === rotateMatch[1]);
+      if (!existing) return send(res, 404, { error: "not_found" });
+      const secret = `rfy_live_${randomBytes(14).toString("hex")}`;
+      const key = {
+        ...existing,
+        prefix: secret.slice(0, 13),
+        secret_hash: digestSecret(secret),
+        rotated_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 90 * 86400000).toISOString(),
+      };
+      delete key.secret;
+      put("keys", key);
+      logEvent({
+        actor_type: "human", actor: "Solomon Tigabu", verb: "rotated an agent key",
+        object: key.name, detail: `${key.prefix}… · the old secret no longer works`, kind: "human",
+      });
+      return send(res, 200, { state: buildState(), key: { ...publicKey(key), secret } });
     }
 
     const keyMatch = path.match(/^\/api\/keys\/([^/]+)$/);
     if (keyMatch && req.method === "DELETE") {
       const data = loadAll();
+      const revoked = data.keys.find((k) => k.id === keyMatch[1]);
       const { remove } = await import("./db.mjs");
       remove("keys", keyMatch[1]);
+      if (revoked) {
+        logEvent({
+          actor_type: "human", actor: "Solomon Tigabu", verb: "revoked an agent key",
+          object: revoked.name, detail: `${revoked.prefix}… · every client using it is locked out`,
+          kind: "human",
+        });
+      }
       return send(res, 200, { state: buildState() });
+    }
+
+    if (path === "/api/billing" && req.method === "GET") {
+      return send(res, 200, { billing: billingSummary(), plans: Object.values(PLANS) });
+    }
+
+    if (path === "/api/billing/plan" && req.method === "POST") {
+      if (!canSwitchPlans()) {
+        return send(res, 503, {
+          error: "billing_not_configured",
+          message: "Connect a billing provider before changing plans.",
+        });
+      }
+      const { plan } = await body(req);
+      const target = PLANS[String(plan || "").toLowerCase()];
+      if (!target) {
+        return send(res, 422, { error: "unknown_plan", plans: Object.keys(PLANS) });
+      }
+      // A paid plan needs a confirmed address for invoices and dunning. Wallet
+      // accounts have no address to confirm, and without an email provider
+      // nobody can confirm, so the gate only applies when both exist.
+      const user = req.auth?.user;
+      if (target.price > 0 && emailConfigured() && user?.email && !user.email_verified) {
+        return send(res, 403, {
+          error: "email_unverified",
+          message: "Confirm your email address before choosing a paid plan.",
+        });
+      }
+      setPlan(target.key);
+      return send(res, 200, { billing: billingSummary(), state: buildState() });
     }
 
     if (path === "/api/meta" && req.method === "PATCH") {
@@ -520,14 +834,14 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/demo/sweep" && req.method === "POST") {
-      const result = sweep({ actor: "Remy" });
+      const result = await sweep({ actor: "Remy" });
       return send(res, 200, { ...result, state: buildState() });
     }
 
     if (path === "/api/demo/advance" && req.method === "POST") {
       const { days = 7, run = true } = await body(req);
       advanceClock(days);
-      const result = run ? sweep({ actor: "Time machine", silent: true }) : null;
+      const result = run ? await sweep({ actor: "Time machine", silent: true }) : null;
       return send(res, 200, { ...result, state: buildState() });
     }
 
@@ -569,6 +883,8 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/trust/escrows" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      if (await sanctionsBlockedResponse(req, res)) return;
       const input = await body(req);
       const result = createEscrow(input);
       return send(res, result.ok ? 201 : 422, { ...result, state: buildState() });
@@ -582,6 +898,8 @@ async function handleRequest(req, res) {
 
     const escrowFundMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/fund$/);
     if (escrowFundMatch && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      if (await sanctionsBlockedResponse(req, res)) return;
       const { tx_hash } = await body(req);
       const result = await fundEscrow({ id: escrowFundMatch[1], tx_hash });
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
@@ -589,6 +907,8 @@ async function handleRequest(req, res) {
 
     const escrowReleaseMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/release$/);
     if (escrowReleaseMatch && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      if (await sanctionsBlockedResponse(req, res)) return;
       const { proof_receipt_id, tx_hash } = await body(req);
       const result = await releaseEscrow({
         id: escrowReleaseMatch[1],
@@ -598,9 +918,54 @@ async function handleRequest(req, res) {
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
     }
 
+    if (path === "/api/account/delete" && req.method === "POST") {
+      return handleAccountDelete(req, res, { send, body });
+    }
+
+    if (path === "/api/seller" && req.method === "PATCH") {
+      const input = await body(req);
+      const profile = updateSellerProfile(input, virtualNow());
+      return send(res, 200, { profile, state: buildState() });
+    }
+
+    const sellerBookingMatch = path.match(/^\/api\/seller\/bookings\/([^/]+)\/(accept|decline|start|proof)$/);
+    if (sellerBookingMatch && req.method === "POST") {
+      const id = sellerBookingMatch[1];
+      const action = sellerBookingMatch[2];
+      let result;
+      if (action === "accept") {
+        result = acceptBooking(id, virtualNow());
+      } else if (action === "decline") {
+        const { reason } = await body(req);
+        result = declineBooking(id, reason, virtualNow());
+      } else if (action === "start") {
+        result = startBooking(id, virtualNow());
+      } else {
+        result = submitBookingProof(id, await body(req), virtualNow());
+      }
+      return send(res, result.ok ? 200 : result.status || 422, { ...result, state: buildState() });
+    }
+
+    if (path === "/api/seller/payouts" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      const result = requestPayout(virtualNow());
+      return send(res, result.ok ? 201 : result.status || 422, { ...result, state: buildState() });
+    }
+
+    const sellerPayoutMatch = path.match(/^\/api\/seller\/payouts\/([^/]+)\/receive$/);
+    if (sellerPayoutMatch && req.method === "POST") {
+      const result = confirmPayoutReceived(sellerPayoutMatch[1], virtualNow());
+      return send(res, result.ok ? 200 : result.status || 422, { ...result, state: buildState() });
+    }
+
     if (path === "/api/export" && req.method === "GET") {
       const data = loadAll();
-      return send(res, 200, { exported_at: new Date().toISOString(), ...data });
+      return send(res, 200, {
+        exported_at: new Date().toISOString(),
+        ...data,
+        agents: buildState().agents,
+        keys: data.keys.map(publicKey),
+      });
     }
 
     if (path.startsWith("/api/")) return send(res, 404, { error: "not_found", path });
@@ -635,6 +1000,140 @@ async function handleRequest(req, res) {
   } catch (error) {
     console.error(error);
     return send(res, 500, { error: "server_error", message: error.message });
+  }
+}
+
+// Money movement is refused in a blocked region even for an existing session.
+function regionBlockedResponse(req, res) {
+  if (!regionBlocked(req)) return false;
+  send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
+  return true;
+}
+
+// The payer's connected wallet is screened before escrow money moves. Accounts
+// without a wallet have nothing to look up here; the regional gate still
+// applies to them.
+async function sanctionsBlockedResponse(req, res) {
+  const address = req.auth?.user?.wallet_address;
+  if (!address || !sanctionsConfigured()) return false;
+  const screen = await screenAddresses([address]);
+  if (screen.hits.length) {
+    send(res, 403, {
+      error: "sanctions_hit",
+      message: "This wallet is on a sanctions list, so the escrow cannot move.",
+      hits: screen.hits,
+    });
+    return true;
+  }
+  if (screen.unavailable && !screen.ok) {
+    send(res, 503, {
+      error: "sanctions_unavailable",
+      message: "The sanctions screen is unavailable. Try again later.",
+    });
+    return true;
+  }
+  return false;
+}
+
+function secretMatches(given, secret) {
+  if (!secret || !given) return false;
+  const provided = Buffer.from(String(given));
+  const expected = Buffer.from(secret);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+function outboxSecretMatches(given) {
+  return secretMatches(given, process.env.OUTBOX_SECRET || "");
+}
+
+// One secret could schedule both jobs, so CRON_SECRET falls back to
+// OUTBOX_SECRET when only the older variable is set.
+function cronSecretMatches(given) {
+  return secretMatches(given, process.env.CRON_SECRET || process.env.OUTBOX_SECRET || "");
+}
+
+const SWEEP_LEASE_MS = 5 * 60_000;
+// Vercel's function limit is 30s; stop early and let the next run continue.
+const SWEEP_BUDGET_MS = 20_000;
+
+// Replay-safe: sweep() skips an obligation that already has a run in the last
+// six hours, and this lease stops a second scheduler from entering the same
+// workspace while the first is still calling connectors.
+async function sweepAllWorkspaces() {
+  const summary = {
+    workspaces: 0, skipped: 0, deferred: 0, scanned: 0, proposed: 0, executed: 0, drafted: 0, blocked: 0, failed: 0,
+    digests: 0, digest_failed: 0, pruned_events: 0, pruned_runs: 0,
+  };
+  const workspaces = workspacesWithKind("obligations");
+  const deadline = Date.now() + SWEEP_BUDGET_MS;
+  for (let index = 0; index < workspaces.length; index++) {
+    if (Date.now() >= deadline) {
+      summary.deferred = workspaces.length - index;
+      break;
+    }
+    const workspaceId = workspaces[index];
+    summary.workspaces += 1;
+    await runWithWorkspace(workspaceId, async () => {
+      const now = Date.now();
+      const leasedUntil = Date.parse(getMeta("sweep_lease_until", "")) || 0;
+      if (leasedUntil > now) {
+        summary.skipped += 1;
+        return;
+      }
+      setMeta("sweep_lease_until", new Date(now + SWEEP_LEASE_MS).toISOString());
+      try {
+        const result = await sweep({ actor: "Scheduled sweep", silent: true });
+        for (const key of ["scanned", "proposed", "executed", "drafted", "blocked", "failed"]) {
+          summary[key] += result[key] || 0;
+        }
+        try {
+          const digest = await sendDailyDigest();
+          summary.digests += digest.sent || 0;
+          summary.digest_failed += digest.failed || 0;
+        } catch {
+          summary.digest_failed += 1;
+        }
+        try {
+          const pruned = pruneActivity();
+          summary.pruned_events += pruned.events;
+          summary.pruned_runs += pruned.runs;
+        } catch {
+          // Retention is best-effort: a failed prune must not fail the sweep.
+        }
+      } finally {
+        setMeta("sweep_lease_until", new Date(0).toISOString());
+      }
+    });
+  }
+  return summary;
+}
+
+// Runs inside whatever workspace/store context the caller already entered.
+async function sweepOutbox() {
+  const results = [];
+  for (const workspaceId of workspacesWithKind("outbox")) {
+    const result = await runWithWorkspace(workspaceId, () => drainOutbox());
+    results.push({ workspace: workspaceId, processed: result.processed || 0 });
+  }
+  return { workspaces: results.length, processed: results.reduce((sum, r) => sum + r.processed, 0) };
+}
+
+// The local timer has no request to lean on, so it opens its own snapshot.
+async function sweepOutboxWithStore() {
+  if (!isPostgres) return sweepOutbox();
+  let store;
+  try {
+    store = await beginRequest();
+  } catch {
+    return null;
+  }
+  try {
+    const result = await runWithStore(store, sweepOutbox);
+    await endRequest(store);
+    return result;
+  } catch (error) {
+    await abortRequest(store).catch(() => {});
+    throw error;
   }
 }
 
@@ -753,6 +1252,17 @@ if (!process.env.VERCEL) {
         /* ignore */
       }
     }, 45_000).unref();
+  }
+
+  // Durable connector retries: the job list lives in the database, so this
+  // timer only decides when to look, not whether the retry survives a restart.
+  const configuredSweep = Number(process.env.OUTBOX_INTERVAL_MS);
+  const sweepEvery =
+    Number.isFinite(configuredSweep) && configuredSweep >= 0 ? Math.floor(configuredSweep) : 30_000;
+  if (sweepEvery > 0) {
+    setInterval(() => {
+      sweepOutboxWithStore().catch((error) => console.error("Outbox sweep failed:", error));
+    }, sweepEvery).unref();
   }
 }
 

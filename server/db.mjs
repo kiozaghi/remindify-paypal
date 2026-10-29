@@ -28,7 +28,9 @@ export const setMeta = (...args) => impl.setMeta(...args);
 export const loadAll = (...args) => impl.loadAll(...args);
 export const put = (...args) => impl.put(...args);
 export const putMany = (...args) => impl.putMany(...args);
+export const workspacesWithKind = (...args) => impl.workspacesWithKind(...args);
 export const remove = (...args) => impl.remove(...args);
+export const findKeyBySecret = (...args) => impl.findKeyBySecret(...args);
 
 export const getUser = (...args) => impl.getUser(...args);
 export const findUserByEmail = (...args) => impl.findUserByEmail(...args);
@@ -36,10 +38,17 @@ export const findUserByGoogleSub = (...args) => impl.findUserByGoogleSub(...args
 export const findUserByWallet = (...args) => impl.findUserByWallet(...args);
 export const createUser = (...args) => impl.createUser(...args);
 export const updateUser = (...args) => impl.updateUser(...args);
+export const deleteUser = (...args) => impl.deleteUser(...args);
+export const verifiedEmails = (...args) => impl.verifiedEmails(...args);
+export const deleteWorkspace = (...args) => impl.deleteWorkspace(...args);
 
 export const createAuthSession = (...args) => impl.createAuthSession(...args);
 export const getAuthSession = (...args) => impl.getAuthSession(...args);
 export const deleteAuthSession = (...args) => impl.deleteAuthSession(...args);
+export const deleteAuthSessionsForUser = (...args) => impl.deleteAuthSessionsForUser(...args);
+export const createAuthToken = (...args) => impl.createAuthToken(...args);
+export const deleteAuthTokensForUser = (...args) => impl.deleteAuthTokensForUser(...args);
+export const consumeAuthToken = (...args) => impl.consumeAuthToken(...args);
 export const createAuthChallenge = (...args) => impl.createAuthChallenge(...args);
 export const consumeAuthChallenge = (...args) => impl.consumeAuthChallenge(...args);
 export const pruneAuth = (...args) => impl.pruneAuth(...args);

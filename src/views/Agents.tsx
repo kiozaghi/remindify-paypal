@@ -11,11 +11,9 @@ export default function Agents() {
   const delegated = state.obligations.filter(
     (o) => o.agent_id && !["done", "archived"].includes(o.status)
   );
-  const runs = state.agents.reduce((s, a) => s + (a.runs_30d || 0), 0);
-  const hours = Math.round(state.agents.reduce((s, a) => s + (a.hours_saved || 0), 0));
-  const success = (
-    state.agents.reduce((s, a) => s + a.success_rate, 0) / Math.max(1, state.agents.length)
-  ).toFixed(1);
+  const { agent_runs_30d: runs, agent_done_30d: done, agent_failed_30d: failed, agent_proofs_30d: proofs } = state.stats;
+  const attempts = done + failed;
+  const success = attempts ? ((done / attempts) * 100).toFixed(1) + "%" : "—";
   const partnerAgents = state.providers.filter((p) => p.kind === "agent");
 
   return (
@@ -45,17 +43,17 @@ export default function Agents() {
         <div className="metric-card">
           <span className="metric-icon tone-violet"><Icon name="bolt" size={18} /></span>
           <div><strong>{runs.toLocaleString()}</strong><em>Agent runs · 30 days</em></div>
-          <span className="metric-tag">+18% MoM</span>
+          <span className="metric-tag">{failed} failed</span>
         </div>
         <div className="metric-card">
-          <span className="metric-icon tone-teal"><Icon name="clock" size={18} /></span>
-          <div><strong>{hours}h</strong><em>Hours returned</em></div>
-          <span className="metric-tag">this month</span>
+          <span className="metric-icon tone-teal"><Icon name="receipt" size={18} /></span>
+          <div><strong>{proofs.toLocaleString()}</strong><em>Proofs filed · 30 days</em></div>
+          <span className="metric-tag">with a reference</span>
         </div>
         <div className="metric-card">
           <span className="metric-icon tone-amber"><Icon name="shield" size={18} /></span>
-          <div><strong>{success}%</strong><em>Success rate</em></div>
-          <span className="metric-tag">across the bench</span>
+          <div><strong>{success}</strong><em>Success rate</em></div>
+          <span className="metric-tag">{attempts ? `across ${attempts} finished` : "no finished runs yet"}</span>
         </div>
       </div>
 
@@ -112,7 +110,7 @@ export default function Agents() {
 
               <footer className="agent-foot">
                 <div><strong>{agent.runs_30d.toLocaleString()}</strong><em>runs</em></div>
-                <div><strong>{agent.success_rate}%</strong><em>success</em></div>
+                <div><strong>{agent.success_rate == null ? "—" : `${agent.success_rate}%`}</strong><em>success</em></div>
                 <div><strong>{agent.trust}</strong><em>trust</em></div>
                 <div><strong>{assigned.length}</strong><em>assigned</em></div>
                 <button className="agent-open" onClick={() => openAgent(agent.id)}>

@@ -21,7 +21,11 @@ export async function request<T = any>(path: string, method = "GET", payload?: a
     error.status = res.status;
     error.code = data.error;
     error.payload = data;
-    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+    if (
+      res.status === 401 &&
+      !path.startsWith("/api/auth/") &&
+      path !== "/api/account/delete"
+    ) {
       window.dispatchEvent(new CustomEvent("remindify:unauthorized"));
     }
     throw error;
@@ -39,6 +43,20 @@ export const api = {
   authLogin: (payload: { email: string; password: string }) =>
     request<{ user: AuthUser }>("/api/auth/login", "POST", payload),
   authLogout: () => request<{ ok: true }>("/api/auth/logout", "POST", {}),
+  authRequestReset: (email: string) =>
+    request<{ ok: true; message: string }>("/api/auth/reset/request", "POST", { email }),
+  authResetPassword: (payload: { token: string; password: string }) =>
+    request<{ ok: true; message: string }>("/api/auth/reset/confirm", "POST", payload),
+  authVerifyRequest: () =>
+    request<{ ok: true; message: string; already_verified?: boolean }>("/api/auth/verify/request", "POST", {}),
+  authVerifyConfirm: (token: string) =>
+    request<{ user: AuthUser; message: string }>("/api/auth/verify/confirm", "POST", { token }),
+  deleteAccount: (payload: { confirm: string; password?: string }) =>
+    request<{ ok: true; purged_workspace: boolean; message: string }>(
+      "/api/account/delete",
+      "POST",
+      payload
+    ),
   walletChallenge: (address: string) =>
     request<{ address: string; nonce: string; message: string; expires_at: string }>(
       "/api/auth/wallet/challenge",
@@ -60,8 +78,11 @@ export const api = {
     request(`/api/approvals/${id}/decide`, "POST", { decision, note }),
   createAgent: (agent: any) => request("/api/agents", "POST", agent),
   patchAgent: (id: string, patch: any) => request(`/api/agents/${id}`, "PATCH", patch),
+  connectExecutor: (id: string, url: string | null) =>
+    request(`/api/agents/${id}/executor`, "POST", { url }),
   hire: (payload: any) => request("/api/hire", "POST", payload),
   createKey: (name: string) => request("/api/keys", "POST", { name }),
+  rotateKey: (id: string) => request(`/api/keys/${id}/rotate`, "POST", {}),
   deleteKey: (id: string) => request(`/api/keys/${id}`, "DELETE"),
   sweep: () => request("/api/demo/sweep", "POST", {}),
   advance: (days: number) => request("/api/demo/advance", "POST", { days }),
@@ -80,4 +101,11 @@ export const api = {
     request(`/api/trust/escrows/${id}/fund`, "POST", { tx_hash }),
   releaseEscrow: (id: string, proof_receipt_id?: string | null, tx_hash?: string) =>
     request(`/api/trust/escrows/${id}/release`, "POST", { proof_receipt_id, tx_hash }),
+
+  sellerSave: (payload: any) => request("/api/seller", "PATCH", payload),
+  sellerBooking: (id: string, action: "accept" | "decline" | "start" | "proof", payload: any = {}) =>
+    request(`/api/seller/bookings/${id}/${action}`, "POST", payload),
+  sellerPayout: () => request("/api/seller/payouts", "POST", {}),
+  sellerPayoutReceived: (id: string) =>
+    request(`/api/seller/payouts/${id}/receive`, "POST", {}),
 };

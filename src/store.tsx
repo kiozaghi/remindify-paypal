@@ -15,6 +15,7 @@ type Overlays = {
   newAgent: boolean;
   newObligation: boolean;
   templates: boolean;
+  deleteAccount: boolean;
 };
 
 type Ctx = {
@@ -103,7 +104,9 @@ function makeActions(
     runNow: (id: string) =>
       run(async () => {
         const res = await api.run(id);
-        if (res?.message) toast("Agent dispatched", res.message, "agent");
+        if (res?.message) {
+          toast(res.executed ? "Agent executed" : "Plan drafted", res.message, res.executed ? "agent" : "default");
+        }
         return res;
       }),
     remove: (id: string) =>
@@ -116,11 +119,13 @@ function makeActions(
     decide: (id: string, decision: string, note = "") =>
       run(async () => {
         const res = await api.decide(id, decision, note);
-        toast(
-          decision === "approve" ? "Approved. Agent is on it." : "Declined",
-          decision === "approve" ? "The action ran and proof was filed." : "The agent will wait for new instructions.",
-          decision === "approve" ? "agent" : "default"
-        );
+        if (decision !== "approve") {
+          toast("Declined", "The agent will wait for new instructions.", "default");
+        } else if (res?.executed) {
+          toast("Approved and executed", res.message || "The action ran and proof was filed.", "agent");
+        } else {
+          toast("Approved", res?.message || "No executor is connected, so nothing ran.", "warn");
+        }
         return res;
       }),
     createAgent: (payload: any) =>
@@ -134,6 +139,18 @@ function makeActions(
       run(async () => {
         const res = await api.patchAgent(id, patch);
         if (patch.status) toast(patch.status === "paused" ? "Agent paused" : "Agent resumed", "Presence updated.", "default");
+        return res;
+      }),
+    connectExecutor: (id: string, url: string | null) =>
+      run(async () => {
+        const res = await api.connectExecutor(id, url);
+        toast(
+          url ? "Executor connected" : "Executor disconnected",
+          url
+            ? "Copy the signing secret now. It is shown once and never again."
+            : "The agent can draft and request approval, but it cannot act.",
+          url ? "agent" : "warn"
+        );
         return res;
       }),
     hire: (payload: any) =>
@@ -153,6 +170,12 @@ function makeActions(
         toast("Agent key issued", "Copy it now — it's only shown once.", "agent");
         return res;
       }),
+    rotateKey: (id: string) =>
+      run(async () => {
+        const res = await api.rotateKey(id);
+        toast("Key rotated", "The old secret stopped working. Copy the new one now.", "agent");
+        return res;
+      }),
     deleteKey: (id: string) =>
       run(async () => {
         const res = await api.deleteKey(id);
@@ -166,6 +189,8 @@ function makeActions(
         if (res?.proposed) bits.push(`${res.proposed} ready for approval`);
         if (res?.executed) bits.push(`${res.executed} executed`);
         if (res?.drafted) bits.push(`${res.drafted} plans drafted`);
+        if (res?.blocked) bits.push(`${res.blocked} waiting on an executor`);
+        if (res?.failed) bits.push(`${res.failed} failed`);
         toast(
           "Agent sweep complete",
           bits.length ? bits.join(" · ") : "Nothing needed a decision. Portfolio is quiet.",
@@ -178,7 +203,9 @@ function makeActions(
         const res = await api.advance(days);
         const bits = [];
         if (res?.proposed) bits.push(`${res.proposed} escalated for approval`);
-        if (res?.executed) bits.push(`${res.executed} auto-executed`);
+        if (res?.executed) bits.push(`${res.executed} executed`);
+        if (res?.blocked) bits.push(`${res.blocked} waiting on an executor`);
+        if (res?.failed) bits.push(`${res.failed} failed`);
         toast(
           `${days} days later`,
           bits.length ? bits.join(" · ") : "Risk re-scored. Agents re-planned.",
@@ -240,6 +267,56 @@ function makeActions(
         toast("Escrow released", "A signed receipt satisfied the release condition.", "success");
         return res;
       }),
+    saveSeller: (patch: any) =>
+      run(async () => {
+        const res = await api.sellerSave(patch);
+        toast("Storefront saved", "Buyers see the same profile you do.", "success");
+        return res;
+      }),
+    bookingAction: (
+      id: string,
+      action: "accept" | "decline" | "start" | "proof",
+      payload: any = {}
+    ) =>
+      run(async () => {
+        const res = await api.sellerBooking(id, action, payload);
+        const title = res?.booking?.title || "Booking";
+        if (action === "accept") {
+          toast("Booking accepted", `${title} is yours. Start when the scope is clear.`, "success");
+        } else if (action === "decline") {
+          toast("Booking declined", "The buyer keeps the brief and can book elsewhere.", "default");
+        } else if (action === "start") {
+          toast("Work started", `${title} is in progress.`, "agent");
+        } else {
+          const release = res?.earning?.release_at
+            ? new Date(res.earning.release_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+            : null;
+          toast(
+            "Proof filed, receipt issued",
+            release
+              ? `$${Number(res.earning.amount).toFixed(2)} clears the hold on ${release}.`
+              : "The receipt is on file.",
+            "success"
+          );
+        }
+        return res;
+      }),
+    requestSellerPayout: () =>
+      run(async () => {
+        const res = await api.sellerPayout();
+        toast(
+          "Payout requested",
+          `${res?.payout?.ref || "The payout"} is recorded. Confirm receipt once the money lands.`,
+          "success"
+        );
+        return res;
+      }),
+    confirmSellerPayout: (id: string) =>
+      run(async () => {
+        const res = await api.sellerPayoutReceived(id);
+        toast("Payout confirmed", "The ledger now shows it as paid.", "success");
+        return res;
+      }),
   };
 }
 
@@ -256,6 +333,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     newAgent: false,
     newObligation: false,
     templates: false,
+    deleteAccount: false,
   });
   const toastId = useRef(0);
 

@@ -37,7 +37,7 @@ Vercel functions do not have a persistent writable filesystem, so **SQLite canno
 4. Deploy. On the first API request the Postgres store creates its tables and seeds the demo workspace. Accounts, sessions and workspace data now survive redeploys and cold starts.
 5. If Google sign-in is enabled, register `https://your-app.vercel.app/api/auth/google/callback` as an authorized redirect URI and set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 
-Do **not** set `REMINDIFY_DB`, `DATABASE_SSL=false` or `PG_NO_LOCK=1` on Vercel. The Postgres store serializes writes with an advisory lock; this keeps the single shared demo workspace consistent, but it is not per-tenant isolation yet.
+Do **not** set `REMINDIFY_DB`, `DATABASE_SSL=false` or `PG_NO_LOCK=1` on Vercel. The Postgres store serializes each request's writes under an advisory lock; that bounds write throughput but every row is still partitioned by `workspace_id`, and each account resolves to its own workspace.
 
 If a CLI deployment is blocked because the latest Git commit author is not a member of the Vercel team, either add that email to the team or deploy from a clean copy without a `.git` directory. GitHub auto-deploy also requires the Vercel GitHub app to have access to this private repository.
 
@@ -48,11 +48,11 @@ If a CLI deployment is blocked because the latest Git commit author is not a mem
 | Surface | What it does |
 | --- | --- |
 | **Public site** | Story-led landing page, pricing, security model, about, privacy, terms and auth screens, all in the same warm editorial system. |
-| **Accounts** | Email/password, Google OAuth and wallet sign-in; 30-day HttpOnly sessions; every app API route is gated. |
+| **Accounts** | Email/password, Google OAuth and wallet sign-in; emailed email confirmation and single-use password reset; 30-day HttpOnly sessions; every app API route is gated. |
 | **Today** | Greeting, live approvals, closest-to-the-edge obligations, portfolio pulse, agent wire, failsafe policy. |
 | **Obligations** | The register. Search, filter by risk/owner/autonomy, inline autonomy control, risk meters, due dates, backups. |
 | **Capture** | Paste a letter, email or messy note, or drop a text-based PDF. A deterministic parser extracts obligations, dates, amounts, recurrence, provider and category — then asks you to review before scheduling. No external AI API is called; text-based PDFs are read in the browser, while scanned PDFs need OCR or a vision service. |
-| **Agents** | Agent passports: role, scopes, trust, runs, success rate, autonomy ceiling, obligations on desk, recent runs, exportable passport JSON. |
+| **Agents** | Agent passports: role, scopes, trust, runs, success rate, autonomy ceiling, execution connector, obligations on desk, recent runs, exportable passport JSON. |
 | **Marketplace** | Vetted humans and agents side by side. Fixed price, escrow on proof, scoped access, SLA. Attach a provider to an obligation or post a new job. |
 | **Activity & proof** | Immutable event stream, filterable by agents/humans/system/API/proof, exportable audit log, proof vault. |
 | **Trust layer** | Offchain proof receipts, EIP-712 signing, optional Base/Celo anchoring, and USDC escrow intents that release on proof. Preview mode needs no wallet or contract. |
@@ -62,16 +62,16 @@ Plus: **⌘K command palette**, obligation drawer with autonomy + checklist + pr
 
 ### The demo, in 90 seconds
 
-1. **Today** — 5 approvals are waiting. Open one, then **Approve & run**. The agent executes, files proof, and the obligation advances to its next cycle.
+1. **Today** — 5 approvals are waiting. Open one and **Approve**. With no executor connected, the decision is recorded and the obligation stays open for you. Connect an executor in an agent's passport, then the same button reads **Approve & run** and the agent executes.
 2. **Capture** — choose “Insurance renewal letter” → **Parse & structure**. One obligation appears with due date, amount, provider, recurrence and the exact source sentence. Confirm and schedule it.
 3. **Obligations** — open any row. Change autonomy from Notify to Auto and watch the risk score recalculate. Add proof to complete it.
-4. **Agents** — open **Ledger**’s passport. See its ceiling, scopes, trust and work on desk.
+4. **Agents** — open **Ledger**’s passport. See its ceiling, scopes, trust, work on desk, and the execution connector.
 5. **Marketplace** — delegate the payroll filing to a human PA or an agent. Access is scoped to that obligation; payment releases on proof.
 6. **Trust layer** — every completion files an offchain receipt. Open it, **Sign** with a wallet or copy the EIP-712 payload. With a contract configured, **Anchor** writes the proof hash to Base. Escrow intents release only against a signed or anchored receipt.
 7. **Agent access** — hit **Test live call**, create a key, or run the MCP server.
-8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Autopilot obligations execute and reschedule, approvals escalate, risk moves. Reset from the clock chip.
+8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Agents draft plans and escalate approvals. Autopilot obligations execute only where a connector is connected; otherwise the sweep tells you how many are waiting on one. Reset from the clock chip.
 
-Nothing here is a static mock: every button writes to the active store — SQLite locally, Postgres on Vercel — and re-renders from the API.
+Nothing here is a static mock: every button writes to the active store — SQLite locally, Postgres on Vercel — and re-renders from the API. Agent work is only reported as executed when a connector answers.
 
 ---
 
@@ -91,9 +91,80 @@ That structure is what makes it safe to hand recurring work to software. It is a
 
 - Every agent has a **passport**: scopes, trust, autonomy ceiling and a machine-readable JSON export.
 - The same register is available over **REST** (`/api/v1/*`) and **MCP** (`mcp/server.mjs`).
-- Machine calls are attributed to a key, logged in the same event stream as human actions, and rate-limited by scope in production.
+- Machine calls are attributed to a key, logged in the same event stream as human actions, metered against the plan and rate-limited per key.
 - Agents can read, create and complete obligations — but completion without proof is rejected by the MCP tool contract.
 - Autonomy above an agent’s ceiling still requires a human approval.
+
+### Execution connectors
+
+An agent cannot act until you connect an executor. In an agent's passport, paste an `https://` endpoint; Remindify shows the signing secret once. From then on, every action the agent takes is a real HTTP `POST` to that endpoint, signed with HMAC-SHA256.
+
+```http
+POST /your/execute
+x-remindify-event: obligation.execute
+x-remindify-run: run_ab12cd3
+x-remindify-timestamp: 1761600000000
+x-remindify-signature: sha256=<hmac>
+content-type: application/json
+```
+
+The signature is `HMAC-SHA256(secret, "<timestamp>.<raw body>")`. Verify it before acting:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+const expected = createHmac("sha256", process.env.REMINDIFY_EXECUTOR_SECRET)
+  .update(`${req.headers["x-remindify-timestamp"]}.${rawBody}`)
+  .digest("hex");
+const given = String(req.headers["x-remindify-signature"] || "").replace(/^sha256=/, "");
+const ok = given.length === expected.length &&
+  timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+```
+
+Body:
+
+```json
+{
+  "event": "obligation.execute",
+  "run_id": "run_ab12cd3",
+  "issued_at": "2026-10-28T09:00:00.000Z",
+  "workspace": { "id": "ws_5f2c…", "name": "Exopya Studio" },
+  "agent": { "id": "ag_ledger", "name": "Ledger", "handle": "ledger" },
+  "obligation": { "id": "ob_rent", "title": "Pay rent", "provider": "…", "amount": 750, "currency": "USD", "due_at": "…", "autonomy": "autopilot" },
+  "action": "Executed the obligation",
+  "detail": "Pay $750 to … using the verified account, then archive the receipt."
+}
+```
+
+Return any `2xx` and include `{"proof": "your-proof-reference"}` (or `receipt_url`) to file it as evidence. A non-2xx response, timeout or network error records a **failed** run, leaves the obligation open, and surfaces the error in the passport. A `2xx` without a proof reference is recorded as `connector_<status>` so the gap is visible.
+
+Transient failures (network errors, timeouts, `408`, `429` and `5xx`) are retried up to three times with exponential backoff; other `4xx` answers are final. Each attempt carries a fresh timestamp and signature plus `x-remindify-attempt`, so an executor can dedupe on `x-remindify-run` while still verifying every request.
+
+When those inline attempts still fail transiently, the execution is saved to a durable outbox instead of being lost. The job keeps the original run id, retries with exponential backoff (one minute, then two, four, eight… capped at six hours) for up to five attempts, and completes the obligation with proof when an executor finally answers. Jobs are ordinary workspace rows, so they survive a restart; a connector that is permanently broken or an obligation that closes first ends the job instead of retrying forever. The local server sweeps the outbox every 30 seconds (`OUTBOX_INTERVAL_MS`). Serverless deployments have no timer, so point a scheduler at `GET` or `POST /api/cron/outbox` with `Authorization: Bearer $OUTBOX_SECRET`; the route is absent unless the secret is set.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `EXECUTOR_ATTEMPTS` | `3` | Inline attempts per call (max 5) |
+| `EXECUTOR_RETRY_BASE_MS` | `300` | Inline backoff base |
+| `EXECUTOR_TIMEOUT_MS` | `8000` | Per-attempt timeout |
+| `OUTBOX_MAX_ATTEMPTS` | `5` | Delayed attempts after inline failures (max 10) |
+| `OUTBOX_RETRY_BASE_MS` | `60000` | Delayed backoff base |
+| `OUTBOX_INTERVAL_MS` | `30000` | Local sweep interval (`0` disables) |
+| `OUTBOX_SECRET` | unset | Enables the outbox cron route |
+| `CRON_SECRET` | unset | Enables the sweep cron route (falls back to `OUTBOX_SECRET`) |
+
+Because a crash can land between claiming a job and recording the result, delivery is at-least-once. Executors should treat `x-remindify-run` as the idempotency key.
+
+### Scheduled sweeps
+
+`GET` or `POST /api/cron/sweep` runs the same sweep as the **Run agent sweep** button for every workspace that has obligations: autopilot obligations execute where a connector is connected, prepare obligations get a plan, approve obligations raise an approval request. It requires `Authorization: Bearer $CRON_SECRET` (or `OUTBOX_SECRET` when only that one is set) and returns `404` when neither is configured. Vercel Cron issues `GET`; other schedulers can `POST`.
+
+Replaying the call is safe. Any obligation with a successful run in the previous six hours is skipped, and each workspace holds a five-minute lease so a second scheduler cannot enter it while the first is still calling connectors. The sweep stops after twenty seconds and reports the remaining workspaces as `deferred`, so it fits inside a serverless function limit; the next run picks them up. The response reports `{ workspaces, skipped, deferred, scanned, proposed, executed, drafted, blocked, failed, digests, digest_failed, pruned_events, pruned_runs }`. Local development keeps sweeps manual so a demo only moves when you press the button; point a scheduler at the route hourly in production.
+
+When `EMAIL_WEBHOOK_URL` is set, the same call sends a daily digest to every confirmed email address in each swept workspace: obligations due in the next seven days and approvals waiting on a decision, with a link back to `/today`. It is sent at most once per UTC day per workspace, so replays are harmless, and it is capped at ten recipients and fifteen lines per section. Sends run in parallel; failures are counted in `digest_failed` and do not stop the sweep, and the digest is retried on the next call if every send failed. Each digest carries a signed one-click unsubscribe link; `GET /api/digest/unsubscribe?token=…` needs no session, is signed per recipient with a per-workspace secret in workspace meta, and the opt-out is honoured by later sends. The confirmation page links back with the same token so the mailbox can turn the digest on again.
+
+Set `RETENTION_DAYS` to prune `events` and `runs` older than that many days from each swept workspace. Retention is off by default, workspaces without obligations are not visited, and receipts, escrows, obligations and user records are never pruned. A failed prune never fails the sweep.
+
+Without a connector the agent is draft-only: sweeps produce plans, approvals are recorded but nothing runs, and nothing is marked complete. Executor URLs are resolved and checked for a public address, and that address is pinned for the send, so a second DNS answer cannot bounce the call inward. Redirects are refused. `EXECUTOR_ALLOW_LOCAL=1` permits `http://localhost` for local development only. The signing secret is stored server-side, stripped from state, exports and API responses, and rotated whenever you reconnect.
 
 ---
 
@@ -136,9 +207,9 @@ public/fonts/        self-hosted fonts
 
 **Local development and Docker** use SQLite at `data/remindify.db`. Use **Reset demo** (clock chip, after time travel) or `POST /api/demo/reset` to restore the seeded workspace. Export everything with `GET /api/export`. Point the store elsewhere with `REMINDIFY_DATA_DIR` or `REMINDIFY_DB`.
 
-**Vercel** uses Postgres. Set `DATABASE_URL` (or one of Vercel's `POSTGRES_*` variables) and the server switches stores automatically. The Postgres store creates its tables on first use, loads a request-scoped snapshot inside a transaction, and flushes it before the response ends. Writes are serialized with a Postgres advisory lock so the single shared demo workspace stays consistent across serverless instances.
+**Vercel** uses Postgres. Set `DATABASE_URL` (or one of Vercel's `POSTGRES_*` variables) and the server switches stores automatically. The Postgres store creates its tables on first use, loads a request-scoped snapshot inside a transaction, and flushes it before the response ends. Writes are serialized with a Postgres advisory lock so requests from every workspace stay consistent across serverless instances.
 
-Accounts and sessions live in separate `users`, `auth_sessions` and `auth_challenges` tables in both stores. A demo reset never deletes users or signs anyone out.
+Accounts and sessions live in separate `users`, `auth_sessions`, `auth_challenges` and `auth_tokens` tables in both stores. A demo reset never deletes users or signs anyone out.
 
 To run against a local Postgres instead of SQLite:
 
@@ -205,11 +276,50 @@ https://your-domain.example/api/auth/google/callback
 
 Then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Use `GOOGLE_REDIRECT_URI` if the callback differs from `${PUBLIC_ORIGIN}/api/auth/google/callback`. Without credentials, the Google button shows a short configuration notice and email/wallet remain available.
 
+### Password reset
+
+`POST /api/auth/reset/request` accepts `{ "email" }` and always answers `202` with the same message, so it never reveals whether an account exists. For a real account it stores a SHA-256 digest of a 32-byte token with a 30-minute expiry and emails a link to `/login?reset=…`. `POST /api/auth/reset/confirm` accepts `{ "token", "password" }`, consumes the token once (expired, reused or wrong-purpose tokens fail with `400`), updates the scrypt hash and deletes every existing session for that account.
+
+Reset email goes through a single HTTPS webhook, so the app holds no SMTP credentials. Point `EMAIL_WEBHOOK_URL` at an adapter that accepts `{ to, subject, text }`, and set `EMAIL_WEBHOOK_SECRET` to sign it. Signed requests carry `x-remindify-timestamp` and `x-remindify-signature: sha256=<HMAC of "<timestamp>.<raw body>">`. Without `EMAIL_WEBHOOK_URL` the endpoints return `503 email_not_configured` and the “Forgot password?” link stays hidden. Following a reset link also marks the mailbox as confirmed.
+
+### Email confirmation
+
+Signup sends a confirmation link to `/login?verify=…` when email is configured. The token is hashed, single-use and valid for 24 hours; a resend replaces the previous link. `POST /api/auth/verify/request` (signed in) sends or resends it, and `POST /api/auth/verify/confirm` with `{ "token" }` records `email_verified_at`. Google sign-ins and password resets count as confirmed because both prove control of the address. Confirmation is soft for the register: unverified accounts keep full access and only see an in-app banner with a Resend button. Wallet accounts have no email and never see the banner.
+
+Plan changes are stricter once `EMAIL_WEBHOOK_URL` is set: `POST /api/billing/plan` answers `403 {"error":"email_unverified"}` when an email account asks for a paid plan without confirming first. Downgrades to Free and wallet-only accounts stay open, and without an email provider nobody could confirm, so the gate stays open in that preview configuration.
+
+### Account deletion
+
+“Delete account…” in the account menu calls `POST /api/account/delete` with `{ "confirm": "delete" }`. Password accounts must also send the current password; wrong or missing credentials return `401` and change nothing. A successful call deletes that account's sessions and single-use tokens, purges its private workspace (`items` and `meta`), removes the user row and clears the session cookie. Accounts that share the demo workspace lose the account but not the shared register, which stays available to other demo accounts. There is no soft-delete window, so the dialog links to `GET /api/export` first. The endpoint is rate limited per IP.
+
+### Region gating
+
+Set `BLOCKED_COUNTRIES` to a comma-separated list of ISO 3166-1 alpha-2 codes (`KP,IR,SY,CU`) to refuse account creation and escrow money movement for visitors geolocated there. The default is empty: Remindify does not decide on its own which jurisdictions its operator may serve. When configured, these calls answer `451 {"error":"region_blocked"}`:
+
+- `POST /api/auth/signup`, `GET /api/auth/google` (and its callback, which redirects to `/login?notice=region_blocked`), `POST /api/auth/wallet/challenge` and `POST /api/auth/wallet/verify`;
+- `POST /api/trust/escrows`, `/fund` and `/release`.
+
+Sign-in for an existing account still works, so someone who moves or travels keeps access to their register; only new accounts and new money movement are refused.
+
+### Sanctions screening
+
+Set `SANCTIONS_API_URL` to screen the signed-in account's connected wallet before escrow money moves. Remindify POSTs `{ "addresses": [...] }` and expects `{ "hits": [{ "address", "reason" }] }`; a matching address stops `POST /api/trust/escrows`, `/fund` and `/release` with `403 {"error":"sanctions_hit"}` and the hit list. `SANCTIONS_API_KEY` adds a Bearer header and `SANCTIONS_TIMEOUT_MS` bounds the call (5 seconds by default). A provider outage lets the movement through by default; set `SANCTIONS_FAIL_CLOSED=1` to answer `503 {"error":"sanctions_unavailable"}` instead.
+
+This is a seam, not a compliance program: only wallets the account has connected are screened, escrows funded from an external wallet and marketplace provider payout addresses are not, and hits are reported as the provider returns them. Pick a provider with the coverage and record-keeping your jurisdiction requires.
+
+The country comes from `x-vercel-ip-country`, `cf-ipcountry` or `x-country-code`, in that order. Requests with no usable header are allowed so local development and self-hosted installs without a geo proxy keep working. These headers are only trustworthy behind a proxy you control: a client that reaches the Node server directly can send any value, so terminate traffic at Vercel or Cloudflare, or have your own proxy set the header from a source you trust. This is coarse geolocation, not a sanctions screening service; combine it with a provider check if you are required to screen individuals.
+
 ### API protection
 
-`/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
+`/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`, `/api/account/delete`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
 
-The server currently gates one shared demo workspace. Accounts do not yet partition obligations, agents or proof between tenants; add workspace ownership before treating the auth gate as multi-tenant isolation.
+The server partitions obligations, agents, runs, receipts, escrows, API keys and meta keys by workspace. A session cookie resolves to that account's workspace; a machine API key resolves to the workspace that issued it. New accounts get a seeded copy of the demo register in their own workspace, and `POST /api/demo/reset` only clears the caller's workspace. Auth rows (users, sessions, wallet challenges) live outside any workspace, so a reset never signs anyone out or touches another account.
+
+Every API response carries `x-content-type-options: nosniff`, `x-frame-options: DENY` with `content-security-policy: frame-ancestors 'none'`, `referrer-policy: strict-origin-when-cross-origin` and a `permissions-policy` that turns off camera, microphone, geolocation and payment. `strict-transport-security` is added when the request arrives over TLS. Static pages served straight from the Vercel CDN never reach the Node handler, so they carry only the platform's HSTS header; the same values belong in `vercel.json` once the current worktree changes land.
+
+`POST /api/cron/outbox` and `POST /api/cron/sweep` are machine-only: they require a Bearer secret and return `404` when none is configured, so no session can reach them. See [Execution connectors](#execution-connectors) for the retry contract and [Scheduled sweeps](#scheduled-sweeps) for the sweep contract. The other public `/api/` routes are `GET /api/digest/unsubscribe` and `GET /api/digest/subscribe`, which only accept a recipient-signed token.
+
+Existing single-workspace databases are migrated in place: rows that predate this change are assigned to the `ws_demo` workspace.
 
 ### Status hints
 
@@ -312,7 +422,16 @@ When an address is present, the server checks transaction receipts against the c
 
 `contracts/RemindifyAttestations.sol` verifies the EIP-712 signature onchain and stores `anchored[receiptId]`. `contracts/RemindifyEscrow.sol` is a minimal USDC escrow that releases only when the attestation registry says the proof receipt is anchored.
 
-Both are **reference implementations, unaudited and not deployed**. They compile with `solc 0.8.24`, which is pinned as a dev dependency:
+Both are **reference implementations and unaudited**. They are deployed to Base Sepolia only; nothing is deployed to mainnet.
+
+| Network | Contract | Address |
+| --- | --- | --- |
+| `base-sepolia` | `RemindifyAttestations` | [`0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9`](https://sepolia.basescan.org/address/0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9) |
+| `base-sepolia` | `RemindifyEscrow` | [`0x647F30587B925F1aFb71D3C9CE25CfbDA17872db`](https://sepolia.basescan.org/address/0x647F30587B925F1aFb71D3C9CE25CfbDA17872db) |
+
+Both contracts show an exact-match source verification on Basescan. Deployment records, including transaction hashes and block numbers, are written to `contracts/deployments/<network>.json`.
+
+They compile with `solc 0.8.24`, which is pinned as a dev dependency:
 
 ```bash
 npm run contracts:compile
@@ -334,7 +453,28 @@ The script prints the `*_RPC_URL`, `*_ATTESTATION_CONTRACT` and `*_ESCROW_CONTRA
 
 Verify both contracts on Basescan or Celoscan after deployment. Use `solc 0.8.24` with the optimizer enabled at 200 runs, matching `contracts/compile.mjs`.
 
-After deploying, set the env vars, restart the server, and rehearse the full flow: file a receipt, sign it, anchor it, then fund and release an escrow. The product works without a deployment in preview mode.
+After deploying, set the env vars, restart the server, and rehearse the full flow. The product works without a deployment in preview mode.
+
+### Rehearsing the deployed flow
+
+```bash
+npm run chain:rehearse
+```
+
+The script drives the real HTTP API and chain with one funded wallet: it files a receipt, signs it, anchors it, opens an escrow, approves and funds USDC, then releases on proof. It prints every transaction hash and explorer link. Before signing anything it checks the wallet has gas and test USDC, that the server reports `configured` mode, and that the server's contract addresses match the shell's.
+
+Without `REHEARSAL_PRIVATE_KEY` it generates a throwaway wallet, prints its address, and waits for you to fund it, so the key never touches the shell history or disk. It also accepts an existing key.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REHEARSAL_PRIVATE_KEY` | generated | Payer and signer. Needs native gas and test USDC. |
+| `REHEARSAL_CHAIN` | `base-sepolia` | Any key from `contracts/networks.mjs`. |
+| `REHEARSAL_USDC` | `1` | Amount to fund. |
+| `REHEARSAL_WAIT_SECONDS` | `900` | How long to wait for a generated wallet to be funded. |
+| `REHEARSAL_API` | `http://localhost:4178` | Running server. |
+| `REHEARSAL_PAYEE` | the payer | Address the escrow releases to. |
+
+The wallet needs test USDC from `faucet.circle.com`; the app has no UI for funding or releasing with a wallet yet, which is why this runs through the API.
 
 ### Trust API
 
@@ -345,7 +485,7 @@ After deploying, set the env vars, restart the server, and rehearse the full flo
 | `POST` | `/api/trust/receipts/:id/sign` | Verify and store `{ signature, signer }`. |
 | `POST` | `/api/trust/receipts/:id/anchor` | Verify `{ tx_hash }` against the configured contract. |
 | `GET` | `/api/trust/receipts/:id/calldata` | Prepared `anchor(...)` calldata. |
-| `POST` | `/api/trust/escrows` | Open an intent. Requires `jurisdiction_ack: true`. |
+| `POST` | `/api/trust/escrows` | Open an intent. Requires `jurisdiction_ack: true`; `451` in a blocked region. |
 | `POST` | `/api/trust/escrows/:id/commit` | Commit the intent offchain. |
 | `POST` | `/api/trust/escrows/:id/fund` | Record `{ tx_hash }` when an escrow contract is configured. |
 | `POST` | `/api/trust/escrows/:id/release` | Release against `{ proof_receipt_id }` (or the latest signed receipt). |
@@ -364,6 +504,7 @@ curl -X POST http://localhost:4178/api/v1/trust/receipts \
 ### Guardrails
 
 - **Ethiopia stays offchain.** No wallets or USDC payments for Ethiopian obligations until the NBE authorises virtual-asset activity. Escrow creation requires an explicit `jurisdiction_ack: true` at the API boundary and a required checkbox in the UI. Celo is gated to non-Ethiopian counterparties.
+- **Operator-managed region list.** `BLOCKED_COUNTRIES` refuses new accounts and escrow movement from listed countries. It is empty unless the operator sets it, and it reads edge-proxy geolocation, not a sanctions list.
 - **No token.** No points, no airdrop, no speculative asset.
 - **No custody.** The server never holds a key and never moves funds.
 - **No forced wallet.** A receipt is useful the moment it is filed.
@@ -374,20 +515,36 @@ curl -X POST http://localhost:4178/api/v1/trust/receipts \
 
 ## API
 
-All machine endpoints require `Authorization: Bearer rfy_live_...`.
+All machine endpoints require `Authorization: Bearer rfy_live_...`. Issued keys are stored as a SHA-256 digest plus a display prefix; the full secret is returned once, in the creation response, and never again. New keys expire after 90 days by default and can be rotated in Agent access (or `POST /api/keys/:id/rotate`), which replaces the secret and resets the expiry while keeping the key's name and scopes. Expired keys fail with `401 {"error":"key_expired"}`. New workspaces start with no keys so every credential is one the operator issued. The seeded demo workspace keeps its plaintext demo keys so the public demo works out of the box. Requests outside a key's scopes fail with `403 {"error":"missing_scope"}`.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/obligations` | Full register with risk, owner, autonomy, proof and recurrence. |
-| `POST` | `/api/v1/obligations` | Create an obligation. `title` and `due_at` required. |
-| `GET` | `/api/v1/obligations/:id` | One obligation with history and risk. |
-| `POST` | `/api/v1/obligations/:id/complete` | File proof and advance the schedule. |
-| `GET` | `/api/v1/risk` | Coverage, exposure, counts and top risks. |
-| `GET` | `/api/v1/agents` | Roster with scopes and autonomy ceilings. |
-| `GET` | `/api/v1/trust` | Receipts, escrows, networks and trust stats. |
-| `POST` | `/api/v1/trust/receipts` | File a proof receipt from an agent. |
+Every response carries `x-ratelimit-limit` and `x-ratelimit-remaining`; a key that exceeds its per-minute window gets `429 {"error":"rate_limited"}` with `Retry-After`. The limit is 600 requests per minute per key and can be changed with `MACHINE_RATE_LIMIT`. The counter lives in workspace meta, so it holds across instances sharing the same database.
 
-App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API.
+Mutating machine calls accept an `Idempotency-Key` header. A retry with the same key and body within 24 hours replays the original response and sets `Idempotent-Replay: true`; reusing the key with a different body returns `409 {"error":"idempotency_conflict"}`. This is how a retrying agent avoids creating or completing an obligation twice.
+
+| Method | Path | Scope | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/obligations` | `obligations:read` | Full register with risk, owner, autonomy, proof and recurrence. |
+| `POST` | `/api/v1/obligations` | `obligations:write` | Create an obligation. `title` and `due_at` required. Idempotent. |
+| `GET` | `/api/v1/obligations/:id` | `obligations:read` | One obligation with history and risk. |
+| `POST` | `/api/v1/obligations/:id/complete` | `obligations:write` | File proof and advance the schedule. Idempotent. |
+| `GET` | `/api/v1/risk` | `risk:read` | Coverage, exposure, counts and top risks. |
+| `GET` | `/api/v1/agents` | `agents:read` | Roster with scopes and autonomy ceilings. |
+| `GET` | `/api/v1/trust` | `risk:read` | Receipts, escrows, networks and trust stats. |
+| `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. Idempotent. |
+
+App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/agents/:id/executor`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API and `/api/cron/*` schedulers.
+
+### Plans and usage
+
+Each workspace has a plan and two real allowances: agent keys and machine calls per calendar month. Calls are metered in the workspace's own meta and reset on the first request of a new month; exceeding either allowance returns `402` (keys) or `429` (calls) with `error: "plan_limit"`.
+
+| Plan | Price | Agent keys | Machine calls / month |
+| --- | --- | --- | --- |
+| Free | $0 | 3 | 500 |
+| Studio | $49 | 25 | 50,000 |
+| Firm | $199 | 100 | 500,000 |
+
+`GET /api/billing` returns the current plan, usage and plan catalogue. `POST /api/billing/plan` is refused with `503 billing_not_configured` until a payment provider is connected; set `BILLING_ALLOW_PLAN_SWITCH=1` for a demo or manually invoiced deployment. No card data touches this server.
 
 ```bash
 curl http://localhost:4178/api/v1/risk \
@@ -460,7 +617,7 @@ Open `http://localhost:4178`. The database is created, seeded and protected by t
 
 For Render, Fly.io or Railway, use the Dockerfile, expose port `4178`, and mount a persistent volume at `/app/data`. Set `PORT` only if the platform requires it, and set `PUBLIC_ORIGIN=https://your-domain.example` plus `COOKIE_SECURE=true` behind HTTPS. Public demos should use a fresh API key and should not expose the seeded demo key.
 
-This is still a single-workspace prototype with an account gate. Do not run it as a public multi-tenant service until workspace isolation, key hashing, shared rate limiting and password reset are added.
+Accounts get separate workspaces, but this is still a prototype. Do not run it as a public multi-tenant service until email confirmation is enforced rather than advisory.
 
 ---
 
@@ -468,16 +625,14 @@ This is still a single-workspace prototype with an account gate. Do not run it a
 
 This is a complete product prototype, not a hardened multi-tenant service. Before charging money:
 
-- add per-workspace data isolation; accounts currently gate one shared demo workspace;
-- move the JSON-per-row store to Postgres with row-level security;
-- add key hashing, shared rate limiting, idempotency keys and per-scope enforcement on the machine API;
-- add email verification and a password-reset flow;
-- make webhooks signed and retryable, and add an outbox;
-- encrypt proof documents at rest and add retention/deletion controls;
+- add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
+- add a durable job runner for machine API writes (keys are hashed, scoped, expiring and rate-limited, mutating calls accept idempotency keys, connector retries persist in an outbox, and scheduled sweeps are replay-safe);
+- build shared workspaces and membership; paid plan changes are already gated on a confirmed email, but there is no sharing surface yet;
+- keep proof documents out of the database (only hashes are stored) or add encrypted file storage with per-file deletion before accepting uploads; activity retention is `RETENTION_DAYS` and account deletion purges the workspace;
 - replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
-- add billing and tax handling;
+- connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;
 - take the reference contracts through an audit, add upgrade/ops procedures, and test anchor/fund/release against a deployed contract on Base Sepolia before mainnet;
-- add sanctions/geo checks to enforcement, not just the `jurisdiction_ack` boundary;
+- connect a real sanctions provider behind the `SANCTIONS_API_URL` seam (it screens the payer's connected wallet on escrow money movement, but external-wallet funding and provider payout addresses are out of scope);
 - confirm or replace the placeholder `hello@remindify.app` and `security@remindify.app` inboxes.
 
 The design decisions that matter — autonomy ceilings, proof requirements, audit trail, human/agent parity — are already in the data model.

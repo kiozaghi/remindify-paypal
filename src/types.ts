@@ -5,6 +5,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string | null;
+  email_verified?: boolean;
   avatar_url: string | null;
   wallet_address: string | null;
   providers: Array<"email" | "google" | "wallet">;
@@ -15,6 +16,8 @@ export interface AuthConfig {
   email: boolean;
   google: boolean;
   wallet: boolean;
+  reset?: boolean;
+  verify?: boolean;
 }
 
 export interface Risk {
@@ -70,12 +73,14 @@ export interface Agent {
   autonomy_ceiling: Autonomy;
   trust: number;
   runs_30d: number;
-  success_rate: number;
+  success_rate: number | null;
+  proofs_30d: number;
   cost_per_run: number;
   status: string;
   scopes: string[];
-  hours_saved: number;
   last_active: string;
+  executor_url?: string | null;
+  executor_configured?: boolean;
   custom?: boolean;
 }
 
@@ -93,6 +98,8 @@ export interface Approval {
   created_at: string;
   decided_at?: string;
   decision_note?: string;
+  executed?: boolean;
+  execution_error?: string;
   obligation?: Obligation | null;
   agent?: Agent | null;
 }
@@ -107,6 +114,8 @@ export interface Run {
   proof: string | null;
   duration_ms: number;
   cost: number;
+  connector_status?: number | null;
+  error?: string | null;
   created_at: string;
   agent?: Agent | null;
   obligation?: Obligation | null;
@@ -151,6 +160,9 @@ export interface ApiKey {
   scopes: string[];
   created_at: string;
   last_used: string | null;
+  expires_at?: string | null;
+  rotated_at?: string | null;
+  expired?: boolean;
 }
 
 export interface TrustNetwork {
@@ -302,10 +314,172 @@ export interface Stats {
   coverage: number;
   delegated: number;
   with_backup: number;
-  saved_year: number;
   agent_runs_30d: number;
-  hours_saved: number;
-  streak_weeks: number;
+  agent_done_30d: number;
+  agent_failed_30d: number;
+  agent_proofs_30d: number;
+}
+
+export type SellerBookingStatus =
+  | "requested"
+  | "accepted"
+  | "in_progress"
+  | "delivered"
+  | "completed"
+  | "declined";
+
+export type PayoutMethod = "none" | "bank" | "wallet" | "usdc";
+
+export interface SellerPayoutAccount {
+  method: PayoutMethod;
+  label: string;
+  account_last4: string;
+  currency: string;
+  country: string;
+  connected: boolean;
+  updated_at: string | null;
+}
+
+export interface SellerProfile {
+  id: string;
+  name: string;
+  headline: string;
+  kind: "human" | "agent";
+  specialty: string;
+  description: string;
+  rating: number | null;
+  jobs: number;
+  price: number;
+  price_unit: string;
+  sla: string;
+  response_min: number;
+  capabilities: string[];
+  available: boolean;
+  verified: boolean;
+  payout: SellerPayoutAccount;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SellerProof {
+  label: string;
+  note: string;
+  reference: string;
+  hash: string;
+  submitted_at: string;
+}
+
+export interface SellerReceipt {
+  id: string;
+  ref: string;
+  booking_id: string;
+  buyer_name: string;
+  title: string;
+  gross: number;
+  fee: number;
+  net: number;
+  currency: string;
+  fee_bps: number;
+  proof_hash: string;
+  issued_at: string;
+  status: string;
+}
+
+export interface SellerEarning {
+  id: string;
+  booking_id: string;
+  receipt_id: string;
+  description: string;
+  gross: number;
+  fee: number;
+  amount: number;
+  currency: string;
+  status: "held" | "available" | "processing" | "paid";
+  release_at: string;
+  created_at: string;
+  released_at: string | null;
+  paid_at: string | null;
+  payout_id: string | null;
+  requested_at?: string;
+}
+
+export interface SellerPayout {
+  id: string;
+  ref: string;
+  amount: number;
+  currency: string;
+  method: PayoutMethod;
+  destination: string;
+  status: "processing" | "paid";
+  entry_ids: string[];
+  created_at: string;
+  paid_at: string | null;
+  note: string;
+}
+
+export interface SellerBooking {
+  id: string;
+  ref: string;
+  buyer_name: string;
+  buyer_kind: string;
+  buyer_workspace: string;
+  title: string;
+  brief: string;
+  amount: number;
+  currency: string;
+  status: SellerBookingStatus;
+  requested_at: string;
+  due_at: string;
+  accepted_at: string | null;
+  started_at: string | null;
+  delivered_at: string | null;
+  completed_at: string | null;
+  proof: SellerProof | null;
+  receipt_id: string | null;
+  earning_id: string | null;
+  decline_reason: string | null;
+  declined_at?: string;
+  earning: SellerEarning | null;
+  receipt: SellerReceipt | null;
+  days_left: number;
+}
+
+export interface SellerSummary {
+  currency: string;
+  gross: number;
+  fees: number;
+  net: number;
+  held: number;
+  available: number;
+  processing: number;
+  paid: number;
+  open_bookings: number;
+  requests: number;
+  in_flight: number;
+  delivered: number;
+  completed: number;
+  declined: number;
+  acceptance_rate: number | null;
+  fee_bps: number;
+  hold_days: number;
+  next_release_at: string | null;
+}
+
+export interface SellerMaintenanceItem {
+  id: string;
+  label: string;
+  detail: string;
+  status: "done" | "todo" | "warn";
+}
+
+export interface SellerState {
+  profile: SellerProfile;
+  bookings: SellerBooking[];
+  receipts: SellerReceipt[];
+  payouts: SellerPayout[];
+  earnings: SellerEarning[];
+  summary: SellerSummary;
+  maintenance: SellerMaintenanceItem[];
 }
 
 export interface AppState {
@@ -325,8 +499,10 @@ export interface AppState {
   receipts: ProofReceipt[];
   escrows: Escrow[];
   trust: TrustSummary;
+  seller: SellerState;
   stats: Stats;
   api_calls: number;
+  api_calls_limit: number;
 }
 
 export interface Draft {

@@ -64,7 +64,7 @@ function ApprovalCard({ approval }: { approval: Approval }) {
       <footer className="approval-foot">
         <button className="btn btn-ink btn-sm" onClick={() => decide("approve")} disabled={!!busy}>
           {busy === "yes" ? <span className="spinner" /> : <Icon name="check" size={15} />}
-          Approve &amp; run
+          {approval.agent?.executor_configured ? "Approve & run" : "Approve"}
         </button>
         <button className="btn btn-ghost btn-sm" onClick={() => decide("deny")} disabled={!!busy}>
           Decline
@@ -230,9 +230,9 @@ export default function Today() {
               <em>agent proposals</em>
             </div>
             <div>
-              <span>Hours back</span>
-              <strong>{state.stats.hours_saved}</strong>
-              <em>this month</em>
+              <span>Executed</span>
+              <strong>{state.stats.agent_done_30d}</strong>
+              <em>by agents · 30 days</em>
             </div>
           </div>
         </aside>
@@ -283,7 +283,7 @@ export default function Today() {
                 <span className="eyebrow">Needs your call</span>
                 <h2>Approvals <span className="count-badge">{pending.length}</span></h2>
               </div>
-              <p className="block-sub">Agents prepared everything. One tap executes and files proof.</p>
+              <p className="block-sub">Agents prepared everything. Approving records your call; connected agents execute and file proof.</p>
             </header>
 
             {pending.length ? (

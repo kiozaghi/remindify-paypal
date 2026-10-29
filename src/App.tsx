@@ -15,15 +15,17 @@ import Obligations from "./views/Obligations";
 import Capture from "./views/Capture";
 import Agents from "./views/Agents";
 import Market from "./views/Market";
+import Seller from "./views/Seller";
 import Activity from "./views/Activity";
 import Trust from "./views/Trust";
 import Access from "./views/Access";
 import ObligationDrawer from "./components/ObligationDrawer";
 import AgentDrawer from "./components/AgentDrawer";
 import { CommandPalette, Toasts } from "./components/CommandPalette";
-import { CreateAgentModal, HireModal, NewObligationModal } from "./components/Modals";
+import { CreateAgentModal, DeleteAccountModal, HireModal, NewObligationModal } from "./components/Modals";
 import { TemplatesModal } from "./components/TemplatesModal";
-import { clockLabel } from "./lib/format";
+import { clockLabel, download } from "./lib/format";
+import { api, request } from "./lib/api";
 
 const NAV = [
   {
@@ -39,6 +41,7 @@ const NAV = [
     items: [
       { id: "agents", label: "Agents", icon: "bot" },
       { id: "market", label: "Marketplace", icon: "store" },
+      { id: "seller", label: "Seller desk", icon: "briefcase" },
       { id: "activity", label: "Activity", icon: "pulse" },
     ],
   },
@@ -57,25 +60,56 @@ const TITLES: Record<string, { title: string; sub: string }> = {
   capture: { title: "Capture", sub: "Turn prose into obligations" },
   agents: { title: "The bench", sub: "Agents and automations with a paper trail" },
   market: { title: "Marketplace", sub: "Humans and agents, on the same bench" },
+  seller: { title: "Seller desk", sub: "Bookings, proof and earnings in one ledger" },
   activity: { title: "Proof", sub: "What happened, who did it, what's on file" },
   trust: { title: "Trust layer", sub: "Proof receipts and USDC escrow, anchored when needed" },
   access: { title: "Agent access", sub: "Obligations as a protocol" },
 };
 
 function Shell() {
-  const { state, loading, route, navigate, overlays, setOverlays, actions } = useApp();
-  const { user, logout } = useAuth();
+  const { state, loading, route, navigate, overlays, setOverlays, actions, toast } = useApp();
+  const { user, config, logout } = useAuth();
   const [mobileNav, setMobileNav] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [verifyState, setVerifyState] = useState<"idle" | "sending" | "sent">("idle");
 
   const displayUser = user?.name || state?.user || "Operator";
   const displayDetail = user?.email || user?.wallet_address || "Signed in";
+  const proofsOnFile = state ? state.runs.filter((run) => run.proof).length : 0;
+  const needsVerify = Boolean(user?.email && !user.email_verified && config.verify);
+
+  const resendVerification = async () => {
+    setVerifyState("sending");
+    try {
+      await api.authVerifyRequest();
+      setVerifyState("sent");
+    } catch {
+      setVerifyState("idle");
+    }
+  };
 
   const handleSignOut = async () => {
     setSigningOut(true);
     await logout();
     navigateTo("home");
+  };
+
+  const exportRegister = async () => {
+    setExporting(true);
+    try {
+      const data = await request("/api/export");
+      download(
+        `remindify-export-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(data, null, 2)
+      );
+      toast("Export ready", "A JSON copy of the register is downloading.", "success");
+    } catch (error: any) {
+      toast("Export failed", error?.message || "Try again.", "warn");
+    } finally {
+      setExporting(false);
+    }
   };
 
   useEffect(() => {
@@ -137,8 +171,8 @@ function Shell() {
           <div className="streak-card">
             <span className="streak-icon"><Icon name="shield" size={15} /></span>
             <div>
-              <strong>{state.stats.streak_weeks} weeks</strong>
-              <em>without a missed deadline</em>
+              <strong>{proofsOnFile} proofs</strong>
+              <em>on file from real runs</em>
             </div>
           </div>
           <div className="workspace-card">
@@ -211,14 +245,36 @@ function Shell() {
                 <span className="eyebrow">Signed in</span>
                 <strong>{displayUser}</strong>
                 <em>{displayDetail}</em>
+                <button onClick={exportRegister} disabled={exporting} role="menuitem">
+                  <Icon name="download" size={13} />
+                  {exporting ? "Building export…" : "Export my data"}
+                </button>
                 <button onClick={handleSignOut} disabled={signingOut} role="menuitem">
                   <Icon name="power" size={13} />
                   {signingOut ? "Signing out…" : "Sign out"}
+                </button>
+                <button
+                  className="menu-danger"
+                  onClick={() => setOverlays((o) => ({ ...o, deleteAccount: true }))}
+                  role="menuitem"
+                >
+                  <Icon name="trash" size={13} />
+                  Delete account…
                 </button>
               </div>
             </div>
           </div>
         </header>
+
+        {needsVerify && (
+          <div className="verify-banner" role="status">
+            <Icon name="shield" size={14} />
+            <span>Confirm <strong>{user?.email}</strong> to secure your register.</span>
+            <button onClick={resendVerification} disabled={verifyState !== "idle"}>
+              {verifyState === "sent" ? "Email sent" : verifyState === "sending" ? "Sending…" : "Resend email"}
+            </button>
+          </div>
+        )}
 
         {mobileNav && (
           <div className="mobile-nav-panel">
@@ -240,6 +296,7 @@ function Shell() {
           {route === "capture" && <Capture />}
           {route === "agents" && <Agents />}
           {route === "market" && <Market />}
+          {route === "seller" && <Seller />}
           {route === "activity" && <Activity />}
           {route === "trust" && <Trust />}
           {route === "access" && <Access />}
@@ -258,6 +315,7 @@ function Shell() {
       <TemplatesModal />
       <CreateAgentModal />
       <HireModal />
+      <DeleteAccountModal />
       <Toasts />
     </div>
   );
@@ -292,8 +350,8 @@ function Root() {
   }, []);
 
   useEffect(() => {
-    applySeo(location.page);
-  }, [location.page]);
+    applySeo(location.page, location.params.get("slug") || undefined);
+  }, [location]);
 
   useEffect(() => {
     if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
@@ -320,17 +378,27 @@ function Root() {
   }, [location]);
 
   useEffect(() => {
-    if (user && isAuthRoute(location.page)) navigateTo("today");
-  }, [user, location.page]);
+    if (user && isAuthRoute(location.page) && !location.params.get("reset") && !location.params.get("verify")) {
+      navigateTo("today");
+    }
+  }, [user, location.page, location.params]);
 
   if (loading) {
     // Public pages are prerendered to static HTML. Render the same markup while
     // the session check runs so hydration is clean and visitors see content first.
     if (isPublicRoute(location.page) && !isAuthRoute(location.page)) {
-      return <Landing page={location.page} onNavigate={navigateTo} />;
+      return (
+        <Landing
+          page={location.page}
+          slug={location.params.get("slug") || undefined}
+          onNavigate={navigateTo}
+        />
+      );
     }
     return <BootScreen />;
   }
+
+  const authToken = Boolean(location.params.get("reset") || location.params.get("verify"));
 
   if (!user) {
     if (isAppRoute(location.page)) {
@@ -349,14 +417,33 @@ function Root() {
           mode={location.page === "signup" ? "signup" : "login"}
           next={location.params.get("next") || undefined}
           notice={location.params.get("notice")}
+          resetToken={location.params.get("reset")}
+          verifyToken={location.params.get("verify")}
           onNavigate={navigateTo}
         />
       );
     }
-    return <Landing page={location.page} onNavigate={navigateTo} />;
+    return (
+      <Landing
+        page={location.page}
+        slug={location.params.get("slug") || undefined}
+        onNavigate={navigateTo}
+      />
+    );
   }
 
   if (isAuthRoute(location.page)) {
+    if (authToken) {
+      return (
+        <AuthPage
+          mode="login"
+          next={location.params.get("next") || undefined}
+          resetToken={location.params.get("reset")}
+          verifyToken={location.params.get("verify")}
+          onNavigate={navigateTo}
+        />
+      );
+    }
     return <BootScreen />;
   }
 
@@ -368,7 +455,14 @@ function Root() {
     );
   }
 
-  return <Landing page={location.page} onNavigate={navigateTo} user={user} />;
+  return (
+    <Landing
+      page={location.page}
+      slug={location.params.get("slug") || undefined}
+      onNavigate={navigateTo}
+      user={user}
+    />
+  );
 }
 
 export default function App() {

@@ -48,6 +48,12 @@ test("postgres store seeds, persists a request snapshot and preserves auth acros
       due_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     });
+    store.put("outbox", {
+      id: "obx_test",
+      run_id: "run_test",
+      status: "pending",
+      next_at: new Date().toISOString(),
+    });
     store.setMeta("workspace", "Vercel QA");
     store.createUser({
       id: "usr_test",
@@ -69,10 +75,13 @@ test("postgres store seeds, persists a request snapshot and preserves auth acros
   await withSnapshot(async () => {
     assert.equal(store.getMeta("workspace"), "Vercel QA");
     assert.ok(store.loadAll().obligations.some((item) => item.id === "ob_test"));
+    assert.ok(store.loadAll().outbox.some((item) => item.id === "obx_test"));
+    assert.deepEqual(store.workspacesWithKind("outbox"), ["ws_demo"]);
     assert.equal(store.findUserByEmail("test@example.com").name, "Test User");
     assert.equal(store.getAuthSession("token_hash").user.id, "usr_test");
     assert.equal(store.seedDatabase(true), true);
     assert.equal(store.getMeta("workspace"), "Exopya Studio");
+    assert.equal(store.loadAll().outbox.length, 0);
     assert.equal(store.findUserByEmail("test@example.com").name, "Test User");
   });
 

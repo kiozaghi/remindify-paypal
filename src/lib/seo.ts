@@ -1,6 +1,7 @@
 import type { Route } from "./router";
 import { routePath } from "./router";
 import { FAQS, PLANS } from "../landing/data";
+import { docsHref, docsMeta, docsPage } from "../docs/pages";
 
 export const SITE_ORIGIN = "https://remindify-xi.vercel.app";
 
@@ -10,7 +11,7 @@ export const CONTENT_PAGES: Route[] = [
 
 export const SHELL_PAGES: Route[] = [
   "login", "signup", "today", "obligations", "capture", "agents",
-  "market", "activity", "trust", "access",
+  "market", "seller", "activity", "trust", "access",
 ];
 
 export type PageMeta = {
@@ -65,6 +66,13 @@ export const PAGE_META: Record<Route, PageMeta> = {
       "The rules for using the Remindify preview, including accounts, content, wallets and onchain transactions.",
     index: true,
   },
+  docs: {
+    label: "Developer docs",
+    title: "Developer docs — Remindify",
+    description:
+      "Build on Remindify: the obligation register, agent passports, signed execution connectors, proof receipts, escrow and marketplace guides.",
+    index: true,
+  },
   login: {
     label: "Sign in",
     title: "Sign in — Remindify",
@@ -82,19 +90,22 @@ export const PAGE_META: Record<Route, PageMeta> = {
   capture: { label: "Capture", title: "Capture — Remindify", description: APP_DESCRIPTION, index: false },
   agents: { label: "Agents", title: "Agents — Remindify", description: APP_DESCRIPTION, index: false },
   market: { label: "Marketplace", title: "Marketplace — Remindify", description: APP_DESCRIPTION, index: false },
+  seller: { label: "Seller desk", title: "Seller desk — Remindify", description: APP_DESCRIPTION, index: false },
   activity: { label: "Activity", title: "Activity — Remindify", description: APP_DESCRIPTION, index: false },
   trust: { label: "Trust layer", title: "Trust layer — Remindify", description: APP_DESCRIPTION, index: false },
   access: { label: "Agent access", title: "Agent access — Remindify", description: APP_DESCRIPTION, index: false },
 };
 
-export function canonicalFor(page: Route, origin = SITE_ORIGIN) {
-  return `${origin.replace(/\/$/, "")}${routePath(page)}`;
+export function canonicalFor(page: Route, origin = SITE_ORIGIN, slug?: string) {
+  const base = origin.replace(/\/$/, "");
+  return `${base}${page === "docs" ? docsHref(slug) : routePath(page)}`;
 }
 
-export function structuredData(page: Route, origin = SITE_ORIGIN) {
+export function structuredData(page: Route, origin = SITE_ORIGIN, slug?: string) {
   const base = origin.replace(/\/$/, "");
-  const meta = PAGE_META[page];
-  const canonical = `${base}${routePath(page)}`;
+  const doc = page === "docs" ? docsPage(slug) : null;
+  const meta = doc ? docsMeta(slug) : PAGE_META[page];
+  const canonical = `${base}${page === "docs" ? docsHref(slug) : routePath(page)}`;
   const organizationId = `${base}/#organization`;
   const websiteId = `${base}/#website`;
   const softwareId = `${base}/#software`;
@@ -154,7 +165,7 @@ export function structuredData(page: Route, origin = SITE_ORIGIN) {
       })),
     },
     {
-      "@type": "WebPage",
+      "@type": page === "docs" ? (doc ? "TechArticle" : "CollectionPage") : "WebPage",
       "@id": `${canonical}#webpage`,
       url: canonical,
       name: meta.title,
@@ -163,6 +174,7 @@ export function structuredData(page: Route, origin = SITE_ORIGIN) {
       about: { "@id": softwareId },
       inLanguage: "en",
       primaryImageOfPage: `${base}/og.png`,
+      ...(doc ? { headline: doc.title, articleSection: doc.group, keywords: doc.keywords } : {}),
     },
   ];
 
@@ -177,13 +189,20 @@ export function structuredData(page: Route, origin = SITE_ORIGIN) {
       })),
     });
   } else {
+    const crumbs = page === "docs"
+      ? [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${base}/` },
+          { "@type": "ListItem", position: 2, name: "Developer docs", item: `${base}/docs` },
+          ...(doc ? [{ "@type": "ListItem", position: 3, name: doc.label, item: canonical }] : []),
+        ]
+      : [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${base}/` },
+          { "@type": "ListItem", position: 2, name: meta.label, item: canonical },
+        ];
     graph.push({
       "@type": "BreadcrumbList",
       "@id": `${canonical}#breadcrumb`,
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: `${base}/` },
-        { "@type": "ListItem", position: 2, name: meta.label, item: canonical },
-      ],
+      itemListElement: crumbs,
     });
   }
 
@@ -214,12 +233,13 @@ function setLink(rel: string, href: string, type?: string, title?: string) {
   if (title) element.title = title;
 }
 
-export function applySeo(page: Route) {
-  const meta = PAGE_META[page];
+export function applySeo(page: Route, slug?: string) {
+  const knownDoc = page !== "docs" || !slug || Boolean(docsPage(slug));
+  const meta = page === "docs" ? docsMeta(slug) : PAGE_META[page];
   const origin = window.location.origin;
-  const canonical = `${origin}${routePath(page)}`;
+  const canonical = `${origin}${page === "docs" ? docsHref(slug) : routePath(page)}`;
   const image = `${origin}/og.png`;
-  const robots = meta.index
+  const robots = meta.index && knownDoc
     ? "index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
     : "noindex,nofollow";
 
@@ -245,7 +265,7 @@ export function applySeo(page: Route) {
   setMeta("name", "twitter:description", meta.description);
   setMeta("name", "twitter:image", image);
 
-  if (meta.index) {
+  if (meta.index && knownDoc) {
     setLink("canonical", canonical);
   } else {
     document.head.querySelector('link[rel="canonical"]')?.remove();
@@ -259,5 +279,5 @@ export function applySeo(page: Route) {
     script.type = "application/ld+json";
     document.head.appendChild(script);
   }
-  script.textContent = JSON.stringify(structuredData(page, origin));
+  script.textContent = JSON.stringify(structuredData(page, origin, slug));
 }
