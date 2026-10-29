@@ -16,6 +16,10 @@
     "contracts:compile": "node contracts/compile.mjs",
     "contracts:deploy": "node contracts/deploy.mjs",
     "chain:rehearse": "node scripts/rehearse-chain.mjs",
+    "db:check": "node scripts/db-check.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:setup": "node scripts/db-check.mjs && node scripts/db-migrate.mjs",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && npm run build",
     "test": "node --test test/*.test.mjs",
@@ -24,6 +28,9 @@
     "seo": "node scripts/seo.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
+    "dotenv": "^18.0.9",
+    "drizzle-orm": "^0.45.4",
     "marked": "^18.1.2",
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",
@@ -36,6 +43,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "drizzle-kit": "^0.31.11",
     "solc": "^0.8.24",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
