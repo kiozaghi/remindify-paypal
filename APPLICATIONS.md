@@ -40,6 +40,8 @@ Use these numbers; do not inflate them.
   - Escrow: `0x647F30587B925F1aFb71D3C9CE25CfbDA17872db`
   - Both are source-verified on Basescan and **unaudited**. No mainnet deployment.
 - The anchor + escrow rehearsal script exists (`npm run chain:rehearse`), but as of this draft there are **no anchor or escrow transactions** on either testnet contract — only the two creation transactions. Record the run before claiming the trust flow is rehearsed.
+  - The deployer `0xb785…7d09` already holds **1.0 test USDC** and **0.000094 ETH**, which is enough gas for the whole flow at Base Sepolia's ~0.006 gwei. The only blocker is that the deployer key is not stored in the repo, so the run needs `REHEARSAL_PRIVATE_KEY` from the founder.
+  - A local server started with the `BASE_SEPOLIA_*` env vars reports the network as `configured`, so the rehearsal harness itself is ready.
 - **35 automated tests** pass; `npm run check` (TypeScript + production build) passes.
 - MIT license is in the repo. The GitHub repository is currently **private**.
 - **No paying users, no mainnet deployment, no Celo integration, no ERC-8004 registration, no Self Agent ID, no KarmaGAP profile.**
@@ -373,7 +375,7 @@ Celo card, label it “planned pilot.”
 ### Before Base Ecosystem Fund (rolling)
 
 - [x] Deploy both contracts to Base Sepolia.
-- [ ] Rehearse anchor + fund + release and record the transaction hashes. The contracts currently have **no anchor or escrow transactions**.
+- [ ] Rehearse anchor + fund + release and record the transaction hashes. The contracts currently have **no anchor or escrow transactions**. `npm run chain:rehearse` against a local server is the only missing step; the deployer already holds gas and 1 test USDC, but its key must be supplied as `REHEARSAL_PRIVATE_KEY`.
 - [ ] Deploy to Base mainnet, or state clearly that the module is testnet-only.
 - [x] Public demo URL: **https://remindify-xi.vercel.app**
 - [ ] Pitch deck URL.
