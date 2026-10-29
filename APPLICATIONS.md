@@ -171,7 +171,16 @@ renewals and informal coordination.
 
 ## 4. Base Ecosystem Fund — form answers
 
+**The submission pack is [`BASE-APPLICATION.md`](./BASE-APPLICATION.md).** It was
+built by walking the live form on October 29, 2026 and contains the exact fields,
+order, select options and copy-paste answers. This section is the earlier draft and
+is kept for the reasoning behind it.
+
 The form has five steps: Company, Team, Idea, Funding, Why Base.
+
+Two corrections found by walking the form: there is **no company-registration or
+KYC field**, and the pitch deck is an **optional URL on the Why Base step**, not a
+required funding field.
 
 ### Company
 
