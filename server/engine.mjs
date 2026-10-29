@@ -194,7 +194,7 @@ export function logRun(run) {
     id: uid("run"),
     status: "done",
     proof: null,
-    duration_ms: 1800,
+    duration_ms: 0,
     cost: 0,
     connector_status: null,
     error: null,
@@ -495,6 +495,13 @@ export function autonomyRank(a) {
   return { notify: 0, prepare: 1, approve: 2, autopilot: 3 }[a] ?? 0;
 }
 
+// The obligation can never act above the agent's ceiling: a prepare-ceiling
+// agent asked to run an autopilot obligation gets downgraded to prepare.
+export function effectiveAutonomy(ob, agent) {
+  const ceiling = agent?.autonomy_ceiling || "autopilot";
+  return autonomyRank(ob.autonomy) > autonomyRank(ceiling) ? ceiling : ob.autonomy;
+}
+
 function proposalFor(ob, agent) {
   const money = ob.amount ? `$${ob.amount.toLocaleString("en-US")}` : "no cost";
   const templates = {
@@ -520,6 +527,7 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
   let drafted = 0;
   let blocked = 0;
   let failed = 0;
+  let suggested = 0;
 
   const candidates = data.obligations
     .filter((o) => o.status === "active" && o.agent_id)
@@ -538,7 +546,12 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
     );
     if (recent) continue;
 
-    if (o.autonomy === "autopilot") {
+    const started = Date.now();
+    const autonomy = effectiveAutonomy(o, agent);
+    const capNote =
+      autonomy !== o.autonomy ? ` Capped by ${agent.name}'s ${agent.autonomy_ceiling} ceiling.` : "";
+
+    if (autonomy === "autopilot") {
       if (!connectorConfigured(agent)) {
         logRun({
           agent_id: agent.id,
@@ -546,7 +559,7 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
           action: "Drafted the execution plan",
           detail: `${proposalFor(o, agent)} No executor is connected, so nothing ran.`,
           status: "drafted",
-          duration_ms: 0,
+          duration_ms: Date.now() - started,
         });
         logEvent({
           actor_type: "agent",
@@ -567,7 +580,7 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
       });
       if (outcome.ok) executed += 1;
       else failed += 1;
-    } else if (o.autonomy === "approve" && !pendingIds.has(o.id)) {
+    } else if (autonomy === "approve" && !pendingIds.has(o.id)) {
       const approval = {
         id: uid("ap"),
         obligation_id: o.id,
@@ -595,9 +608,9 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
         agent_id: agent.id,
         obligation_id: o.id,
         action: "Prepared an action",
-        detail: proposalFor(o, agent),
+        detail: proposalFor(o, agent) + capNote,
         status: "proposed",
-        duration_ms: 2600,
+        duration_ms: Date.now() - started,
       });
       logEvent({
         actor_type: "agent",
@@ -605,18 +618,18 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
         actor: agent.name,
         verb: "requested approval",
         object: o.title,
-        detail: `${o.amount ? `$${o.amount} · ` : ""}risk ${risk.score}`,
+        detail: `${o.amount ? `$${o.amount} · ` : ""}risk ${risk.score}${capNote}`,
         kind: "approval",
       });
       proposed += 1;
-    } else if (o.autonomy === "prepare") {
+    } else if (autonomy === "prepare") {
       logRun({
         agent_id: agent.id,
         obligation_id: o.id,
         action: "Drafted the execution plan",
-        detail: proposalFor(o, agent),
+        detail: proposalFor(o, agent) + capNote,
         status: "drafted",
-        duration_ms: 2100,
+        duration_ms: Date.now() - started,
       });
       logEvent({
         actor_type: "agent",
@@ -624,15 +637,35 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
         actor: agent.name,
         verb: "prepared a plan",
         object: o.title,
-        detail: "Waiting on you to start",
+        detail: "Waiting on you to start" + capNote,
         kind: "draft",
       });
       drafted += 1;
+    } else {
+      logRun({
+        agent_id: agent.id,
+        obligation_id: o.id,
+        action: "Flagged it for you",
+        detail: proposalFor(o, agent),
+        status: "drafted",
+        duration_ms: Date.now() - started,
+      });
+      logEvent({
+        actor_type: "agent",
+        actor_id: agent.id,
+        actor: agent.name,
+        verb: "suggested a next step",
+        object: o.title,
+        detail: `Notify-only · risk ${risk.score}`,
+        kind: "draft",
+      });
+      suggested += 1;
     }
   }
 
   if (!silent) {
     const parts = [`${proposed} approvals`, `${executed} executed`, `${drafted} plans`];
+    if (suggested) parts.push(`${suggested} suggestions`);
     if (blocked) parts.push(`${blocked} waiting on an executor`);
     if (failed) parts.push(`${failed} failed`);
     logEvent({
@@ -645,7 +678,7 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
       kind: "system",
     });
   }
-  return { proposed, executed, drafted, blocked, failed, scanned: candidates.length };
+  return { proposed, executed, drafted, blocked, failed, suggested, scanned: candidates.length };
 }
 
 export async function applyApproval(id, decision, note = "") {
@@ -747,7 +780,11 @@ export async function runObligation(id) {
   const agent = data.agents.find((a) => a.id === ob.agent_id);
   if (!agent) return { ok: false, error: "No agent assigned" };
   const risk = riskFor(ob);
-  if (ob.autonomy === "autopilot") {
+  const started = Date.now();
+  const autonomy = effectiveAutonomy(ob, agent);
+  const capNote =
+    autonomy !== ob.autonomy ? ` Capped by ${agent.name}'s ${agent.autonomy_ceiling} ceiling.` : "";
+  if (autonomy === "autopilot") {
     if (connectorConfigured(agent)) {
       const outcome = await executeAction(agent, ob, {
         action: "Ran the obligation on autopilot",
@@ -776,7 +813,7 @@ export async function runObligation(id) {
       action: "Drafted the execution plan",
       detail: `${proposalFor(ob, agent)} No executor is connected, so nothing ran.`,
       status: "drafted",
-      duration_ms: 0,
+      duration_ms: Date.now() - started,
     });
     logEvent({
       actor_type: "agent",
@@ -794,7 +831,7 @@ export async function runObligation(id) {
     };
   }
 
-  if (ob.autonomy === "approve") {
+  if (autonomy === "approve") {
     const pending = data.approvals.find((a) => a.obligation_id === ob.id && a.status === "pending");
     if (pending) return { ok: true, message: `${agent.name} already has a decision waiting for you.` };
     const approval = {
@@ -823,9 +860,9 @@ export async function runObligation(id) {
       agent_id: agent.id,
       obligation_id: ob.id,
       action: "Prepared an action",
-      detail: proposalFor(ob, agent),
+      detail: proposalFor(ob, agent) + capNote,
       status: "proposed",
-      duration_ms: 2600,
+      duration_ms: Date.now() - started,
     });
     logEvent({
       actor_type: "agent",
@@ -833,7 +870,7 @@ export async function runObligation(id) {
       actor: agent.name,
       verb: "requested approval",
       object: ob.title,
-      detail: `Manual run · risk ${risk.score}`,
+      detail: `Manual run · risk ${risk.score}${capNote}`,
       kind: "approval",
     });
     return { ok: true, message: `${agent.name} prepared it and is waiting for your approval.` };
@@ -842,12 +879,28 @@ export async function runObligation(id) {
   logRun({
     agent_id: agent.id,
     obligation_id: ob.id,
-    action: "Prepared a plan",
-    detail: proposalFor(ob, agent),
+    action: autonomy === "notify" ? "Flagged it for you" : "Prepared a plan",
+    detail: proposalFor(ob, agent) + capNote,
     status: "drafted",
-    duration_ms: 1800,
+    duration_ms: Date.now() - started,
   });
-  return { ok: true, message: `${agent.name} prepared a plan. You are still in control.` };
+  logEvent({
+    actor_type: "agent",
+    actor_id: agent.id,
+    actor: agent.name,
+    verb: autonomy === "notify" ? "suggested a next step" : "prepared a plan",
+    object: ob.title,
+    detail: `Manual run · risk ${risk.score}${capNote}`,
+    kind: "draft",
+  });
+  return {
+    ok: true,
+    executed: false,
+    message:
+      autonomy === "notify"
+        ? `${agent.name} flagged it for you. Notify-only agents never act.`
+        : `${agent.name} prepared a plan. You are still in control.`,
+  };
 }
 
 export function advanceClock(days) {

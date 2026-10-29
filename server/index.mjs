@@ -6,7 +6,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   buildState, completeObligation, sweep, applyApproval, snoozeObligation,
   runObligation, advanceClock, deleteObligation, logEvent, uid, virtualNow,
-  riskFor, enrichObligation, drainOutbox,
+  riskFor, enrichObligation, drainOutbox, autonomyRank,
 } from "./engine.mjs";
 import {
   loadAll, put, putMany, getMeta, setMeta, seedDatabase, pruneAuth,
@@ -101,6 +101,15 @@ async function body(req) {
   } catch {
     throw new Error("Invalid JSON");
   }
+}
+
+function clampAutonomyToCeiling(ob) {
+  if (!ob.agent_id) return ob;
+  const agent = loadAll().agents.find((a) => a.id === ob.agent_id);
+  if (agent && autonomyRank(ob.autonomy) > autonomyRank(agent.autonomy_ceiling)) {
+    ob.autonomy = agent.autonomy_ceiling;
+  }
+  return ob;
 }
 
 function normalizeObligation(input) {
@@ -307,6 +316,7 @@ async function handleRequest(req, res) {
         const input = pending.input;
         if (!input.title) return send(res, 422, { error: "title_required" });
         const ob = normalizeObligation({ ...input, source: "api", channel: "api" });
+        clampAutonomyToCeiling(ob);
         put("obligations", ob);
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
@@ -503,6 +513,7 @@ async function handleRequest(req, res) {
 
     if (path === "/api/obligations" && req.method === "POST") {
       const input = normalizeObligation(await body(req));
+      clampAutonomyToCeiling(input);
       put("obligations", input);
       logEvent({
         actor_type: "human", actor: "Solomon Tigabu",
@@ -540,6 +551,7 @@ async function handleRequest(req, res) {
         "checklist", "last_note",
       ];
       for (const key of allowed) if (key in patch) ob[key] = patch[key];
+      clampAutonomyToCeiling(ob);
       put("obligations", ob);
       if ("autonomy" in patch) {
         logEvent({
