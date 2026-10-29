@@ -463,6 +463,17 @@ npm run chain:rehearse
 
 The script drives the real HTTP API and chain with one funded wallet: it files a receipt, signs it, anchors it, opens an escrow, approves and funds USDC, then releases on proof. It prints every transaction hash and explorer link. Before signing anything it checks the wallet has gas and test USDC, that the server reports `configured` mode, and that the server's contract addresses match the shell's.
 
+A full run is recorded on Base Sepolia (2026-10-29) against the deployed reference contracts:
+
+| Step | Transaction |
+| --- | --- |
+| Anchor the EIP-712 receipt | [`0x8bc6…4288`](https://sepolia.basescan.org/tx/0x8bc6985593c26761a9d2480e4e51751e95d31c4dbcb72c1d9a7c552fc79d4288) |
+| Approve 1 USDC | [`0x5f17…f532`](https://sepolia.basescan.org/tx/0x5f1724191badc89129dbfac18f4bedd323e409f3ce313caee71f2b381354f532) |
+| Fund the escrow | [`0xa935…cc66`](https://sepolia.basescan.org/tx/0xa93554f61c6a2e862b1209b3f63c72cf56c081d6ad021b3bdf6e2ff35a2fcc66) |
+| Release on proof | [`0x6ca7…70db`](https://sepolia.basescan.org/tx/0x6ca7830b8b3835899af8261aba5b7db9ae5b054ff181c049da36a8b39b1870db) |
+
+`anchored(receipt)`, `escrows(id).funded` and `escrows(id).released` were read back from the contracts as `true`, with the proof receipt bound to the escrow. The receipt id, escrow id, hashes and block numbers are stored in `contracts/deployments/base-sepolia.json`.
+
 Without `REHEARSAL_PRIVATE_KEY` it generates a throwaway wallet, prints its address, and waits for you to fund it, so the key never touches the shell history or disk. It also accepts an existing key.
 
 | Variable | Default | Purpose |

@@ -8,8 +8,8 @@ problem.
 The short version: the product and the public demo are ready. The Celo
 application is still blocked on a Celo mainnet deployment and the required
 identity integrations. Base is the nearest application: the contracts are live
-on Base Sepolia, but the full anchor + escrow rehearsal still has to be recorded
-before the traction claim is complete.
+on Base Sepolia and the full anchor + escrow rehearsal is recorded with
+verifiable transactions, so only founder-supplied fields remain.
 
 ---
 
@@ -18,7 +18,7 @@ before the traction claim is complete.
 | Program | Status | Deadline | What is missing | Recommendation |
 | --- | --- | --- | --- | --- |
 | **SXSW Pitch 2027** | Draft ready, demo live | **Nov 13, 2026** (official page also says Nov 11 at 11:59pm PT — treat Nov 11 as the real deadline) | X URL, founder links, $225 fee, eligibility confirmation | Apply now. The public demo exists; the remaining gaps are founder-supplied. |
-| **Base Ecosystem Fund** | Draft ready, testnet deployed | Rolling | X URL, founder links, runway, deck URL, recorded Base Sepolia rehearsal | Apply after the rehearsal is recorded. Mainnet is stronger but not required for the thesis. |
+| **Base Ecosystem Fund** | Draft ready, rehearsal recorded | Rolling | X URL, founder links, runway, deck URL | Apply now. The testnet lifecycle is proven end to end; mainnet would strengthen it but is not required for the thesis. |
 | **Celo Prezenti Frontier** | **BLOCKED** | **Dec 29, 2026** | Celo mainnet deployment, ERC-8004 registration, Self Agent ID, KarmaGAP profile, KYC, public repo decision | Do not submit until the four onchain/identity items are real. A paper integration will be rejected. |
 
 ---
@@ -39,9 +39,11 @@ Use these numbers; do not inflate them.
   - Attestations: `0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9`
   - Escrow: `0x647F30587B925F1aFb71D3C9CE25CfbDA17872db`
   - Both are source-verified on Basescan and **unaudited**. No mainnet deployment.
-- The anchor + escrow rehearsal script exists (`npm run chain:rehearse`), but as of this draft there are **no anchor or escrow transactions** on either testnet contract — only the two creation transactions. Record the run before claiming the trust flow is rehearsed.
-  - The deployer `0xb785…7d09` already holds **1.0 test USDC** and **0.000094 ETH**, which is enough gas for the whole flow at Base Sepolia's ~0.006 gwei. The only blocker is that the deployer key is not stored in the repo, so the run needs `REHEARSAL_PRIVATE_KEY` from the founder.
-  - A local server started with the `BASE_SEPOLIA_*` env vars reports the network as `configured`, so the rehearsal harness itself is ready.
+- The full trust lifecycle is **rehearsed on Base Sepolia** and the transaction hashes are recorded in `contracts/deployments/base-sepolia.json`:
+  - anchor `0x8bc6…4288` (block 51679748), approve `0x5f17…f532`, fund `0xa935…cc66`, release `0x6ca7…70db` (block 51679782). All four returned `status: success`.
+  - Read back from the contracts: `anchored(receipt) = true`, and the escrow shows `funded = true`, `released = true` with the proof receipt bound to it.
+  - It ran against a local server with the deployed addresses configured, with 1 test USDC and a real EIP-712 signature from the deployer wallet.
+  - The base-sepolia deployment record now carries the receipt id, escrow id, every tx hash and the state checks.
 - **35 automated tests** pass; `npm run check` (TypeScript + production build) passes.
 - MIT license is in the repo. The GitHub repository is currently **private**.
 - **No paying users, no mainnet deployment, no Celo integration, no ERC-8004 registration, no Self Agent ID, no KarmaGAP profile.**
@@ -102,9 +104,9 @@ Base is the primary long-term ecosystem for this trust layer because:
 - the Base ecosystem explicitly funds AI agents and stablecoin distribution in emerging markets;
 - a Base-first EVM module can be reused on Celo without a second architecture.
 
-The Base module is **deployed to Base Sepolia and source-verified**, not yet on
-mainnet. The full anchor + escrow rehearsal still needs to be recorded. That
-distinction matters.
+The Base module is **deployed to Base Sepolia and source-verified**, with the
+full anchor + escrow lifecycle rehearsed onchain. It is not yet on mainnet.
+That distinction matters.
 
 ### Why Celo
 
@@ -119,10 +121,11 @@ long-term ecosystem. The same contracts and receipt format are reused.
 > https://remindify-xi.vercel.app. The demo workspace contains 16 obligations, 7
 > agents and 8 providers. The product has per-account workspaces, Postgres in
 > production, REST and MCP access, EIP-712 proof receipts, and two Solidity
-> reference contracts deployed to Base Sepolia. The contracts are unaudited and
-> testnet-only, and the full anchor + escrow rehearsal is still to be recorded.
-> There are no paying users yet. The next milestone is that rehearsal plus the
-> first 10 design partners.
+> reference contracts deployed to Base Sepolia, where the full anchor + escrow
+> lifecycle has been rehearsed with recorded, verifiable transactions. The
+> contracts are unaudited and testnet-only.
+> There are no paying users yet. The next milestone is the first 10 design
+> partners.
 
 ### Business model
 
@@ -199,7 +202,7 @@ The form has five steps: Company, Team, Idea, Funding, Why Base.
 | **What is the problem you are solving?** | Recurring obligations fail silently. A lapsed insurance policy, a late payroll filing or a missed licence renewal costs far more than a reminder app. The people who carry this load — founders, freelancers, caregivers, small teams and diaspora families — have no single system of record for the obligation, the owner, the backup, the consequence and the evidence. Existing tools store dates, not accountability. |
 | **Why are you working on this idea?** | I built the first Remindify deck from lived experience of missed renewals and informal coordination. The 2026 version exists because agents can now do the work, not just remind you about it. The missing layer is trust: who acted, under what scope, and what proof exists. That is the product I want to exist. |
 | **How long have you been working on this company idea?** | 1–3 years |
-| **What’s your current traction?** | Working prototype, pre-revenue. Public demo at https://remindify-xi.vercel.app, 16 seeded obligations, 7 agents, 8 providers, per-account workspaces, REST and MCP access, EIP-712 proof receipts, 35 automated tests and a production build. Two Solidity contracts are deployed to Base Sepolia and source-verified; they are unaudited and testnet-only. No paying users yet. The next milestone is a recorded anchor + escrow rehearsal and 10 design partners. |
+| **What’s your current traction?** | Working prototype, pre-revenue. Public demo at https://remindify-xi.vercel.app, 16 seeded obligations, 7 agents, 8 providers, per-account workspaces, REST and MCP access, EIP-712 proof receipts, 35 automated tests and a production build. Two Solidity contracts are deployed to Base Sepolia and source-verified, and the anchor → fund → release lifecycle has been rehearsed onchain with four recorded transactions. The contracts are unaudited and testnet-only. No paying users yet. The next milestone is the first 10 design partners. |
 
 ### Funding
 
@@ -310,9 +313,9 @@ Use this only if the form asks for a budget. Adjust the amount before submitting
 >
 > The product is live at remindify-xi.vercel.app: 16 seeded obligations, 7 agents,
 > 8 providers, per-account workspaces, REST and MCP access, 35 tests. The trust
-> contracts are deployed on Base Sepolia and unaudited; the anchor + escrow
-> rehearsal is the next milestone. We are pre-revenue, and the next target is 10
-> design partners on Base.
+> contracts are deployed on Base Sepolia and unaudited; the anchor → fund →
+> release flow is rehearsed onchain with recorded transactions. We are
+> pre-revenue, and the next target is 10 design partners on Base.
 >
 > The wedge is founders, freelancers and small studios in Addis and the diaspora — people with high obligation density and no back office. The moat is the obligation graph plus the proof graph. Remindify is the system of record for work that comes back.
 
@@ -375,7 +378,7 @@ Celo card, label it “planned pilot.”
 ### Before Base Ecosystem Fund (rolling)
 
 - [x] Deploy both contracts to Base Sepolia.
-- [ ] Rehearse anchor + fund + release and record the transaction hashes. The contracts currently have **no anchor or escrow transactions**. `npm run chain:rehearse` against a local server is the only missing step; the deployer already holds gas and 1 test USDC, but its key must be supplied as `REHEARSAL_PRIVATE_KEY`.
+- [x] Rehearse anchor + fund + release and record the transaction hashes. Done on 2026-10-29: anchor `0x8bc6…4288`, approve `0x5f17…f532`, fund `0xa935…cc66`, release `0x6ca7…70db`. Full hashes and block numbers are in `contracts/deployments/base-sepolia.json`; `anchored`, `funded` and `released` were read back from the contracts as `true`.
 - [ ] Deploy to Base mainnet, or state clearly that the module is testnet-only.
 - [x] Public demo URL: **https://remindify-xi.vercel.app**
 - [ ] Pitch deck URL.

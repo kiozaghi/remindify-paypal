@@ -24,5 +24,37 @@
     "BASE_SEPOLIA_RPC_URL": "https://sepolia.base.org",
     "BASE_SEPOLIA_ATTESTATION_CONTRACT": "0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9",
     "BASE_SEPOLIA_ESCROW_CONTRACT": "0x647F30587B925F1aFb71D3C9CE25CfbDA17872db"
+  },
+  "rehearsal": {
+    "ran_at": "2026-10-29T07:10:25.000Z",
+    "account": "0xb785D757670D7558BdBd2907B79EbD2Cd4657d09",
+    "payee": "0xb785D757670D7558BdBd2907B79EbD2Cd4657d09",
+    "receipt_id": "rcpt_nm20puo8",
+    "onchain_receipt_id": "0x157a2c0187d6f2e2ad524528c78a6589d6a13b50b44c4d977b69859032902d34",
+    "escrow_id": "esc_7z0a61rp",
+    "onchain_escrow_id": "0xf014e49f14e3e69e9faf064b35d4332558bec44e0c6e47036205d350e60f6d49",
+    "usdc_amount": "1",
+    "anchor": {
+      "tx_hash": "0x8bc6985593c26761a9d2480e4e51751e95d31c4dbcb72c1d9a7c552fc79d4288",
+      "block_number": 51679748
+    },
+    "approve": {
+      "tx_hash": "0x5f1724191badc89129dbfac18f4bedd323e409f3ce313caee71f2b381354f532",
+      "block_number": 51679761
+    },
+    "fund": {
+      "tx_hash": "0xa93554f61c6a2e862b1209b3f63c72cf56c081d6ad021b3bdf6e2ff35a2fcc66",
+      "block_number": 51679771
+    },
+    "release": {
+      "tx_hash": "0x6ca7830b8b3835899af8261aba5b7db9ae5b054ff181c049da36a8b39b1870db",
+      "block_number": 51679782
+    },
+    "verified": {
+      "anchored": true,
+      "escrow_funded": true,
+      "escrow_released": true,
+      "proof_receipt_bound": true
+    }
   }
 }

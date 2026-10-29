@@ -156,7 +156,7 @@ Reminders are a feature. **An obligation graph with proof and mandates is a syst
 
 | Now (this prototype) | Next 90 days | Next 12 months |
 | --- | --- | --- |
-| Working register, risk engine, autonomy, proof, audit | Recorded Base Sepolia rehearsal, mainnet deploy, contract review | Mobile apps, calendar/email sync, payments |
+| Working register, risk engine, autonomy, proof, audit | Base mainnet deploy, contract review | Mobile apps, calendar/email sync, payments |
 | Deterministic capture parser | Hybrid PDF/image extraction + review | Inbox and document vault ingestion |
 | Human + agent marketplace, seller desk, proof-gated payouts | Provider onboarding, ratings, disputes | Agent SDK, verified provider badges |
 | REST + MCP with scoped keys, metering and idempotency | Signed webhooks, usage plans, sandbox keys | Usage billing, agent commerce protocol |
