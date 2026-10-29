@@ -257,41 +257,57 @@ amount and on different terms, so decide before submitting whether to keep the
 **What aspects of your company / product are on Base?**
 
 ```text
-The trust layer is on Base, not bolted on afterwards.
+Our trust layer is deployed on Base Sepolia, and it is the part of the product
+that cannot be faked.
 
-- RemindifyAttestations verifies an EIP-712 signature onchain and stores
-  anchored[receiptId]. RemindifyEscrow is a minimal USDC escrow that releases
-  only when the registry says that receipt is anchored.
-- Both contracts are deployed to Base Sepolia and source-verified on Basescan.
-  The full lifecycle is rehearsed with four recorded transactions: anchor,
-  approve, fund, release.
-- The app is Base-first: verified USDC addresses for Base and Base Sepolia, and
-  the chain profile drives the Trust surface in the product.
-- The module is EVM-generic, so the same contracts can serve Celo later without a
-  second architecture.
-- USDC is the settlement rail because the first users already move money in
-  dollars, across borders, without a local card rail.
+- RemindifyAttestations (0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9) verifies an
+  EIP-712 signature onchain and stores anchored[receiptId]. A completed obligation
+  becomes provable without trusting our database.
+- RemindifyEscrow (0x647F30587B925F1aFb71D3C9CE25CfbDA17872db) is a minimal USDC
+  escrow. It releases only when the registry says the referenced receipt is
+  anchored. No token, no custody, no server-held keys.
+- Both are source-verified on Basescan, and the full lifecycle is rehearsed with
+  recorded transactions: anchor the receipt, approve 1 USDC, fund the escrow,
+  release on proof. anchored, funded and released read back from the contracts as
+  true.
+- The product is Base-first. The Trust surface renders the network profile, the
+  anchor payload and the receipt state, and the app ships verified USDC addresses
+  for Base and Base Sepolia. Agents can file receipts and read proof and escrow
+  state over REST and MCP, so agent work enters the same proof graph as human
+  work; anchoring stays a wallet action the owner controls.
+- Mainnet follows a contract review. Until then the product labels the network as
+  testnet everywhere it says Base.
 
-Mainnet deployment follows a contract review; until then the product says
-"testnet" everywhere it says Base.
+Demo: https://remindify-xi.vercel.app
+Attestations: https://sepolia.basescan.org/address/0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9
+Escrow: https://sepolia.basescan.org/address/0x647F30587B925F1aFb71D3C9CE25CfbDA17872db
+Recorded release: https://sepolia.basescan.org/tx/0x6ca7830b8b3835899af8261aba5b7db9ae5b054ff181c049da36a8b39b1870db
 ```
 
 **Why are you interested in BEF / Base?**
 
 ```text
-Base is the only ecosystem where our three requirements meet: cheap anchoring for
-high-volume proof receipts, USDC settlement our users already hold, and an
-explicit agent economy.
+Base is where the three things this product needs actually meet: cheap anchoring
+for high-volume proof, USDC settlement our users already hold, and an ecosystem
+that treats agents as first-class participants.
 
-BEF's thesis — AI agents and stablecoin distribution in emerging markets — is
-literally the product. Agents do real work under scoped authority, and USDC
-escrow releases on proof instead of on trust. We are building it in Addis Ababa,
-where obligations are global and back-office support is thin; Base gives those
-users the same verifiable rail as a team in San Francisco.
+Our users are in Addis Ababa and the diaspora. Their obligations are global —
+insurance renewals, tax filings, payroll, family admin — and they already move
+money in dollars, just without a local card rail. Base gives them settlement in
+the asset they already use, at a cost where anchoring a receipt makes sense. Our
+receipts are small and frequent; on an expensive chain the proof layer would be
+theatre.
 
-What we want from BEF is a long-term partner, not only a check: a contract review
-before mainnet, design-partner introductions, and a path into the Base agent
-ecosystem as agent commerce matures.
+BEF's thesis is our product. Agents with scoped passports doing real work, humans
+and agents on the same bench, escrow that pays on proof rather than on trust. We
+are not adding agents to a task app; accountability for delegated work is the
+core object.
+
+What we want from BEF is a partner: a contract review before mainnet,
+design-partner introductions, and a route into the Base agent ecosystem as agent
+commerce matures. What we bring is a consumer use case for USDC with real
+consequences behind it, and a proof-plus-escrow primitive other Base builders can
+reuse instead of rebuilding.
 ```
 
 **Pitch Deck URL** *(optional)*
