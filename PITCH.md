@@ -45,16 +45,18 @@ Every obligation carries:
 - **Proof** — receipt, confirmation, certificate, photo or signed document. No proof, no completion.
 - **Audit** — every read, write, approval, run and proof, attributed and exportable.
 
-### Seven surfaces, one graph
+### Nine surfaces, one graph
 
 | Surface | Job |
 | --- | --- |
-| **Today** | What needs a human now: approvals, closest-to-the-edge, agent activity. |
-| **Register** | The full obligation graph, searchable and risk-ranked. |
+| **Today** | What needs a human now: approvals, both ledgers, closest-to-the-edge, agent activity. |
+| **Register** | The full obligation graph, searchable and risk-ranked, with People/Money lenses and community packs. |
 | **Capture** | Turn a letter, email or note into structured obligations — locally, with review. |
 | **Bench** | Agent passports: scopes, trust, ceilings, work on desk. |
 | **Marketplace** | Hire a human or an agent by the job. Escrow releases on proof. |
+| **Seller desk** | Provider storefront: requests, active work, proof, hold ledger and payouts. |
 | **Proof** | The audit trail and evidence vault. |
+| **Trust layer** | EIP-712 receipts, optional Base anchoring, proof-gated USDC escrow. |
 | **Agent access** | REST + MCP, scoped keys, webhooks, guardrails. |
 
 ### The 2026 difference: agents are first-class, not features
@@ -154,11 +156,11 @@ Reminders are a feature. **An obligation graph with proof and mandates is a syst
 
 | Now (this prototype) | Next 90 days | Next 12 months |
 | --- | --- | --- |
-| Working register, risk engine, autonomy, proof, audit | Auth, workspaces, Postgres, encrypted vault | Mobile apps, calendar/email sync, payments |
+| Working register, risk engine, autonomy, proof, audit | Recorded Base Sepolia rehearsal, mainnet deploy, contract review | Mobile apps, calendar/email sync, payments |
 | Deterministic capture parser | Hybrid PDF/image extraction + review | Inbox and document vault ingestion |
-| Human + agent marketplace with escrow-on-proof | Provider onboarding, ratings, disputes | Agent SDK, verified provider badges |
-| REST + MCP with scoped keys | Signed webhooks, rate limits, idempotency | Usage billing, agent commerce protocol |
-| Time-machine demo, seeded workspace | Real onboarding + import | Team approvals, SSO, enterprise retention |
+| Human + agent marketplace, seller desk, proof-gated payouts | Provider onboarding, ratings, disputes | Agent SDK, verified provider badges |
+| REST + MCP with scoped keys, metering and idempotency | Signed webhooks, usage plans, sandbox keys | Usage billing, agent commerce protocol |
+| Per-account Postgres workspaces, auth, digests, time machine | First 10 design partners and real onboarding | Team approvals, SSO, enterprise retention |
 
 ---
 

@@ -1,14 +1,15 @@
 # Remindify — application kit
 
-**Working draft · October 22, 2026.** Nothing here has been submitted. Anything in
+**Working draft · October 29, 2026.** Nothing here has been submitted. Anything in
 `[FILL]` is missing and must be supplied by the founder before an application is
 sent. Anything marked **BLOCKED** is a real eligibility gap, not a writing
 problem.
 
-The short version: the product story is ready, but the Celo application is not
-eligible until there is a Celo mainnet deployment and the required identity
-integrations. Base is the right first onchain application because it only needs
-a working Base deployment, not a new stack.
+The short version: the product and the public demo are ready. The Celo
+application is still blocked on a Celo mainnet deployment and the required
+identity integrations. Base is the nearest application: the contracts are live
+on Base Sepolia, but the full anchor + escrow rehearsal still has to be recorded
+before the traction claim is complete.
 
 ---
 
@@ -16,8 +17,8 @@ a working Base deployment, not a new stack.
 
 | Program | Status | Deadline | What is missing | Recommendation |
 | --- | --- | --- | --- | --- |
-| **SXSW Pitch 2027** | Draft ready | **Nov 13, 2026** (official page also says Nov 11 at 11:59pm PT — treat Nov 11 as the real deadline) | Public demo URL, X URL, founder links, $225 fee, eligibility confirmation | Apply after the public demo exists. The narrative is reusable everywhere else. |
-| **Base Ecosystem Fund** | Draft ready | Rolling | Public demo URL, X URL, founder links, runway, deck URL, Base deployment | Apply as soon as the Base Sepolia rehearsal is done. A mainnet deployment is stronger but the fund is thesis-led. |
+| **SXSW Pitch 2027** | Draft ready, demo live | **Nov 13, 2026** (official page also says Nov 11 at 11:59pm PT — treat Nov 11 as the real deadline) | X URL, founder links, $225 fee, eligibility confirmation | Apply now. The public demo exists; the remaining gaps are founder-supplied. |
+| **Base Ecosystem Fund** | Draft ready, testnet deployed | Rolling | X URL, founder links, runway, deck URL, recorded Base Sepolia rehearsal | Apply after the rehearsal is recorded. Mainnet is stronger but not required for the thesis. |
 | **Celo Prezenti Frontier** | **BLOCKED** | **Dec 29, 2026** | Celo mainnet deployment, ERC-8004 registration, Self Agent ID, KarmaGAP profile, KYC, public repo decision | Do not submit until the four onchain/identity items are real. A paper integration will be rejected. |
 
 ---
@@ -26,14 +27,20 @@ a working Base deployment, not a new stack.
 
 Use these numbers; do not inflate them.
 
-- Working React 19 + TypeScript product with a zero-framework Node API and SQLite persistence.
+- Working React 19 + TypeScript product with a zero-framework Node API, SQLite locally and Postgres on Vercel.
+- Public demo live at **https://remindify-xi.vercel.app**, with a developer docs hub at **/docs**.
+- Per-account workspaces: sign-up, email verification, password reset, account deletion, region gating and sanctions screening are implemented.
 - Seeded demo workspace: **16 obligations, 7 agents, 8 marketplace providers, 2 API keys**.
-- Eight product surfaces: Today, Obligations, Capture, Agents, Marketplace, Activity/Proof, Trust, and Agent Access.
-- Agent-native access over **REST** and **MCP**; every call is attributed and audited.
+- Nine product surfaces: Today, Obligations, Capture, Agents, Marketplace, Seller desk, Activity/Proof, Trust, and Agent Access.
+- Agent-native access over **REST** and **MCP**; every call is attributed, audited, metered and scope-limited.
 - Proof receipts use **EIP-712** typed data; proof and evidence are hashed with keccak-256; raw documents are never uploaded.
 - Base-first trust module with verified USDC addresses for **Base, Base Sepolia, Celo, and Celo Sepolia**.
-- Two reference Solidity contracts: `RemindifyAttestations` and `RemindifyEscrow`. They **compile with solc 0.8.24** and are **unaudited and not deployed**.
-- **11 automated tests** pass; `npm run check` (TypeScript + production build) passes.
+- Two reference Solidity contracts, **RemindifyAttestations** and **RemindifyEscrow**, compile with solc 0.8.24 and are **deployed to Base Sepolia only**:
+  - Attestations: `0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9`
+  - Escrow: `0x647F30587B925F1aFb71D3C9CE25CfbDA17872db`
+  - Both are source-verified on Basescan and **unaudited**. No mainnet deployment.
+- The anchor + escrow rehearsal script exists (`npm run chain:rehearse`), but as of this draft there are **no anchor or escrow transactions** on either testnet contract — only the two creation transactions. Record the run before claiming the trust flow is rehearsed.
+- **35 automated tests** pass; `npm run check` (TypeScript + production build) passes.
 - MIT license is in the repo. The GitHub repository is currently **private**.
 - **No paying users, no mainnet deployment, no Celo integration, no ERC-8004 registration, no Self Agent ID, no KarmaGAP profile.**
 
@@ -93,7 +100,9 @@ Base is the primary long-term ecosystem for this trust layer because:
 - the Base ecosystem explicitly funds AI agents and stablecoin distribution in emerging markets;
 - a Base-first EVM module can be reused on Celo without a second architecture.
 
-The Base module is **deployment-ready**, not deployed. That distinction matters.
+The Base module is **deployed to Base Sepolia and source-verified**, not yet on
+mainnet. The full anchor + escrow rehearsal still needs to be recorded. That
+distinction matters.
 
 ### Why Celo
 
@@ -104,12 +113,14 @@ long-term ecosystem. The same contracts and receipt format are reused.
 
 ### Traction, honestly
 
-> Remindify is a working prototype, pre-revenue. The demo workspace contains 16
-> obligations, 7 agents and 8 providers. The product has a production build, 11
-> automated tests, REST and MCP access, EIP-712 proof receipts, and two Solidity
-> reference contracts that compile with solc 0.8.24. The contracts are unaudited
-> and not deployed. There are no paying users yet. The next milestone is a live
-> Base deployment and the first 10 design partners.
+> Remindify is a working prototype, pre-revenue. The public demo is live at
+> https://remindify-xi.vercel.app. The demo workspace contains 16 obligations, 7
+> agents and 8 providers. The product has per-account workspaces, Postgres in
+> production, REST and MCP access, EIP-712 proof receipts, and two Solidity
+> reference contracts deployed to Base Sepolia. The contracts are unaudited and
+> testnet-only, and the full anchor + escrow rehearsal is still to be recorded.
+> There are no paying users yet. The next milestone is that rehearsal plus the
+> first 10 design partners.
 
 ### Business model
 
@@ -163,7 +174,7 @@ The form has five steps: Company, Team, Idea, Funding, Why Base.
 | --- | --- |
 | **Company Name** | Remindify |
 | **What are you building?** | Remindify is an obligation register for humans and agents. It turns recurring obligations — renewals, filings, maintenance, payroll, family admin — into risk-scored objects with an owner, a backup, an autonomy level and a proof requirement. Agents get passports with scopes and ceilings; every completion files an EIP-712 proof receipt. A Base-first trust layer anchors those receipts and releases USDC escrow only against proof. |
-| **Website URL** | `[FILL: public demo URL]` |
+| **Website URL** | https://remindify-xi.vercel.app |
 | **X URL** | `[FILL]` |
 
 ### Team
@@ -186,7 +197,7 @@ The form has five steps: Company, Team, Idea, Funding, Why Base.
 | **What is the problem you are solving?** | Recurring obligations fail silently. A lapsed insurance policy, a late payroll filing or a missed licence renewal costs far more than a reminder app. The people who carry this load — founders, freelancers, caregivers, small teams and diaspora families — have no single system of record for the obligation, the owner, the backup, the consequence and the evidence. Existing tools store dates, not accountability. |
 | **Why are you working on this idea?** | I built the first Remindify deck from lived experience of missed renewals and informal coordination. The 2026 version exists because agents can now do the work, not just remind you about it. The missing layer is trust: who acted, under what scope, and what proof exists. That is the product I want to exist. |
 | **How long have you been working on this company idea?** | 1–3 years |
-| **What’s your current traction?** | Working prototype, pre-revenue. 16 seeded obligations, 7 agents, 8 providers, REST and MCP access, EIP-712 proof receipts, two Solidity reference contracts that compile, 11 automated tests and a production build. No paying users yet. The next milestone is a live Base deployment and 10 design partners. |
+| **What’s your current traction?** | Working prototype, pre-revenue. Public demo at https://remindify-xi.vercel.app, 16 seeded obligations, 7 agents, 8 providers, per-account workspaces, REST and MCP access, EIP-712 proof receipts, 35 automated tests and a production build. Two Solidity contracts are deployed to Base Sepolia and source-verified; they are unaudited and testnet-only. No paying users yet. The next milestone is a recorded anchor + escrow rehearsal and 10 design partners. |
 
 ### Funding
 
@@ -218,7 +229,7 @@ A plan is not a deployment.
 | --- | --- |
 | **Product name** | Remindify |
 | **Team name** | Remindify |
-| **Website** | `[FILL: public demo URL]` |
+| **Website** | https://remindify-xi.vercel.app |
 | **X Handle** | `[FILL]` |
 | **KarmaGAP profile** | **BLOCKED** — create the profile and paste the URL. |
 | **Github** | `https://github.com/DesmondSol/remindify` (currently private; MIT license) |
@@ -234,7 +245,7 @@ A plan is not a deployment.
 | **Describe your project** | Remindify is an obligation register for humans and agents. Each obligation has an owner, a backup, a risk score, an autonomy ceiling and a proof requirement. Agents act through scoped passports; every completion files an EIP-712 proof receipt. The trust layer anchors the proof hash to an EVM registry and releases USDC escrow only when the anchored receipt matches the obligation. The product is wallet-optional: a receipt exists offchain immediately, and a wallet is only needed to sign, anchor or fund. |
 | **Infrastructure focus** | Remindify is infrastructure other agents and builders can use, not only an end-user app. The register is exposed over REST and MCP; agent passports are machine-readable; proof receipts are a standard EIP-712 payload; the attestation registry and escrow contracts are reusable primitives. A marketplace operator, an accountant network or another agent platform can use the proof layer without adopting Remindify’s UI. |
 | **Verifiable onchain activity** | **BLOCKED** — no Celo mainnet activity yet. After deployment, the application will include the attestation and escrow contract addresses, 10+ anchor transactions, 3 complete escrow fund/release cycles, and a public page that links each transaction to its obligation and proof receipt. |
-| **Demo** | `[FILL: 2-minute Loom/YouTube link]` — use the script in section 7. The current app runs locally at `http://localhost:4178`. |
+| **Demo** | https://remindify-xi.vercel.app — the walkthrough is in section 7. `[FILL: 2-minute Loom/YouTube recording]` |
 
 ### Go-to-market
 
@@ -249,7 +260,7 @@ A plan is not a deployment.
 | Field | Draft |
 | --- | --- |
 | **Clear contribution to the ecosystem** | Celo’s agent economy needs a neutral answer to “did the agent actually do the work?” Remindify contributes an open proof-receipt format, an attestation registry, a proof-gated USDC escrow and an MCP/REST surface that other Celo agent projects can depend on. It is accountability infrastructure, not another consumer app. |
-| **Technical credibility** | The product is built and tested: React 19 + TypeScript client, zero-framework Node API, SQLite store, REST and MCP access, EIP-712 receipts verified with viem, keccak-256 proof/evidence hashes, two Solidity contracts that compile with solc 0.8.24, and 11 automated tests. The contracts are unaudited; a security review is part of the grant budget. The architecture is Base-first and Celo-reusable, not a fork. |
+| **Technical credibility** | The product is built and tested: React 19 + TypeScript client, zero-framework Node API, SQLite locally and Postgres in production, REST and MCP access, EIP-712 receipts verified with viem, keccak-256 proof/evidence hashes, two Solidity contracts compiled with solc 0.8.24 and deployed to Base Sepolia, and 35 automated tests. The contracts are unaudited; a security review is part of the grant budget. The architecture is Base-first and Celo-reusable, not a fork. |
 | **Additional information** | Ethiopia’s NBE has not authorised virtual-asset activity, so Ethiopian obligations stay offchain and the Celo module is geo-fenced to non-Ethiopian counterparties. Escrow creation requires an explicit jurisdiction acknowledgment. There is no token and no custody. The repo is MIT licensed. |
 
 ### Grant delivery
@@ -295,7 +306,11 @@ Use this only if the form asks for a budget. Adjust the amount before submitting
 >
 > Remindify is the obligation register for humans and agents. Every obligation gets an owner, a backup, a risk score, an autonomy level and a proof requirement. Agents get passports with scopes and ceilings. When an agent completes a task, it files an EIP-712 proof receipt. The receipt can stay offchain, or it can be anchored to Base. USDC escrow releases only when the proof matches the obligation.
 >
-> The product is a working prototype: 16 obligations, 7 agents, 8 providers, REST and MCP access, 11 tests. The contracts compile and are ready for a testnet deployment. We are pre-revenue, and the next milestone is 10 design partners on Base.
+> The product is live at remindify-xi.vercel.app: 16 seeded obligations, 7 agents,
+> 8 providers, per-account workspaces, REST and MCP access, 35 tests. The trust
+> contracts are deployed on Base Sepolia and unaudited; the anchor + escrow
+> rehearsal is the next milestone. We are pre-revenue, and the next target is 10
+> design partners on Base.
 >
 > The wedge is founders, freelancers and small studios in Addis and the diaspora — people with high obligation density and no back office. The moat is the obligation graph plus the proof graph. Remindify is the system of record for work that comes back.
 
@@ -308,7 +323,7 @@ Use this only if the form asks for a budget. Adjust the amount before submitting
 5. **Demo** — Today → approve & run → proof receipt → Trust page → escrow intent.
 6. **Market** — 400M knowledge workers, 40M small teams, marketplace take, agent/API access.
 7. **Business model** — free, Plus, Studio, marketplace, enterprise, agent platform.
-8. **Traction** — working prototype, 11 tests, contracts compile; pre-revenue and honest about it.
+8. **Traction** — live public demo, 35 tests, Base Sepolia contracts deployed; pre-revenue and honest about it.
 9. **Go-to-market** — Addis/diaspora wedge, Exopya network, renewal audit, backups as distribution.
 10. **Team + ask** — Solomon Tigabu; $400k pre-seed for 18 months.
 
@@ -330,12 +345,13 @@ recording so the numbers are stable.
 
 | Time | Screen | Action | Narration |
 | --- | --- | --- | --- |
-| 0:00–0:15 | Today | Show the greeting, risk pulse and approvals. | “Everyone has a second job they never applied for. Remindify turns it into an owned, auditable system.” |
-| 0:15–0:35 | Today | Open one approval, show the owner, backup, risk and proof requirement. | “Every obligation has an owner, a backup, a risk score and a proof requirement. Nothing counts without evidence.” |
-| 0:35–0:55 | Obligation drawer | Approve & run. Show the agent run and the proof receipt. | “The agent executes inside its passport. The completion files an EIP-712 proof receipt automatically.” |
-| 0:55–1:15 | Trust | Open the receipt. Show the hashes, typed data and sign action. | “The receipt is verifiable offchain. A wallet can sign it, and the signature is checked server-side with viem.” |
-| 1:15–1:35 | Trust | Show the Base network card and the anchor payload. | “With a contract configured, the proof hash anchors to Base. The chain verifies that work happened without trusting our database.” |
-| 1:35–1:55 | Trust | Open an escrow intent, check the jurisdiction acknowledgment, show release-on-proof. | “USDC escrow releases only against a signed or anchored receipt for the same obligation. No token, no custody, no server-held keys.” |
+| 0:00–0:15 | Today | Show the greeting, the two-ledger strip and the approvals. | “Everyone has a second job they never applied for — half of it is people, half of it is money. Remindify turns both into one owned, auditable system.” |
+| 0:15–0:35 | Today | Show the People side and Money side counts, then open one approval with its owner, backup, risk and proof requirement. | “Every obligation has an owner, a backup, a risk score and a proof requirement. Nothing counts without evidence.” |
+| 0:35–0:55 | Obligations | Switch the People/Money lens, then open a community pack and import it. | “The register carries both sides of a life, and a pack gives you a year someone else already mapped.” |
+| 0:55–1:10 | Obligation drawer | Approve & run. Show the agent run and the proof receipt. | “The agent executes inside its passport. The completion files an EIP-712 proof receipt automatically.” |
+| 1:10–1:30 | Trust | Open the receipt. Show the hashes, typed data and sign action. | “The receipt is verifiable offchain. A wallet can sign it, and the signature is checked server-side with viem.” |
+| 1:30–1:45 | Trust | Show the Base Sepolia network card and the anchor payload. | “With a contract configured, the proof hash anchors to Base. The chain verifies that work happened without trusting our database.” |
+| 1:45–1:55 | Trust | Open an escrow intent, check the jurisdiction acknowledgment, show release-on-proof. | “USDC escrow releases only against a signed or anchored receipt for the same obligation. No token, no custody, no server-held keys.” |
 | 1:55–2:00 | Agent Access / MCP | Show the API key and the MCP tool list. | “The same register is available to agents over REST and MCP. Remindify is the system of record for work that comes back.” |
 
 Do not record the Celo mainnet claim. It is not deployed. If the demo shows the
@@ -347,7 +363,7 @@ Celo card, label it “planned pilot.”
 
 ### Before SXSW (Nov 11)
 
-- [ ] Public demo URL that a judge can open without a local install.
+- [x] Public demo URL that a judge can open without a local install: **https://remindify-xi.vercel.app**
 - [ ] X URL and founder links.
 - [ ] Confirm the product was not commercially launched before Jan 1, 2024.
 - [ ] Confirm legal registration and <$10M raised.
@@ -356,9 +372,10 @@ Celo card, label it “planned pilot.”
 
 ### Before Base Ecosystem Fund (rolling)
 
-- [ ] Deploy both contracts to Base Sepolia and rehearse anchor + fund + release.
+- [x] Deploy both contracts to Base Sepolia.
+- [ ] Rehearse anchor + fund + release and record the transaction hashes. The contracts currently have **no anchor or escrow transactions**.
 - [ ] Deploy to Base mainnet, or state clearly that the module is testnet-only.
-- [ ] Public demo URL.
+- [x] Public demo URL: **https://remindify-xi.vercel.app**
 - [ ] Pitch deck URL.
 - [ ] Founder Telegram, X and LinkedIn.
 - [ ] Confirm runway and prior funding.
@@ -381,7 +398,7 @@ Celo card, label it “planned pilot.”
 
 ## 9. Decisions only the founder can make
 
-1. **Public demo hosting.** The app is a Node server with SQLite, not a static site. The repo now includes a `Dockerfile`; deploy it to Render/Railway/Fly with a persistent volume at `/app/data`, or use a short-lived tunnel for the demo video. A public URL is required by all three applications.
+1. **Public demo hosting.** Done: the app is live on Vercel at **https://remindify-xi.vercel.app** against Neon Postgres. Keep a reset path for the demo and confirm the seeded workspace is intact before recording.
 2. **Repo visibility.** MIT is already chosen. Celo prefers open source; Base does not require it. The safest sequence is to make the repo public after the Base testnet rehearsal and before the Celo submission, not before.
 3. **Registered entity and KYC country.** Celo asks for the country of registration and a lead applicant for KYC. This must be accurate.
 4. **Fundraising number.** The pitch says $400k for 10%. Base Ecosystem Fund may invest a different amount. Confirm the number before submitting.
