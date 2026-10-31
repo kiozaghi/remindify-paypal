@@ -52,7 +52,7 @@ Build scope and gates: [PAYPAL-HACKATHON.md](./PAYPAL-HACKATHON.md).
 
 **Try it**
 
-> Live: <https://remindify-xi.vercel.app> (if the deployment is current).
+> Live: <https://remindify-xi.vercel.app> — **confirm it serves this commit before submitting.** The site responds, but on 31 Oct its bundle still predated `c58e554`, so the new repository is evidently not yet connected to the Vercel project. If it is still stale on submission day, drop the live link and point judges at the local run below.
 > Local, no credentials needed:
 >
 > ```bash
