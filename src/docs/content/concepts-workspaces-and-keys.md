@@ -37,9 +37,9 @@ Every machine response carries `x-ratelimit-limit` and `x-ratelimit-remaining`. 
 
 | Plan | Keys | Calls / month |
 | --- | --- | --- |
-| Free | 3 | 500 |
+| Personal | 3 | 500 |
 | Studio | 25 | 50,000 |
-| Firm | 100 | 500,000 |
+| Operator | 100 | 500,000 |
 
 Usage resets on the first request of a new calendar month. Billing is not connected during the preview; the allowances are still enforced.
 

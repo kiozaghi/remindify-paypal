@@ -8,9 +8,9 @@
 import { getMeta, setMeta } from "./db.mjs";
 
 export const PLANS = {
-  free: { key: "free", name: "Free", price: 0, currency: "USD", key_limit: 3, call_limit: 500 },
-  studio: { key: "studio", name: "Studio", price: 49, currency: "USD", key_limit: 25, call_limit: 50_000 },
-  firm: { key: "firm", name: "Firm", price: 199, currency: "USD", key_limit: 100, call_limit: 500_000 },
+  free: { key: "free", name: "Personal", price: 0, currency: "USD", key_limit: 3, call_limit: 500 },
+  studio: { key: "studio", name: "Studio", price: 18, currency: "USD", key_limit: 25, call_limit: 50_000 },
+  operator: { key: "operator", name: "Operator", price: 48, currency: "USD", key_limit: 100, call_limit: 500_000 },
 };
 
 export function currentPeriod(now = new Date()) {

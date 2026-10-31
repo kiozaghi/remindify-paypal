@@ -551,9 +551,9 @@ Each workspace has a plan and two real allowances: agent keys and machine calls 
 
 | Plan | Price | Agent keys | Machine calls / month |
 | --- | --- | --- | --- |
-| Free | $0 | 3 | 500 |
-| Studio | $49 | 25 | 50,000 |
-| Firm | $199 | 100 | 500,000 |
+| Personal | $0 | 3 | 500 |
+| Studio | $18 | 25 | 50,000 |
+| Operator | $48 | 100 | 500,000 |
 
 `GET /api/billing` returns the current plan, usage and plan catalogue. `POST /api/billing/plan` is refused with `503 billing_not_configured` until a payment provider is connected; set `BILLING_ALLOW_PLAN_SWITCH=1` for a demo or manually invoiced deployment. No card data touches this server.
 
