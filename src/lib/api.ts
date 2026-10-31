@@ -1,4 +1,4 @@
-import type { AuthConfig, AuthUser } from "../types";
+import type { AuthConfig, AuthUser, Payment } from "../types";
 
 export interface ApiFailure extends Error {
   status?: number;
@@ -101,6 +101,25 @@ export const api = {
     request(`/api/trust/escrows/${id}/fund`, "POST", { tx_hash }),
   releaseEscrow: (id: string, proof_receipt_id?: string | null, tx_hash?: string) =>
     request(`/api/trust/escrows/${id}/release`, "POST", { proof_receipt_id, tx_hash }),
+
+  paypalOrder: (obligation_id: string) =>
+    request<{ payment: Payment; approve_url: string; mode: "sandbox" | "live" }>(
+      "/api/payments/paypal/orders",
+      "POST",
+      { obligation_id }
+    ),
+  paypalCapture: (order_id: string) =>
+    request<{ payment: Payment; already_captured?: boolean }>(
+      "/api/payments/paypal/capture",
+      "POST",
+      { order_id }
+    ),
+  paypalPayout: (payout_id: string) =>
+    request<{ payment: Payment; batch_id: string; batch_status: string }>(
+      "/api/payments/paypal/payouts",
+      "POST",
+      { payout_id }
+    ),
 
   sellerSave: (payload: any) => request("/api/seller", "PATCH", payload),
   sellerBooking: (id: string, action: "accept" | "decline" | "start" | "proof", payload: any = {}) =>

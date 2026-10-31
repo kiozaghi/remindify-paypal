@@ -52,6 +52,13 @@ function noteEvent({ actor = "You", verb, object, detail, kind = "human" }) {
   });
 }
 
+function payoutDestination(payout) {
+  if (!payout?.connected) return "";
+  return payout.method === "paypal"
+    ? `PayPal · ${payout.paypal_email || "email on file"}`
+    : `${payout.label || payout.method} · ${payout.account_last4 || "on file"}`;
+}
+
 function defaultPayout() {
   return {
     method: "none",
@@ -154,7 +161,7 @@ export function updateSellerProfile(patch, now = Date.now()) {
     object: next.name,
     detail: changedPayout
       ? next.payout.connected
-        ? `${next.payout.label || next.payout.method} · ${next.payout.account_last4 || "account on file"}`
+        ? payoutDestination(next.payout)
         : "Payout destination removed"
       : next.headline || "Profile details saved",
   });
@@ -329,9 +336,7 @@ export function requestPayout(now = Date.now()) {
   }
   const amount = round2(available.reduce((sum, entry) => sum + entry.amount, 0));
   const stamp = String(now).slice(-6);
-  const destination = profile.payout.method === "paypal"
-    ? `PayPal · ${profile.payout.paypal_email}`
-    : `${profile.payout.label || profile.payout.method} · ${profile.payout.account_last4 || "on file"}`;
+  const destination = payoutDestination(profile.payout);
   const payout = {
     id: `po_${stamp}`,
     ref: `PO-${new Date(now).getUTCFullYear()}-${stamp}`,
@@ -396,7 +401,7 @@ function maintenanceFor(profile, bookings, now, hasAvailable) {
     id: "payout",
     label: "Payout account",
     detail: payoutReady
-      ? `${profile.payout.label || profile.payout.method} · ${profile.payout.account_last4 || "on file"}`
+      ? payoutDestination(profile.payout)
       : "Earnings stay in the ledger until a destination is on file.",
     status: payoutReady ? "done" : "warn",
   });

@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { Icon } from "../components/Icon";
 import { Field, Monogram, Pill } from "../components/ui";
 import { dateShort, download, moneyExact } from "../lib/format";
-import type { SellerBooking, SellerPayout, SellerProfile } from "../types";
+import type { SellerBooking, SellerPayout, SellerPayoutAccount, SellerProfile } from "../types";
 
 const STATUS: Record<string, { label: string; tone: string }> = {
   requested: { label: "New request", tone: "blue" },
@@ -21,8 +21,9 @@ const EARNING: Record<string, { label: string; tone: string }> = {
   paid: { label: "Paid", tone: "ink" },
 };
 
-const METHODS = [
+const METHODS: { value: SellerPayoutAccount["method"]; label: string }[] = [
   { value: "none", label: "Not connected" },
+  { value: "paypal", label: "PayPal" },
   { value: "bank", label: "Bank account" },
   { value: "wallet", label: "Wallet" },
   { value: "usdc", label: "USDC" },
@@ -201,8 +202,14 @@ function BookingRow({ booking }: { booking: SellerBooking }) {
 }
 
 function PayoutRow({ payout }: { payout: SellerPayout }) {
-  const { actions } = useApp();
+  const { state, actions } = useApp();
   const [busy, setBusy] = useState(false);
+  const sent = state?.payments.find((p) => p.kind === "payout" && p.payout_id === payout.id);
+  const canSend = payout.status === "processing"
+    && payout.method === "paypal"
+    && Boolean(state?.paypal?.configured)
+    && !sent;
+
   return (
     <div className="seller-payout-row">
       <div>
@@ -210,7 +217,23 @@ function PayoutRow({ payout }: { payout: SellerPayout }) {
         <span>{dateShort(payout.created_at)} · {payout.destination}</span>
       </div>
       <span className="seller-payout-amount">{moneyExact(payout.amount)}</span>
-      {payout.status === "processing" ? (
+      {payout.status !== "processing" ? (
+        <Pill tone="ink">Paid</Pill>
+      ) : canSend ? (
+        <button
+          className="btn btn-lime btn-xs"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await actions.paySellerWithPaypal(payout.id);
+            setBusy(false);
+          }}
+        >
+          {busy ? <span className="spinner" /> : <Icon name="wallet" size={12} />} Send with PayPal
+        </button>
+      ) : sent ? (
+        <Pill tone="blue">Sent · awaiting PayPal</Pill>
+      ) : (
         <button
           className="btn btn-ghost btn-xs"
           disabled={busy}
@@ -222,8 +245,6 @@ function PayoutRow({ payout }: { payout: SellerPayout }) {
         >
           Confirm received
         </button>
-      ) : (
-        <Pill tone="ink">Paid</Pill>
       )}
     </div>
   );
@@ -245,6 +266,7 @@ function formFrom(profile: SellerProfile) {
       method: profile.payout.method,
       label: profile.payout.label,
       account_last4: profile.payout.account_last4,
+      paypal_email: profile.payout.paypal_email || "",
       currency: profile.payout.currency,
       country: profile.payout.country,
     },
@@ -627,6 +649,86 @@ export default function Seller() {
                   </button>
                 </div>
               </div>
+
+              <div className="seller-form">
+                <span className="eyebrow">Payout account</span>
+                <div className="seller-form-grid">
+                  <Field label="Send payouts to">
+                    <select
+                      value={form.payout.method}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          payout: {
+                            ...current.payout,
+                            method: event.target.value as SellerPayoutAccount["method"],
+                          },
+                        }))
+                      }
+                    >
+                      {METHODS.map((method) => (
+                        <option key={method.value} value={method.value}>{method.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  {form.payout.method === "paypal" ? (
+                    <Field label="PayPal email" hint="Payouts are sent here">
+                      <input
+                        type="email"
+                        value={form.payout.paypal_email}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            payout: { ...current.payout, paypal_email: event.target.value },
+                          }))
+                        }
+                        placeholder="you@example.com"
+                        maxLength={120}
+                      />
+                    </Field>
+                  ) : (
+                    <>
+                      <Field label="Label">
+                        <input
+                          value={form.payout.label}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              payout: { ...current.payout, label: event.target.value },
+                            }))
+                          }
+                          placeholder="Business checking"
+                          maxLength={40}
+                        />
+                      </Field>
+                      <Field label="Last 4" hint="of the account">
+                        <input
+                          value={form.payout.account_last4}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              payout: { ...current.payout, account_last4: event.target.value },
+                            }))
+                          }
+                          placeholder="1234"
+                          maxLength={4}
+                        />
+                      </Field>
+                    </>
+                  )}
+                </div>
+                <div className="seller-form-foot">
+                  <span>
+                    {form.payout.method === "paypal"
+                      ? "Payouts leave through PayPal Payouts, and only when you send them."
+                      : "Payouts are recorded in the ledger. Connect a rail to move funds."}
+                  </span>
+                  <button className="btn btn-ink btn-sm" onClick={savePayout} disabled={busy !== null}>
+                    {busy === "payout" ? <span className="spinner" /> : <Icon name="check" size={13} />}
+                    Save payout
+                  </button>
+                </div>
+              </div>
             </section>
           )}
         </div>
@@ -637,7 +739,9 @@ export default function Seller() {
             <h3>{moneyExact(summary.available)} ready</h3>
             <p>
               {payoutReady
-                ? `${profile.payout.label || profile.payout.method} · ${profile.payout.account_last4 || "on file"}`
+                ? profile.payout.method === "paypal"
+                  ? `PayPal · ${profile.payout.paypal_email}`
+                  : `${profile.payout.label || profile.payout.method} · ${profile.payout.account_last4 || "on file"}`
                 : "Add a payout account to request a withdrawal."}
             </p>
             {payoutReady ? (
@@ -655,7 +759,9 @@ export default function Seller() {
               </button>
             )}
             <em className="seller-disclosure">
-              Payouts are ledger entries. No provider is connected yet, so nothing moves automatically.
+              {profile.payout.method === "paypal"
+                ? "Each request is sent by you through PayPal Payouts. It shows as paid once PayPal confirms."
+                : "Payouts are ledger entries. Connect a rail to move funds."}
             </em>
             {payouts.length > 0 && (
               <div className="seller-payouts">

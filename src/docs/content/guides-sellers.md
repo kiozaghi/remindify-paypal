@@ -9,7 +9,7 @@ This page describes the model, what is available now and how the seller desk rec
 - The **Marketplace** lists curated humans and agents with a specialty, fixed price, SLA and rating.
 - A buyer can attach a provider to an obligation or book a new job with **Hire**.
 - Escrow can hold USDC against an obligation and release only on a signed or anchored receipt.
-- The **Seller desk** at `/seller` is live in preview: edit the storefront, accept or decline requests, file proof of delivery, read the earnings ledger and keep payout details on file. Payout providers are not connected yet, so a payout stays a ledger entry until it is confirmed by hand.
+- The **Seller desk** at `/seller` is live in preview: edit the storefront, accept or decline requests, file proof of delivery, read the earnings ledger and keep payout details on file. PayPal Payouts is the one connected payout rail: a payout can be sent to the PayPal email on file and is tracked by batch id.
 - Marketplace placement is still curated. Editing your storefront does not publish a new listing to buyers.
 
 Do not treat the seeded marketplace numbers as a live market. Ratings and job counts on demo providers are fixtures used by the product demo.
@@ -76,7 +76,7 @@ The ledger has four states:
 - **Platform fee.** `MARKETPLACE_FEE_BPS` sets the fee in basis points; the default is 800 (8%). The fee is recorded on every receipt and ledger entry alongside gross and net.
 - **Hold window.** `SELLER_HOLD_DAYS` sets how long an earning stays in `held`; the default is 3 days. The demo clock advance control moves the hold forward.
 - **Escrow.** When a buyer funds escrow, the released amount is the gross for that booking. Non-custodial escrow means Remindify never holds your funds.
-- **Payouts.** The desk records a payout against cleared earnings and stores only a method, a label and the last four digits. No payout provider is connected, so requesting a payout does not move money. The seller then confirms receipt, which closes the ledger entries.
+- **Payouts.** The desk records a payout against cleared earnings and stores either a PayPal email or a method, a label and the last four digits. With PayPal configured, a payout is sent through PayPal Payouts to the email on file and tracked by its batch id; without it, the request stays a ledger entry. The seller then confirms receipt, which closes the ledger entries.
 - **Taxes.** You are responsible for your own tax treatment. The ledger and receipts are the export; Remindify does not act as your employer or tax agent.
 - **Disputes.** A disputed proof should hold the earning. Disputes are handled manually during the preview; repeated disputes affect ranking.
 
@@ -88,7 +88,7 @@ The ledger has four states:
 | Work | New requests, active work, proof filing and finished work. |
 | Earnings | Ledger with gross, fee and net; receipts you can save as text. |
 | Storefront | Name, headline, specialty, price, turnaround, reply time, capabilities, description and availability. |
-| Payouts | Method, label, last four digits and currency. Existing payouts appear with a confirm-receipt action. |
+| Payouts | Payout account (PayPal email or bank label), currency, and payout history with a send and confirm-receipt action. |
 | Maintenance | Payout readiness, profile completeness, capability tags, storefront state, overdue work and earnings ready to withdraw. |
 
 The desk lives inside a signed-in workspace. It is not a public seller portal: buyers still reach you through the [marketplace](/market), and placement stays curated during the preview.
@@ -101,9 +101,9 @@ If you are building an agent you want to sell, start with the [agent passport](/
 
 ## Honest limits
 
-- There is no instant payout and no card checkout.
+- There is no card checkout. PayPal Payouts is the only connected fiat rail; the earning still clears on the hold window, not on delivery.
 - There is no public API for creating a listing yet.
-- Payout providers are not connected; payouts are ledger entries confirmed by the seller.
+- Only PayPal is connected. Any other payout method stays a ledger entry confirmed by the seller.
 - There is no file upload for proof; you submit a reference string.
 - There is no takedown or dispute desk yet; disputes are handled manually.
 - The marketplace is small on purpose. A bench with weak proof standards is worse than an empty one.

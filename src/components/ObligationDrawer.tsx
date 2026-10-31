@@ -19,6 +19,11 @@ export default function ObligationDrawer() {
   const category = CATEGORIES[ob.category] || CATEGORIES.other;
   const runs = state.runs.filter((r) => r.obligation_id === ob.id).slice(0, 4);
   const events = state.events.filter((e) => e.object === ob.title).slice(0, 4);
+  const payment = state.payments.find((p) => p.obligation_id === ob.id && p.rail === "paypal");
+  const payable = ob.amount > 0
+    && ["active", "waiting"].includes(ob.status)
+    && !payment?.capture_id
+    && state.paypal.configured;
   const close = () => setOverlays((o) => ({ ...o, drawer: null }));
 
   const timeline = useMemo(() => {
@@ -171,6 +176,13 @@ export default function ObligationDrawer() {
               </div>
               <Icon name="shield" size={18} />
             </div>
+            {payment?.capture_id && (
+              <span className="mini-proof">
+                <Icon name="receipt" size={10} />
+                PayPal capture {payment.capture_id} · ${Number(payment.amount).toFixed(2)}
+                {state.paypal.mode === "sandbox" ? " · sandbox" : ""}
+              </span>
+            )}
           </section>
 
           <section className="drawer-section">
@@ -201,7 +213,7 @@ export default function ObligationDrawer() {
                 placeholder={ob.proof_required}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    actions.complete(ob.id, { proof: proof || ob.proof_required, by: "Solomon Tigabu" });
+                    actions.complete(ob.id, { proof: proof || ob.proof_required, by: state.user });
                     close();
                   }
                 }}
@@ -222,6 +234,11 @@ export default function ObligationDrawer() {
               <button className="btn btn-ghost" onClick={() => actions.snooze(ob.id, 3)}>
                 <Icon name="clock" size={16} /> +3 days
               </button>
+              {payable && (
+                <button className="btn btn-lime" onClick={() => actions.payWithPaypal(ob.id)}>
+                  <Icon name="wallet" size={16} /> Pay {money(ob.amount)} with PayPal
+                </button>
+              )}
               <button className="btn btn-ghost" onClick={() => actions.runNow(ob.id)}>
                 <Icon name="bolt" size={16} /> Run now
               </button>

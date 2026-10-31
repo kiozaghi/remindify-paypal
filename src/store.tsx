@@ -267,6 +267,40 @@ function makeActions(
         toast("Escrow released", "A signed receipt satisfied the release condition.", "success");
         return res;
       }),
+    payWithPaypal: (id: string) =>
+      run(async () => {
+        const res = await api.paypalOrder(id);
+        toast(
+          res.mode === "sandbox" ? "Opening PayPal sandbox" : "Opening PayPal",
+          "Approve the payment there. Nothing is charged until you do.",
+          "default"
+        );
+        // A full navigation, because the approval page belongs to PayPal.
+        window.location.assign(res.approve_url);
+        return res;
+      }),
+    capturePaypal: (orderId: string) =>
+      run(async () => {
+        const res = await api.paypalCapture(orderId);
+        toast(
+          res.already_captured ? "Already paid" : "Paid with PayPal",
+          `$${Number(res.payment.amount).toFixed(2)} settled${
+            res.payment.capture_id ? ` · ${res.payment.capture_id}` : ""
+          }. The capture is filed as proof.`,
+          "success"
+        );
+        return res;
+      }),
+    paySellerWithPaypal: (payoutId: string) =>
+      run(async () => {
+        const res = await api.paypalPayout(payoutId);
+        toast(
+          "Sent with PayPal",
+          `Batch ${res.batch_id} is on its way. The ledger flips to paid when PayPal confirms.`,
+          "success"
+        );
+        return res;
+      }),
     saveSeller: (patch: any) =>
       run(async () => {
         const res = await api.sellerSave(patch);
@@ -380,6 +414,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (page !== "obligations" || params.get("templates") !== "1") return;
     setOverlays((o) => ({ ...o, templates: true }));
     window.history.replaceState(null, "", "/obligations");
+  }, []);
+
+  useEffect(() => {
+    // PayPal appends ?token=<order>&PayerID=<payer> to our return URL, so the
+    // capture has to happen here. Drop the query first: the capture is
+    // idempotent, but a refresh should not re-post it.
+    const { page, params } = readLocation();
+    if (page !== "obligations") return;
+    const outcome = params.get("paypal");
+    if (!outcome) return;
+    window.history.replaceState(null, "", "/obligations");
+
+    if (outcome === "cancel") {
+      toast("Payment cancelled", "PayPal didn't take anything. The obligation is still open.", "warn");
+      return;
+    }
+    const token = params.get("token");
+    if (outcome === "return" && token) {
+      actions.capturePaypal(token);
+      return;
+    }
+    toast("No order to capture", "PayPal came back without an order id.", "warn");
   }, []);
 
   useEffect(() => {

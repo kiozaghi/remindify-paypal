@@ -262,7 +262,7 @@ export default function Obligations() {
                   title="Mark complete"
                   onClick={(e) => {
                     e.stopPropagation();
-                    actions.complete(ob.id, { proof: ob.proof_required, by: "Solomon Tigabu" });
+                    actions.complete(ob.id, { proof: ob.proof_required, by: state.user });
                   }}
                 >
                   <Icon name="check" size={14} />
