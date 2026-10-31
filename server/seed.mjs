@@ -1,5 +1,9 @@
 // Remindify seed data — relative to "now" so the demo is always alive.
+import { randomBytes } from "node:crypto";
+
 const DAY = 86400000;
+const DEMO_EXECUTOR_PATH = "/api/demo/executor";
+const demoSecret = () => `rfy_exec_${randomBytes(24).toString("hex")}`;
 
 export function buildSeed(now = Date.now()) {
   const at = (days, hours = 0) => new Date(now + days * DAY + hours * 3600000).toISOString();
@@ -510,6 +514,8 @@ export function buildSeed(now = Date.now()) {
       cost_per_run: 0,
       status: "active",
       scopes: ["vehicle:read", "calendar:write", "orders:draft"],
+      executor_url: DEMO_EXECUTOR_PATH,
+      executor_secret: demoSecret(),
       last_active: past(74),
       created_at: at(-150),
     },
@@ -546,6 +552,8 @@ export function buildSeed(now = Date.now()) {
       cost_per_run: 0,
       status: "active",
       scopes: ["billing:read", "dns:write", "backups:run"],
+      executor_url: DEMO_EXECUTOR_PATH,
+      executor_secret: demoSecret(),
       last_active: past(9),
       created_at: at(-230),
     },

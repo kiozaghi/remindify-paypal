@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Remindify — the autonomy layer for everything that comes back.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kiozaghi/remindify-paypal"
+  },
+  "homepage": "https://remindify-xi.vercel.app",
   "engines": {
     "node": ">=22"
   },

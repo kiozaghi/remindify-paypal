@@ -58,6 +58,11 @@ export interface Obligation {
   last_completed_at?: string;
   last_proof?: string;
   completions?: number;
+  handover_at?: string;
+  handover_from?: string;
+  handover_reason?: string;
+  handover_owner_kind?: "human" | "agent" | "team";
+  handover_history?: { at: string; from: string; to: string; reason: string; reclaimed_at?: string }[];
   risk: Risk;
 }
 
@@ -500,6 +505,7 @@ export interface Payment {
   batch_id?: string | null;
   receiver?: string | null;
   provider_status?: string | null;
+  failure_code?: string | null;
   failure_reason?: string | null;
   created_at: string;
   updated_at: string;

@@ -260,7 +260,7 @@ export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?
           <span className="eyebrow">Small print</span>
           <a href={routeHref("privacy")} onClick={spaClick(() => goPublic("privacy"))}>Privacy</a>
           <a href={routeHref("terms")} onClick={spaClick(() => goPublic("terms"))}>Terms</a>
-          <a href="mailto:hello@remindify.app">hello@remindify.app</a>
+          <a href="mailto:liyusoftwaresolution@gmail.com">liyusoftwaresolution@gmail.com</a>
           <a href="https://base.org" target="_blank" rel="noreferrer">Base ecosystem <Icon name="arrowUpRight" size={11} /></a>
         </div>
       </div>

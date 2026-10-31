@@ -68,6 +68,10 @@ export default function Trust() {
   const receipts = state?.receipts || [];
   const escrows = state?.escrows || [];
   const networks = state?.trust?.networks || [];
+  const payments = useMemo(
+    () => [...(state?.payments || [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [state?.payments]
+  );
   const stats = state?.trust?.stats;
   const guardrails = state?.trust?.guardrails;
 
@@ -453,6 +457,86 @@ export default function Trust() {
                 action={<button className="btn btn-sm btn-ink" onClick={openReceiptModal}><Icon name="plus" size={14} /> File a receipt</button>}
               />
             )}
+          </section>
+
+          <section className="panel trust-panel">
+            <div className="panel-head">
+              <div>
+                <span className="eyebrow">Fiat rail</span>
+                <h3>PayPal ledger</h3>
+                <p className="trust-panel-sub">
+                  Every order, capture and payout this workspace has sent, with the PayPal reference that proves it.
+                  {" "}
+                  {state.paypal.mode === "sandbox" ? "Sandbox credentials — no real money moves." : "Live credentials."}
+                </p>
+              </div>
+              <Pill tone={state.paypal.configured ? "teal" : "amber"}>
+                {state.paypal.configured ? state.paypal.mode : "not configured"}
+              </Pill>
+            </div>
+
+            {payments.length ? (
+              <div className="escrow-list">
+                {payments.map((payment) => (
+                  <article className="escrow-row" key={payment.id}>
+                    <span className={`escrow-icon status-${payment.status}`}>
+                      <Icon name={payment.kind === "payout" ? "arrowUpRight" : "wallet"} size={16} />
+                    </span>
+                    <div className="escrow-main">
+                      <div className="escrow-title">
+                        <strong>
+                          {payment.kind === "payout"
+                            ? `Payout · ${payment.payout_ref || payment.payout_id || "seller earnings"}`
+                            : payment.obligation_title || "Obligation payment"}
+                        </strong>
+                        <span className={`trust-status ${payment.status}`}>{payment.status}</span>
+                      </div>
+                      <div className="escrow-meta">
+                        <span>{moneyExact(payment.amount)} {payment.currency}</span>
+                        <i />
+                        <span>
+                          {payment.kind === "payout"
+                            ? `to ${payment.receiver || "payout account"}`
+                            : payment.payer_email
+                              ? `from ${payment.payer_email}`
+                              : payment.status === "created"
+                                ? "awaiting payer"
+                                : "no payer"}
+                        </span>
+                        <i />
+                        <span>
+                          {payment.order_id
+                            ? `order ${shortHash(payment.order_id)}`
+                            : payment.batch_id
+                              ? `batch ${shortHash(payment.batch_id)}`
+                              : "no PayPal id yet"}
+                        </span>
+                        {payment.failure_code && (
+                          <>
+                            <i />
+                            <span className="trust-code">{payment.failure_code.replace(/_/g, " ").toLowerCase()}</span>
+                          </>
+                        )}
+                      </div>
+                      {payment.failure_reason && <em>{payment.failure_reason}</em>}
+                    </div>
+                    <div className="escrow-actions">
+                      <span className="drawer-event-time">{timeAgo(payment.updated_at || payment.created_at, nowMs)}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon="wallet"
+                title="No PayPal activity yet"
+                detail="Pay an obligation from its drawer, or send an earnings payout from the seller desk. Each step lands here with its PayPal reference."
+              />
+            )}
+            <div className="trust-inline-note">
+              <Icon name="info" size={12} />
+              PayPal moves the fiat. Proof still files to the vault, and the Base rail stays separate.
+            </div>
           </section>
 
           <section className="panel trust-panel">

@@ -20,6 +20,47 @@ npm run build && npm start   # production build on :4178
 
 Open **http://localhost:5173** (dev) or **http://localhost:4178** (built). Create an account on the first visit. Google sign-in explains what is missing until OAuth credentials are configured; email and wallet sign-in work without Google.
 
+## PayPal AI Hackathon
+
+This public repository is the hackathon entry. The licence is MIT. Everything on the PayPal rail below was written after **1 October 2026**, on top of an existing obligation register.
+
+**What was added for this submission**
+
+- **PayPal Orders v2** — create and capture a payment for an obligation. The amount is rebuilt server-side from the stored obligation, never from the request; capture is idempotent and reconciles an `ORDER_ALREADY_CAPTURED` race by reading the order back.
+- **PayPal Payouts v1** — send seller earnings in a separate two-step flow: request the payout, then send it with PayPal. The seller desk never says money moved until PayPal confirms.
+- **Signed webhooks** at `/api/paypal/webhook` verify the PayPal transmission signature before a capture or payout changes the register. Without `PAYPAL_WEBHOOK_ID`, events are acknowledged but not applied.
+- **A built-in sandbox executor** at `/api/demo/executor`, so seeded agents exercise the real HMAC-signed connector round-trip (run, proof, receipt) without pretending money moved. Only the seeded agents point at it; an executor you connect yourself must be your own HTTPS endpoint.
+- **Real backup handover** — when an obligation passes its deadline with a backup named, the backup becomes the owner, the escalation is written to the audit trail and portfolio stats, and the owner can reclaim it from the drawer.
+- **A PayPal ledger** on the Trust page: every order, capture and payout with its PayPal reference and status.
+- UI for paying an obligation from its drawer (PayPal button + sandbox return handling), the seller payout method and the “Send with PayPal” step.
+
+**Commit range:** `f7d5310..HEAD` on `main`. The first commit adds the rail; everything after it is UI, documentation, tests, sandbox execution and handover.
+
+**Run it (judges)**
+
+```bash
+npm install
+npm run build
+npm start            # http://localhost:4178
+```
+
+Create an account on first run; the workspace seeds itself with recent obligations, agents, approvals and history. No PayPal credentials are needed to walk the register, the sandbox executor, handover or the trust layer.
+
+To exercise the live PayPal sandbox rail, export `PAYPAL_ENV=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (and optionally `PAYPAL_WEBHOOK_ID`), then restart. `npm start` does not read `.env.local`, so export the variables in the shell or pass them inline. Pay an obligation from its drawer while signed in to a PayPal **sandbox buyer** account — the guest card form does not accept test cards on this merchant. Payouts need a sandbox receiver email on the seller desk.
+
+**Two-minute demo path**
+
+1. **Today → Run agent sweep.** Agents with an executor act; agents without one draft. The summary counts both.
+2. **Obligations → Car service → Run now → Approve & run.** The sandbox executor answers with signed proof, the run is logged, and a completion receipt is filed.
+3. **Open an overdue obligation.** The coral banner shows the backup now owns it. **Reclaim** puts it back in your hands and keeps the history.
+4. **Trust → PayPal ledger** shows each order, capture and payout with its PayPal reference.
+5. **Trust → receipt → Sign** (wallet or pasted signature) and release an escrow against it.
+
+**Honest limits**
+
+- PayPal payouts to Ethiopia are limited; the payout demo uses a sandbox receiver. Receiving fiat is the rail’s own constraint, not something this app hides.
+- The record is the product: Remindify files proof and the audit trail. Base anchoring stays separate from the fiat rail and is never implied by a PayPal payment.
+
 ## Deploy on Vercel
 
 Vercel functions do not have a persistent writable filesystem, so **SQLite cannot be the production database**. The repository is already wired for a single Vercel deployment with Postgres:
@@ -39,7 +80,7 @@ Vercel functions do not have a persistent writable filesystem, so **SQLite canno
 
 Do **not** set `REMINDIFY_DB`, `DATABASE_SSL=false` or `PG_NO_LOCK=1` on Vercel. The Postgres store serializes each request's writes under an advisory lock; that bounds write throughput but every row is still partitioned by `workspace_id`, and each account resolves to its own workspace.
 
-If a CLI deployment is blocked because the latest Git commit author is not a member of the Vercel team, either add that email to the team or deploy from a clean copy without a `.git` directory. GitHub auto-deploy also requires the Vercel GitHub app to have access to this private repository.
+If a CLI deployment is blocked because the latest Git commit author is not a member of the Vercel team, either add that email to the team or deploy from a clean copy without a `.git` directory. GitHub auto-deploy also requires the Vercel GitHub app to have access to this public repository.
 
 ---
 
@@ -55,7 +96,7 @@ If a CLI deployment is blocked because the latest Git commit author is not a mem
 | **Agents** | Agent passports: role, scopes, trust, runs, success rate, autonomy ceiling, execution connector, obligations on desk, recent runs, exportable passport JSON. |
 | **Marketplace** | Vetted humans and agents side by side. Fixed price, escrow on proof, scoped access, SLA. Attach a provider to an obligation or post a new job. |
 | **Activity & proof** | Immutable event stream, filterable by agents/humans/system/API/proof, exportable audit log, proof vault. |
-| **Trust layer** | Offchain proof receipts, EIP-712 signing, optional Base/Celo anchoring, and USDC escrow intents that release on proof. Preview mode needs no wallet or contract. |
+| **Trust layer** | Offchain proof receipts, EIP-712 signing, optional Base/Celo anchoring, USDC escrow intents that release on proof, and a PayPal ledger of every order, capture and payout. Preview mode needs no wallet or contract. |
 | **Agent access** | Machine API keys, endpoint reference, webhooks, live test call, recent machine calls, guardrails. |
 
 Plus: **⌘K command palette**, obligation drawer with autonomy + checklist + proof + timeline, agent passport drawer, create-agent / new-obligation / hire flows, toasts, and a virtual clock.
@@ -69,7 +110,7 @@ Plus: **⌘K command palette**, obligation drawer with autonomy + checklist + pr
 5. **Marketplace** — delegate the payroll filing to a human PA or an agent. Access is scoped to that obligation; payment releases on proof.
 6. **Trust layer** — every completion files an offchain receipt. Open it, **Sign** with a wallet or copy the EIP-712 payload. With a contract configured, **Anchor** writes the proof hash to Base. Escrow intents release only against a signed or anchored receipt.
 7. **Agent access** — hit **Test live call**, create a key, or run the MCP server.
-8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Agents draft plans and escalate approvals. Autopilot obligations execute only where a connector is connected; otherwise the sweep tells you how many are waiting on one. Reset from the clock chip.
+8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Agents draft plans and escalate approvals; overdue obligations are handed to their backup, and the drawer shows the escalation with a **Reclaim** action. Autopilot obligations execute only where a connector is connected; otherwise the sweep tells you how many are waiting on one. Reset from the clock chip.
 
 Nothing here is a static mock: every button writes to the active store — SQLite locally, Postgres on Vercel — and re-renders from the API. Agent work is only reported as executed when a connector answers.
 
@@ -325,7 +366,7 @@ Existing single-workspace databases are migrated in place: rows that predate thi
 
 - Google: requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and a registered redirect URI.
 - Wallet: requires a browser wallet for manual testing. The server flow is verified with viem-generated accounts.
-- Contacts: `hello@remindify.app` and `security@remindify.app` are placeholders until monitored inboxes are confirmed.
+- Contacts: `liyusoftwaresolution@gmail.com` (product and security).
 
 ### Search and AI discovery
 
@@ -644,7 +685,7 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;
 - take the reference contracts through an audit, add upgrade/ops procedures, and test anchor/fund/release against a deployed contract on Base Sepolia before mainnet;
 - connect a real sanctions provider behind the `SANCTIONS_API_URL` seam (it screens the payer's connected wallet on escrow money movement, but external-wallet funding and provider payout addresses are out of scope);
-- confirm or replace the placeholder `hello@remindify.app` and `security@remindify.app` inboxes.
+- confirm or replace the placeholder `liyusoftwaresolution@gmail.com` inbox.
 
 The design decisions that matter — autonomy ceilings, proof requirements, audit trail, human/agent parity — are already in the data model.
 

@@ -136,6 +136,39 @@ test("capture verifies the amount before reporting success", async () => {
   );
 });
 
+test("a declined capture reads as a decline, not a generic PayPal error", async () => {
+  installPayPalMock();
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).endsWith("/capture")) {
+      return jsonResponse({
+        name: "UNPROCESSABLE_ENTITY",
+        message: "The requested action could not be performed, semantically incorrect, or failed business validation.",
+        debug_id: "dbg_1",
+        details: [{
+          issue: "INSTRUMENT_DECLINED",
+          description: "The provided payment method was declined.",
+        }],
+      }, 422);
+    }
+    return inner(url, options);
+  };
+  try {
+    await assert.rejects(
+      captureOrder("ORDER1", { currency: "USD", value: "18.00" }, { env: ENV }),
+      (error) => {
+        assert.ok(error instanceof PayPalError);
+        assert.equal(error.code, "INSTRUMENT_DECLINED");
+        assert.equal(error.status, 422);
+        assert.match(error.message, /declined the payer's card/);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = inner;
+  }
+});
+
 test("payouts send the Payouts API currency field", async () => {
   installPayPalMock();
   const result = await createPayout({

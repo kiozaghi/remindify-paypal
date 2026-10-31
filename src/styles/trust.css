@@ -328,6 +328,14 @@
 .trust-status.signed, .trust-status.funded { background: var(--blue-soft); color: #2852b8; }
 .trust-status.anchored, .trust-status.released { background: var(--teal-soft); color: #086b52; }
 .trust-status.draft { background: var(--bone-2); color: var(--muted); }
+.trust-status.captured, .trust-status.paid { background: var(--teal-soft); color: #086b52; }
+.trust-status.processing, .trust-status.created { background: var(--amber-soft); color: #8f5e0c; }
+.trust-status.failed, .trust-status.superseded { background: var(--coral-soft); color: #b23a22; }
+.trust-status.expired { background: var(--bone-2); color: var(--muted); }
+.escrow-icon.status-captured, .escrow-icon.status-paid { background: var(--teal-soft); color: #086b52; }
+.escrow-icon.status-processing, .escrow-icon.status-created { background: var(--amber-soft); color: #8f5e0c; }
+.escrow-icon.status-failed, .escrow-icon.status-superseded { background: var(--coral-soft); color: #b23a22; }
+.escrow-icon.status-expired { background: var(--bone-2); color: var(--muted); }
 
 /* Pills */
 .pill-teal { background: var(--teal-soft); color: #086b52; }
@@ -385,6 +393,14 @@
   font-style: normal;
   font-size: 9px;
   color: var(--faint);
+}
+.escrow-meta .trust-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 .escrow-track {
   position: relative;

@@ -48,6 +48,12 @@
 .risk-panel-due strong { display: block; font-size: 12px; margin-top: 3px; }
 .risk-panel-due em { display: block; font-style: normal; font-family: var(--mono); font-size: 8px; color: var(--faint); margin-top: 2px; }
 .drawer-section { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--line); }
+.handover-banner { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 13px; border: 1px solid #f0b7a8; border-radius: 10px; background: var(--coral-soft); }
+.handover-copy { flex: 1; min-width: 0; }
+.handover-tag { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 7.5px; text-transform: uppercase; letter-spacing: 0.06em; color: #a53320; }
+.handover-copy strong { display: block; font-size: 12px; margin-top: 3px; color: var(--ink); }
+.handover-copy em { display: block; font-style: normal; font-size: 9.5px; line-height: 1.4; color: #8a4a3a; margin-top: 2px; }
+.handover-banner .btn { flex: none; }
 .drawer-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
 .drawer-section-head h3 { font-size: 13px; }
 .autonomy-box { padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); display: flex; flex-direction: column; gap: 9px; }

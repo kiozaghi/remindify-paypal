@@ -73,6 +73,7 @@ export const api = {
   complete: (id: string, payload: any) => request(`/api/obligations/${id}/complete`, "POST", payload),
   snooze: (id: string, days: number) => request(`/api/obligations/${id}/snooze`, "POST", { days }),
   run: (id: string) => request(`/api/obligations/${id}/run`, "POST", {}),
+  reclaim: (id: string) => request(`/api/obligations/${id}/reclaim`, "POST", {}),
   remove: (id: string) => request(`/api/obligations/${id}`, "DELETE"),
   decide: (id: string, decision: string, note = "") =>
     request(`/api/approvals/${id}/decide`, "POST", { decision, note }),

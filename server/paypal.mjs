@@ -131,13 +131,57 @@ async function api(path, { method = "GET", payload, env = process.env, requestId
   }
 
   if (!response.ok) {
-    throw new PayPalError(json.message || `PayPal returned ${response.status}.`, {
-      status: 502,
-      code: json.name || `paypal_${response.status}`,
+    const issue = firstIssue(json);
+    throw new PayPalError(explain(issue, json), {
+      // 4xx is the caller's problem (a declined card, an unapproved order);
+      // 5xx and transport failures are ours to report as an upstream fault.
+      status: response.status >= 400 && response.status < 500 ? response.status : 502,
+      code: issue || json.name || `paypal_${response.status}`,
       details: json.details || json.debug_id || null,
     });
   }
   return json;
+}
+
+function firstIssue(json) {
+  const details = Array.isArray(json?.details) ? json.details : [];
+  const withIssue = details.find((detail) => detail?.issue);
+  if (withIssue?.issue) return String(withIssue.issue);
+  return json?.details?.issue ? String(json.details.issue) : null;
+}
+
+// PayPal speaks in issue codes. A payer should never see ORDER_NOT_APPROVED.
+const ISSUE_COPY = {
+  INSTRUMENT_DECLINED:
+    "PayPal declined the payer's card or funding source. Nothing was charged — try a different card or the PayPal balance.",
+  PAYER_ACTION_REQUIRED:
+    "The payer still has a step to finish on PayPal. Reopen the approval link to complete it.",
+  ORDER_NOT_APPROVED:
+    "The payer has not approved this order yet. Reopen the PayPal approval link and finish checkout.",
+  ORDER_ALREADY_CAPTURED:
+    "This order was already captured. Refresh and the capture reference will be read back from PayPal.",
+  ORDER_EXPIRED:
+    "This PayPal order expired before it was captured. Start a fresh payment from the obligation.",
+  TRANSACTION_REFUSED:
+    "PayPal refused the transaction. Nothing was charged.",
+  PAYMENT_DENIED:
+    "PayPal denied the payment. Nothing was charged.",
+  CURRENCY_MISMATCH:
+    "The payer's funding source cannot settle in this currency.",
+  INVALID_CURRENCY_CODE:
+    "PayPal does not accept this currency for the account.",
+  COMPLIANCE_VIOLATION:
+    "PayPal blocked this payment for a compliance reason.",
+  RISK_DECLINED:
+    "PayPal's risk checks declined this payment. Nothing was charged.",
+};
+
+function explain(issue, json) {
+  if (issue && ISSUE_COPY[issue]) return ISSUE_COPY[issue];
+  const detail = Array.isArray(json?.details)
+    ? json.details.find((entry) => entry?.description)?.description
+    : json?.details?.description;
+  return detail || json?.message || `PayPal returned ${json?.name || "an error"}.`;
 }
 
 function cents(value) {

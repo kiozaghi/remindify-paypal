@@ -104,6 +104,19 @@ export default function ObligationDrawer() {
             </div>
           </section>
 
+          {ob.handover_at && (
+            <section className="handover-banner">
+              <div className="handover-copy">
+                <span className="handover-tag"><Icon name="users" size={12} /> Escalated to your backup</span>
+                <strong>{ob.owner} owns this now</strong>
+                <em>{ob.handover_reason} Reclaim it when you are ready.</em>
+              </div>
+              <button className="btn btn-ink btn-sm" onClick={() => actions.reclaim(ob.id)}>
+                <Icon name="arrowLeft" size={14} /> Reclaim
+              </button>
+            </section>
+          )}
+
           <section className="drawer-section">
             <div className="drawer-section-head">
               <h3>How far can it go?</h3>

@@ -101,6 +101,12 @@ function makeActions(
         toast(`Snoozed ${days} days`, "Risk recalculated. Nothing is lost.", "default");
         return res;
       }),
+    reclaim: (id: string) =>
+      run(async () => {
+        const res = await api.reclaim(id);
+        toast("Back in your hands", "The handover is recorded in the audit trail.", "success");
+        return res;
+      }),
     runNow: (id: string) =>
       run(async () => {
         const res = await api.run(id);

@@ -6,6 +6,7 @@ import { connectorConfigured, executeWithConnector, publicAgent } from "./execut
 import { dueOutboxJobs, enqueueConnectorRetry, outboxBackoff, outboxLeaseMs } from "./outbox.mjs";
 import { sellerSnapshot } from "./seller.mjs";
 import { paypalConfigured, paypalMode } from "./paypal.mjs";
+import { expireStalePayments } from "./payments.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -138,6 +139,7 @@ export function buildState() {
     coverage,
     delegated: active.filter((o) => o.owner_kind === "agent").length,
     with_backup: withBackup,
+    handed_over: active.filter((o) => o.handover_at).length,
     agent_runs_30d: agentTotals.runs,
     agent_done_30d: agentTotals.done,
     agent_failed_30d: agentTotals.failed,
@@ -416,11 +418,84 @@ export async function drainOutbox({ now = Date.now(), limit = 5 } = {}) {
 }
 
 function executorHost(agent) {
+  const value = String(agent?.executor_url || "");
+  if (value.startsWith("/")) return "Built-in sandbox executor";
   try {
-    return new URL(agent.executor_url).host;
+    return new URL(value).host;
   } catch {
     return "connected";
   }
+}
+
+// A missed deadline means the agent went silent. The named backup takes
+// ownership, and the change is recorded so it can be reclaimed.
+export function handOverOverdue(now, pendingIds, data) {
+  let handedOver = 0;
+  for (const ob of data.obligations) {
+    if (ob.status !== "active" || !ob.backup || ob.handover_at) continue;
+    if (pendingIds.has(ob.id)) continue;
+    const risk = riskFor(ob, now);
+    if (risk.days >= 0 || risk.days <= -45) continue;
+
+    const from = ob.owner;
+    const daysLate = Math.max(1, Math.round(Math.abs(risk.days)));
+    ob.handover_owner_kind = ob.owner_kind || "human";
+    ob.handover_from = from;
+    ob.handover_at = new Date(now).toISOString();
+    ob.handover_reason = `Missed by ${daysLate} day${daysLate === 1 ? "" : "s"}; the agent went quiet.`;
+    ob.owner = ob.backup;
+    ob.owner_kind = "human";
+    put("obligations", ob);
+    logEvent({
+      actor_type: "human",
+      actor_id: null,
+      actor: ob.backup,
+      verb: "took over a missed deadline",
+      object: ob.title,
+      detail: `${from} missed it by ${daysLate} day${daysLate === 1 ? "" : "s"} · ${ob.backup} is now the owner`,
+      kind: "handover",
+    });
+    handedOver += 1;
+  }
+  return handedOver;
+}
+
+export function reclaimObligation(id, by = "Solomon Tigabu") {
+  const data = loadAll();
+  const ob = data.obligations.find((o) => o.id === id);
+  if (!ob) return { ok: false, error: "Not found" };
+  if (!ob.handover_at) return { ok: false, error: "This obligation was not escalated." };
+
+  const previous = ob.owner;
+  ob.handover_history = [
+    ...(ob.handover_history || []),
+    {
+      at: ob.handover_at,
+      from: ob.handover_from || by,
+      to: previous,
+      reason: ob.handover_reason || "",
+      // Same clock as handover_at: the demo time machine must never record a
+      // reclaim that precedes the handover it reverses.
+      reclaimed_at: new Date(virtualNow()).toISOString(),
+    },
+  ].slice(-20);
+  ob.owner = ob.handover_from || by;
+  ob.owner_kind = ob.handover_owner_kind || "human";
+  delete ob.handover_at;
+  delete ob.handover_from;
+  delete ob.handover_reason;
+  delete ob.handover_owner_kind;
+  put("obligations", ob);
+  logEvent({
+    actor_type: "human",
+    actor_id: null,
+    actor: by,
+    verb: "reclaimed an obligation",
+    object: ob.title,
+    detail: `${previous} handed it back · you own it again`,
+    kind: "handover",
+  });
+  return { ok: true };
 }
 
 const NEXT = { day: 1, week: 7, month: 30, quarter: 91, year: 365 };
@@ -537,6 +612,11 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
     .map((o) => ({ o, risk: riskFor(o, now) }))
     .filter(({ o, risk }) => risk.days <= 10 && risk.days > -45)
     .sort((a, b) => b.risk.score - a.risk.score);
+
+  // Escalation runs before the agent branches so a missed deadline is handed
+  // over even when the agent has nothing new to propose.
+  const handedOver = handOverOverdue(now, pendingIds, data);
+  const expired = expireStalePayments({ now });
 
   for (const { o, risk } of candidates) {
     const agent = data.agents.find((a) => a.id === o.agent_id);
@@ -669,6 +749,8 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
   if (!silent) {
     const parts = [`${proposed} approvals`, `${executed} executed`, `${drafted} plans`];
     if (suggested) parts.push(`${suggested} suggestions`);
+    if (handedOver) parts.push(`${handedOver} handed to a backup`);
+    if (expired) parts.push(`${expired} checkout${expired === 1 ? "" : "s"} expired`);
     if (blocked) parts.push(`${blocked} waiting on an executor`);
     if (failed) parts.push(`${failed} failed`);
     logEvent({
@@ -681,7 +763,10 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
       kind: "system",
     });
   }
-  return { proposed, executed, drafted, blocked, failed, suggested, scanned: candidates.length };
+  return {
+    proposed, executed, drafted, blocked, failed, suggested,
+    handed_over: handedOver, expired, scanned: candidates.length,
+  };
 }
 
 export async function applyApproval(id, decision, note = "") {

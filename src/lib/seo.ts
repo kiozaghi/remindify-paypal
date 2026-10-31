@@ -117,7 +117,7 @@ export function structuredData(page: Route, origin = SITE_ORIGIN, slug?: string)
       name: "Remindify",
       url: base,
       logo: `${base}/icon-512.png`,
-      email: "hello@remindify.app",
+      email: "liyusoftwaresolution@gmail.com",
       description:
         "Remindify is the calm register for both sides of a life: the people you love and the money you can't lose.",
       foundingLocation: { "@type": "Place", name: "Addis Ababa, Ethiopia" },

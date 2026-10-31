@@ -62,6 +62,7 @@ export function beginObligationPayment({ obligation, orderId, amount, currency, 
     capture_id: null,
     payer_email: null,
     provider_status: null,
+    failure_code: null,
     failure_reason: null,
     created_at: stamp,
     updated_at: stamp,
@@ -93,18 +94,43 @@ export function markCaptured({
   return next;
 }
 
-export function markFailed({ orderId, reason, now = Date.now() }) {
+export function markFailed({
+  orderId, reason, providerStatus = "FAILED", failureCode = null, now = Date.now(),
+}) {
   const data = loadAll();
   const existing = findPayment(data, { orderId });
   if (!existing || existing.status === "captured") return existing;
   const next = {
     ...existing,
     status: "failed",
+    provider_status: providerStatus,
+    failure_code: failureCode,
     failure_reason: String(reason || "PayPal did not complete the payment.").slice(0, 240),
     updated_at: nowIso(now),
   };
   put("payments", next);
   return next;
+}
+
+// PayPal expires an unused order after a few hours. A row left in `created`
+// would otherwise claim "awaiting payer" forever and stale out the ledger.
+export function expireStalePayments({ maxAgeMs = 3 * 3600000, now = Date.now() } = {}) {
+  let expired = 0;
+  for (const row of loadAll().payments || []) {
+    if (row.kind !== "obligation" || row.status !== "created") continue;
+    if (now - new Date(row.created_at).getTime() < maxAgeMs) continue;
+    put("payments", {
+      ...row,
+      status: "expired",
+      provider_status: "ORDER_EXPIRED",
+      failure_code: "ORDER_EXPIRED",
+      failure_reason:
+        "The payer never finished checkout, so PayPal expired this order. Start a fresh payment from the obligation.",
+      updated_at: nowIso(now),
+    });
+    expired += 1;
+  }
+  return expired;
 }
 
 export function recordPayout({ payout, batchId, status = "processing", receiver, now = Date.now() }) {

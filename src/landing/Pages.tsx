@@ -497,7 +497,7 @@ export function LegalPage({ kind, onNavigate, user }: PageProps & { kind: "priva
           ))}
           <div className="legal-toc-contact">
             <span className="eyebrow">Questions</span>
-            <a href="mailto:hello@remindify.app">hello@remindify.app <Icon name="external" size={11} /></a>
+            <a href="mailto:liyusoftwaresolution@gmail.com">liyusoftwaresolution@gmail.com <Icon name="external" size={11} /></a>
           </div>
         </aside>
         <div className="legal-body" data-reveal>
@@ -593,7 +593,7 @@ const PRIVACY: LegalSection[] = [
   {
     title: "Changes and contact",
     body: [
-      "We will update this page as the product moves from preview to paid service. Material changes will be announced in the product or by email. Questions about privacy can be sent to hello@remindify.app.",
+      "We will update this page as the product moves from preview to paid service. Material changes will be announced in the product or by email. Questions about privacy can be sent to liyusoftwaresolution@gmail.com.",
     ],
   },
 ];
@@ -667,7 +667,7 @@ const TERMS: LegalSection[] = [
   {
     title: "Governing law and contact",
     body: [
-      "The final governing law and dispute process will be confirmed before paid availability. Until then, these terms are a preview and are not a substitute for a reviewed agreement. Questions can be sent to hello@remindify.app.",
+      "The final governing law and dispute process will be confirmed before paid availability. Until then, these terms are a preview and are not a substitute for a reviewed agreement. Questions can be sent to liyusoftwaresolution@gmail.com.",
     ],
   },
 ];

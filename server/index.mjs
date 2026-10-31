@@ -2,11 +2,11 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   buildState, completeObligation, sweep, applyApproval, snoozeObligation,
   runObligation, advanceClock, deleteObligation, logEvent, uid, virtualNow,
-  riskFor, enrichObligation, drainOutbox, autonomyRank,
+  riskFor, enrichObligation, drainOutbox, autonomyRank, reclaimObligation,
 } from "./engine.mjs";
 import {
   loadAll, put, putMany, getMeta, setMeta, seedDatabase, pruneAuth,
@@ -27,7 +27,7 @@ import { pruneActivity } from "./retention.mjs";
 import { sanctionsConfigured, screenAddresses } from "./sanctions.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
-import { newExecutorSecret, validateExecutorUrl } from "./executors.mjs";
+import { DEMO_EXECUTOR_PATH, newExecutorSecret, signExecutorRequest, validateExecutorUrl } from "./executors.mjs";
 import { takeRateLimit } from "./ratelimit.mjs";
 import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
 import {
@@ -624,6 +624,47 @@ async function handleRequest(req, res) {
       return send(res, 200, { ok: true, verified: true, applied });
     }
 
+    // Seeded agents point their connector at this route. It accepts the same
+    // signed envelope as any external executor, scoped to the workspace in the
+    // payload, so the demo exercises the real execution path rather than
+    // pretending. It acknowledges the run and files sandbox proof; it never
+    // moves money. Users can still connect their own https executor instead.
+    if (path === DEMO_EXECUTOR_PATH && req.method === "POST") {
+      const event = await body(req);
+      const workspaceId = String(event?.workspace?.id || "").slice(0, 80);
+      const agentId = String(event?.agent?.id || "").slice(0, 80);
+      if (!workspaceId || !agentId) {
+        return send(res, 422, { error: "bad_executor_payload" });
+      }
+
+      const verdict = runWithWorkspace(workspaceId, () => {
+        const agent = loadAll().agents.find((item) => item.id === agentId);
+        if (!agent || agent.executor_url !== DEMO_EXECUTOR_PATH) {
+          return { status: 404, body: { error: "unknown_executor" } };
+        }
+        const issuedAt = Number(req.headers["x-remindify-timestamp"] || 0);
+        if (!Number.isFinite(issuedAt) || Math.abs(Date.now() - issuedAt) > 5 * 60_000) {
+          return { status: 401, body: { error: "stale_signature" } };
+        }
+        const expected = `sha256=${signExecutorRequest(agent.executor_secret, issuedAt, req.rawBody || "")}`;
+        if (!secretMatches(String(req.headers["x-remindify-signature"] || ""), expected)) {
+          return { status: 401, body: { error: "invalid_signature" } };
+        }
+        const runId = String(event.run_id || "run").slice(0, 80);
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            sandbox: true,
+            proof: `sandbox_executor_${runId}`,
+            executed_at: new Date().toISOString(),
+            note: "Sandbox connector acknowledged the run. No funds moved.",
+          },
+        };
+      });
+      return send(res, verdict.status, verdict.body);
+    }
+
     // Everything below this line is the signed-in workspace. The machine API
     // above keeps its own Bearer-key auth; auth routes and health stay public.
     if (path.startsWith("/api/")) {
@@ -721,6 +762,12 @@ async function handleRequest(req, res) {
       return send(res, result.ok ? 200 : 400, { ...result, state: buildState() });
     }
 
+    const reclaimMatch = path.match(/^\/api\/obligations\/([^/]+)\/reclaim$/);
+    if (reclaimMatch && req.method === "POST") {
+      const result = reclaimObligation(reclaimMatch[1], humanActor());
+      return send(res, result.ok ? 200 : 409, { ...result, state: buildState() });
+    }
+
     if (obMatch && req.method === "DELETE") {
       deleteObligation(obMatch[1]);
       return send(res, 200, { state: buildState() });
@@ -799,6 +846,12 @@ async function handleRequest(req, res) {
         return send(res, 200, { state, agent: state.agents.find((a) => a.id === agent.id) });
       }
 
+      if (String(url).startsWith("/")) {
+        return send(res, 422, {
+          error: "invalid_executor",
+          message: "Connect your own https endpoint. The built-in sandbox executor is reserved for the seeded demo agents.",
+        });
+      }
       const check = await validateExecutorUrl(url);
       if (!check.ok) {
         return send(res, 422, { error: "invalid_executor", message: check.error });
@@ -1184,9 +1237,9 @@ async function handleRequest(req, res) {
           // A returned browser can race a webhook or a retried request. Read
           // the order back instead of charging or failing a paid obligation.
           const detail = JSON.stringify(error?.details || "");
-          if (!(error instanceof PayPalError) || !detail.includes("ORDER_ALREADY_CAPTURED")) {
-            throw error;
-          }
+          const alreadyCaptured = error instanceof PayPalError
+            && (error.code === "ORDER_ALREADY_CAPTURED" || detail.includes("ORDER_ALREADY_CAPTURED"));
+          if (!alreadyCaptured) throw error;
           capture = orderCapture(await getOrder(orderId), expected);
           if (!capture) throw error;
         }
@@ -1220,7 +1273,12 @@ async function handleRequest(req, res) {
         });
       } catch (error) {
         if (error instanceof PayPalError && error.code !== "paypal_unreachable") {
-          markFailed({ orderId, reason: error.message });
+          markFailed({
+            orderId,
+            reason: error.message,
+            providerStatus: error.code,
+            failureCode: error.code,
+          });
         }
         return paypalFailure(res, error);
       }
@@ -1399,6 +1457,7 @@ const SWEEP_BUDGET_MS = 20_000;
 async function sweepAllWorkspaces() {
   const summary = {
     workspaces: 0, skipped: 0, deferred: 0, scanned: 0, proposed: 0, executed: 0, drafted: 0, blocked: 0, failed: 0,
+    handed_over: 0,
     digests: 0, digest_failed: 0, pruned_events: 0, pruned_runs: 0,
   };
   const workspaces = workspacesWithKind("obligations");
@@ -1420,7 +1479,7 @@ async function sweepAllWorkspaces() {
       setMeta("sweep_lease_until", new Date(now + SWEEP_LEASE_MS).toISOString());
       try {
         const result = await sweep({ actor: "Scheduled sweep", silent: true });
-        for (const key of ["scanned", "proposed", "executed", "drafted", "blocked", "failed"]) {
+        for (const key of ["scanned", "proposed", "executed", "drafted", "blocked", "failed", "handed_over"]) {
           summary[key] += result[key] || 0;
         }
         try {

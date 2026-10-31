@@ -25,6 +25,17 @@ export function newExecutorSecret() {
   return `rfy_exec_${randomBytes(24).toString("hex")}`;
 }
 
+// Seeded agents point at the app's own sandbox endpoint. Relative targets are
+// resolved against this deployment so the same seed works locally and on
+// Vercel without knowing the host in advance.
+export const DEMO_EXECUTOR_PATH = "/api/demo/executor";
+
+function deploymentOrigin() {
+  const configured = process.env.PUBLIC_ORIGIN
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+  return configured.replace(/\/$/, "") || `http://localhost:${process.env.PORT || 4178}`;
+}
+
 // Executor URLs are user-supplied fetch targets, so they get the same
 // treatment as any outbound webhook: https only, no credentials in the URL,
 // and a resolved address that is not on a private network. The resolved
@@ -32,8 +43,18 @@ export function newExecutorSecret() {
 // resolve the host again (a second lookup is where DNS rebinding slips in).
 export async function resolveExecutorTarget(raw) {
   let url;
+  const value = String(raw ?? "");
+  if (value.startsWith("/")) {
+    // The built-in sandbox executor: same process, no DNS to pin.
+    try {
+      url = new URL(value, deploymentOrigin());
+    } catch {
+      return { ok: false, error: "The built-in executor path is invalid." };
+    }
+    return { ok: true, url, address: null, family: null };
+  }
   try {
-    url = new URL(String(raw));
+    url = new URL(value);
   } catch {
     return { ok: false, error: "Enter a full URL, including https://." };
   }
