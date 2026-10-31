@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Remindify — product demo (2:22)</title>
+<meta name="description" content="A 2:22 walkthrough of Remindify: one register for the people you look after and the money you can't lose. Owners, backups, autonomy ceilings, proof, agent marketplace and a Base Sepolia escrow rehearsal." />
+<meta name="robots" content="index,follow,max-image-preview:large" />
+<meta name="theme-color" content="#ede9df" />
+<link rel="canonical" href="https://remindify-xi.vercel.app/demo" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="stylesheet" href="/fonts/fonts.css" />
+<meta property="og:type" content="video.other" />
+<meta property="og:site_name" content="Remindify" />
+<meta property="og:title" content="Remindify — product demo (2:22)" />
+<meta property="og:description" content="One register for the people you look after and the money you can't lose. Owners, backups, autonomy ceilings, proof, and escrow that releases on accepted proof." />
+<meta property="og:url" content="https://remindify-xi.vercel.app/demo" />
+<meta property="og:image" content="https://remindify-xi.vercel.app/og.png" />
+<meta property="og:video" content="https://remindify-xi.vercel.app/demo/remindify-demo.mp4" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Remindify — product demo (2:22)" />
+<meta name="twitter:description" content="One register for the people you look after and the money you can't lose." />
+<meta name="twitter:image" content="https://remindify-xi.vercel.app/og.png" />
+<style>
+  :root {
+    --bone: #ede9df;
+    --bone-2: #e4dfd2;
+    --ink: #14140f;
+    --ink-70: rgba(20, 20, 15, 0.7);
+    --ink-55: rgba(20, 20, 15, 0.55);
+    --line: rgba(20, 20, 15, 0.14);
+    --lime: #d9f26a;
+    --violet: #6e5bf2;
+    --radius: 18px;
+    --sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "Instrument Serif", ui-serif, Georgia, serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bone);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; }
+  .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+
+  header.site {
+    position: sticky; top: 0; z-index: 10;
+    backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--bone) 88%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  header.site .wrap {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 64px; gap: 16px;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    text-decoration: none; font-weight: 650; letter-spacing: -0.02em; font-size: 17px;
+  }
+  .brand i {
+    width: 22px; height: 22px; border-radius: 7px;
+    background: var(--ink); display: inline-block; position: relative;
+  }
+  .brand i::after {
+    content: ""; position: absolute; inset: 6px 6px auto 6px; height: 2px;
+    background: var(--lime); border-radius: 2px; box-shadow: 0 5px 0 var(--lime);
+  }
+  nav.top { display: flex; align-items: center; gap: 6px; }
+  nav.top a {
+    text-decoration: none; font-size: 14px; color: var(--ink-70);
+    padding: 9px 12px; border-radius: 999px;
+  }
+  nav.top a:hover { background: rgba(20, 20, 15, 0.06); color: var(--ink); }
+  nav.top a.cta {
+    background: var(--ink); color: var(--bone); font-weight: 600;
+    padding: 9px 16px; margin-left: 4px;
+  }
+  nav.top a.cta:hover { background: #2a2a22; color: #fff; }
+
+  main { padding: 56px 0 0; }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-70); margin: 0 0 18px;
+  }
+  .eyebrow::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--violet); box-shadow: 0 0 0 4px rgba(110, 91, 242, 0.16);
+  }
+  h1 {
+    font-size: clamp(36px, 6vw, 64px); line-height: 0.98;
+    letter-spacing: -0.035em; font-weight: 600; margin: 0 0 20px; max-width: 19ch;
+  }
+  h1 em {
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  .lede {
+    font-size: clamp(16px, 1.6vw, 19px); line-height: 1.55; color: var(--ink-70);
+    margin: 0; max-width: 62ch;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em;
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.35); color: var(--ink-70);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lime); border: 1px solid rgba(20,20,15,.25); }
+  .chip.warn .dot { background: #ffb84d; }
+
+  .player {
+    margin: 36px 0 0; border-radius: var(--radius); overflow: hidden;
+    background: #0b0b09; border: 1px solid rgba(20, 20, 15, 0.2);
+    box-shadow: 0 24px 60px -28px rgba(20, 20, 15, 0.45);
+    position: relative;
+  }
+  .player video {
+    display: block; width: 100%; aspect-ratio: 16 / 10;
+    background: #0b0b09; object-fit: cover;
+  }
+  .play-overlay {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: linear-gradient(180deg, rgba(11, 11, 9, 0.05), rgba(11, 11, 9, 0.35));
+    border: 0; cursor: pointer; transition: opacity 180ms ease;
+  }
+  .play-overlay span {
+    display: inline-flex; align-items: center; gap: 12px;
+    background: var(--lime); color: var(--ink);
+    font-weight: 650; font-size: 15px; padding: 14px 22px 14px 16px;
+    border-radius: 999px; box-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.6);
+  }
+  .play-overlay svg { width: 22px; height: 22px; }
+  .play-overlay:hover span { transform: translateY(-1px); }
+  .play-overlay[hidden] { display: none; }
+
+  .caption {
+    display: flex; justify-content: space-between; gap: 16px; align-items: center;
+    padding: 14px 18px; background: #0f0f0c; color: rgba(237, 233, 223, 0.72);
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    border-top: 1px solid rgba(237, 233, 223, 0.1);
+  }
+  .caption a { color: var(--lime); text-decoration: none; }
+
+  .grid {
+    display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 22px;
+    margin: 34px 0 0; align-items: start;
+  }
+  .card {
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.34); padding: 26px;
+  }
+  .card h2 {
+    font-size: 13px; font-family: var(--mono); font-weight: 500;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-70);
+    margin: 0 0 18px;
+  }
+  .chapters { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .chapters button {
+    display: flex; align-items: baseline; gap: 14px; width: 100%;
+    background: transparent; border: 0; border-radius: 10px; cursor: pointer;
+    padding: 10px 10px; text-align: left; color: var(--ink); font: inherit;
+  }
+  .chapters button:hover { background: rgba(20, 20, 15, 0.06); }
+  .chapters time {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-55);
+    min-width: 38px; font-variant-numeric: tabular-nums;
+  }
+  .chapters b { font-weight: 550; font-size: 15px; }
+  .chapters span { color: var(--ink-70); font-size: 14px; line-height: 1.45; }
+
+  .shots { margin: 0; padding: 0; list-style: none; display: grid; gap: 16px; }
+  .shots li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; }
+  .shots .n {
+    font-family: var(--mono); font-size: 11px; color: var(--ink);
+    background: var(--lime); border: 1px solid rgba(20,20,15,.22);
+    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    margin-top: 1px;
+  }
+  .shots p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-70); }
+  .shots strong { color: var(--ink); font-weight: 600; }
+
+  .note {
+    margin: 22px 0 0; padding: 16px 18px; border-radius: 14px;
+    border: 1px dashed rgba(20, 20, 15, 0.28);
+    font-size: 13.5px; line-height: 1.55; color: var(--ink-70);
+    background: rgba(217, 242, 106, 0.16);
+  }
+  .note b { color: var(--ink); }
+
+  footer.site {
+    margin-top: 64px; border-top: 1px solid var(--line);
+    padding: 28px 0 40px;
+  }
+  footer.site .wrap {
+    display: flex; flex-wrap: wrap; gap: 14px 24px;
+    align-items: center; justify-content: space-between;
+  }
+  footer.site p { margin: 0; font-size: 13px; color: var(--ink-55); }
+  footer.site nav { display: flex; flex-wrap: wrap; gap: 18px; }
+  footer.site a { font-size: 13px; color: var(--ink-70); text-decoration: none; }
+  footer.site a:hover { color: var(--ink); text-decoration: underline; }
+
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+    main { padding-top: 36px; }
+    .caption { flex-direction: column; align-items: flex-start; gap: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/"><i aria-hidden="true"></i>Remindify</a>
+    <nav class="top" aria-label="Primary">
+      <a href="/">Home</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/security">Security</a>
+      <a class="cta" href="/login">Open the app</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="eyebrow">Recorded product demo · 2 min 22 sec</p>
+  <h1>Every obligation owned, backed up, finished — <em>with a receipt.</em></h1>
+  <p class="lede">
+    Remindify is one register for the people you look after and the money you can't lose.
+    This walkthrough shows the live product: the register, a single high-risk obligation,
+    deterministic capture, the agent autonomy ceiling, the marketplace, and the proof layer.
+  </p>
+  <div class="chips">
+    <span class="chip"><span class="dot"></span><b>Live product</b> · not a mockup</span>
+    <span class="chip"><span class="dot"></span><b>1440×900</b> · captioned</span>
+    <span class="chip warn"><span class="dot"></span><b>Base Sepolia</b> · testnet only · unaudited</span>
+  </div>
+
+  <div class="player">
+    <video
+      id="demo"
+      src="/demo/remindify-demo.mp4"
+      poster="/demo/poster.jpg"
+      controls
+      playsinline
+      preload="metadata"
+      aria-label="Remindify product walkthrough, 2 minutes 22 seconds"
+    >
+      Your browser can't play this video.
+      <a href="/demo/remindify-demo.mp4">Download the MP4</a>.
+    </video>
+    <button class="play-overlay" id="play" type="button" aria-label="Play the walkthrough">
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor"/></svg>
+        Play the walkthrough
+      </span>
+    </button>
+    <div class="caption">
+      <span>Narrated · burned-in captions · no sign-in required</span>
+      <a href="/demo/remindify-demo.mp4" download>Download MP4</a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="chapters-h">
+      <h2 id="chapters-h">Chapters</h2>
+      <ul class="chapters" id="chapters">
+        <li><button type="button" data-t="0"><time>0:00</time><span><b>Intro</b> — what Remindify is for</span></button></li>
+        <li><button type="button" data-t="5"><time>0:05</time><span><b>Today</b> — the register, and what is already late</span></button></li>
+        <li><button type="button" data-t="17"><time>0:17</time><span><b>The register</b> — people versus money, every one with a backup</span></button></li>
+        <li><button type="button" data-t="37"><time>0:37</time><span><b>One obligation</b> — risk, autonomy ceiling, proof</span></button></li>
+        <li><button type="button" data-t="60"><time>1:00</time><span><b>Capture</b> — deterministic, no AI key</span></button></li>
+        <li><button type="button" data-t="79"><time>1:19</time><span><b>Agents</b> — prepare versus execute</span></button></li>
+        <li><button type="button" data-t="96"><time>1:36</time><span><b>Marketplace</b> — hire a human or an agent</span></button></li>
+        <li><button type="button" data-t="115"><time>1:55</time><span><b>Trust</b> — signed receipts and anchors</span></button></li>
+        <li><button type="button" data-t="124"><time>2:04</time><span><b>Base Sepolia</b> — anchor, approve, fund, release</span></button></li>
+      </ul>
+    </section>
+
+    <section class="card" aria-labelledby="shots-h">
+      <h2 id="shots-h">What you're looking at</h2>
+      <ul class="shots">
+        <li><span class="n">1</span><p><strong>One register, two sides.</strong> Obligations you hold for other people, and money that leaves on a date. Both have an owner and a named backup.</p></li>
+        <li><span class="n">2</span><p><strong>Autonomy is a ceiling, not a switch.</strong> An agent can prepare the work or execute it, per agent and per obligation. You approve anything above the ceiling.</p></li>
+        <li><span class="n">3</span><p><strong>No proof, no completion.</strong> Capture is deterministic — paste a letter, email or receipt and review structured fields. No third-party model is required.</p></li>
+        <li><span class="n">4</span><p><strong>Proof plus escrow.</strong> Completed work files a signed receipt. Paid work is scoped and released in USDC on accepted proof.</p></li>
+      </ul>
+      <p class="note">
+        <b>Honest status.</b> The contract path shown at 2:04 was executed on <b>Base Sepolia</b>,
+        read back from the contracts, and is <b>unaudited</b>. There is no mainnet deployment yet.
+        The product is live; external usage is still early.
+      </p>
+    </section>
+  </div>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Remindify — the register for everything that comes back.</p>
+    <nav aria-label="Footer">
+      <a href="/">Home</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/security">Security &amp; trust</a>
+      <a href="/docs">Docs</a>
+      <a href="/login">Sign in</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var video = document.getElementById("demo");
+    var overlay = document.getElementById("play");
+    if (!video || !overlay) return;
+
+    function hide() { overlay.hidden = true; }
+    function show() { if (video.paused) overlay.hidden = false; }
+
+    overlay.addEventListener("click", function () {
+      video.play().then(hide).catch(function () { hide(); });
+    });
+    video.addEventListener("play", hide);
+    video.addEventListener("pause", show);
+    video.addEventListener("ended", show);
+
+    document.querySelectorAll("#chapters button[data-t]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var t = Number(btn.getAttribute("data-t")) || 0;
+        video.currentTime = t;
+        video.play().then(hide).catch(function () {});
+        video.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    });
+  })();
+</script>
+</body>
+</html>

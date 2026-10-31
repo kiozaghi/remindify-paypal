@@ -14,6 +14,7 @@
       "source": "/api/(.*)",
       "destination": "/api/index?__path=$1"
     },
+    { "source": "/demo", "destination": "/demo/index.html" },
     { "source": "/pricing", "destination": "/pricing/index.html" },
     { "source": "/security", "destination": "/security/index.html" },
     { "source": "/about", "destination": "/about/index.html" },
