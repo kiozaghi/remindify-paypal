@@ -155,7 +155,7 @@ export function loadAll() {
   const out = {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
     receipts: [], escrows: [], outbox: [],
-    seller_profile: [], bookings: [], seller_receipts: [], earnings: [], payouts: [],
+    seller_profile: [], bookings: [], seller_receipts: [], earnings: [], payouts: [], payments: [],
   };
   for (const row of rows) {
     const item = JSON.parse(row.data);
@@ -388,7 +388,7 @@ export function seedDatabase(force = false) {
   }
   for (const kind of [
     "obligations", "agents", "approvals", "runs", "providers", "events", "keys", "receipts", "escrows",
-    "seller_profile", "bookings", "seller_receipts", "earnings", "payouts",
+    "seller_profile", "bookings", "seller_receipts", "earnings", "payouts", "payments",
   ]) {
     insertMany(kind, seed[kind] || [], workspaceId);
   }

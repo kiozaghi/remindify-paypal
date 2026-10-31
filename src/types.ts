@@ -328,12 +328,13 @@ export type SellerBookingStatus =
   | "completed"
   | "declined";
 
-export type PayoutMethod = "none" | "bank" | "wallet" | "usdc";
+export type PayoutMethod = "none" | "bank" | "wallet" | "usdc" | "paypal";
 
 export interface SellerPayoutAccount {
   method: PayoutMethod;
   label: string;
   account_last4: string;
+  paypal_email?: string;
   currency: string;
   country: string;
   connected: boolean;
@@ -482,6 +483,35 @@ export interface SellerState {
   maintenance: SellerMaintenanceItem[];
 }
 
+export interface Payment {
+  id: string;
+  kind: "obligation" | "payout";
+  rail: "paypal";
+  status: string;
+  amount: number;
+  currency: string;
+  obligation_id?: string;
+  obligation_title?: string;
+  order_id?: string | null;
+  capture_id?: string | null;
+  payer_email?: string | null;
+  payout_id?: string;
+  payout_ref?: string;
+  batch_id?: string | null;
+  receiver?: string | null;
+  provider_status?: string | null;
+  failure_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentsSummary {
+  captured_count: number;
+  captured_total: number;
+  payouts_sent: number;
+  failed: number;
+}
+
 export interface AppState {
   now: string;
   clock_offset_days: number;
@@ -501,6 +531,8 @@ export interface AppState {
   escrows: Escrow[];
   trust: TrustSummary;
   seller: SellerState;
+  payments: Payment[];
+  paypal: { configured: boolean; mode: "sandbox" | "live" };
   stats: Stats;
   api_calls: number;
   api_calls_limit: number;

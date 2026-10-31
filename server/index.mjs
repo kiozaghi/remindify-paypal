@@ -37,6 +37,14 @@ import {
   acceptBooking, confirmPayoutReceived, declineBooking, requestPayout,
   startBooking, submitBookingProof, updateSellerProfile,
 } from "./seller.mjs";
+import {
+  PayPalError, captureOrder, createOrder, createPayout, getOrder, orderCapture,
+  payableAmount, paypalConfigured, paypalMode, payoutBatch, verifyWebhook,
+} from "./paypal.mjs";
+import {
+  beginObligationPayment, findPayment, listPayments, markCaptured, markFailed,
+  markPayoutStatus, paymentsSummary, recordPayout,
+} from "./payments.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = join(__dirname, "..", "dist");
@@ -101,6 +109,99 @@ async function body(req) {
   } catch {
     throw new Error("Invalid JSON");
   }
+}
+
+// Public origin for PayPal return/cancel links. Vercel terminates TLS and
+// forwards the original protocol and host.
+function publicOrigin(req) {
+  if (process.env.PUBLIC_ORIGIN) return process.env.PUBLIC_ORIGIN.replace(/\/$/, "");
+  const forwarded = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const proto = forwarded
+    || (req.socket?.encrypted || process.env.NODE_ENV === "production" ? "https" : "http");
+  const host = req.headers["x-forwarded-host"] || req.headers.host || `localhost:${PORT}`;
+  return `${proto}://${host}`;
+}
+
+function paypalFailure(res, error) {
+  if (error instanceof PayPalError) {
+    return send(res, error.status || 502, {
+      error: error.code,
+      message: error.message,
+      details: error.details ?? null,
+      state: buildState(),
+    });
+  }
+  console.error("PayPal error:", error);
+  return send(res, 502, {
+    error: "paypal_error",
+    message: "PayPal did not complete that request.",
+    state: buildState(),
+  });
+}
+
+/**
+ * Webhook update, scoped to whichever workspace owns the payment row.
+ * Returns true when a row was found and updated.
+ */
+function applyPaypalEvent(event) {
+  const type = String(event?.event_type || "");
+  const resource = event?.resource || {};
+  const data = loadAll();
+  const stamp = Date.now();
+
+  if (type === "PAYMENT.CAPTURE.COMPLETED" || type === "PAYMENT.CAPTURE.DENIED"
+    || type === "PAYMENT.CAPTURE.REVERSED" || type === "CHECKOUT.ORDER.VOIDED") {
+    const orderId = resource?.supplementary_data?.related_ids?.order_id
+      || resource?.id
+      || null;
+    const row = orderId ? findPayment(data, { orderId }) : null;
+    if (!row) return false;
+
+    if (type === "PAYMENT.CAPTURE.COMPLETED") {
+      markCaptured({
+        orderId: row.order_id,
+        captureId: resource.id || row.capture_id,
+        amount: Number(resource.amount?.value ?? row.amount),
+        currency: resource.amount?.currency_code || row.currency,
+        payerEmail: resource.payer?.email_address || row.payer_email,
+        providerStatus: resource.status || "COMPLETED",
+        now: stamp,
+      });
+      const obligation = data.obligations.find((item) => item.id === row.obligation_id);
+      if (obligation && ["active", "waiting"].includes(obligation.status)) {
+        completeObligation(obligation.id, {
+          proof: `PayPal capture ${resource.id || row.capture_id || "confirmed"}`,
+          note: `Settled $${Number(resource.amount?.value ?? row.amount).toFixed(2)} USD via PayPal.`,
+          by: "PayPal",
+        });
+      }
+    } else {
+      markFailed({ orderId: row.order_id, reason: `${type} received from PayPal.`, now: stamp });
+    }
+    return true;
+  }
+
+  if (type.startsWith("PAYMENT.PAYOUTS-ITEM.")) {
+    const batchId = resource?.payout_batch_id
+      || resource?.batch_header?.payout_batch_id
+      || null;
+    const row = batchId ? findPayment(data, { batchId }) : null;
+    if (!row) return false;
+
+    const succeeded = type === "PAYMENT.PAYOUTS-ITEM.SUCCEEDED";
+    const status = succeeded ? "paid" : "failed";
+    markPayoutStatus({ batchId, status, now: stamp });
+
+    const payout = (data.payouts || []).find((item) => item.id === row.payout_id);
+    if (payout && succeeded) {
+      confirmPayoutReceived(payout.id, stamp);
+    } else if (payout && payout.status === "processing") {
+      put("payouts", { ...payout, status: "failed", note: `${type} received from PayPal.` });
+    }
+    return true;
+  }
+
+  return false;
 }
 
 function clampAutonomyToCeiling(ob) {
@@ -484,6 +585,37 @@ async function handleRequest(req, res) {
       });
       res.end(unsubscribePage(result, { resubscribeUrl }));
       return;
+    }
+
+    // PayPal calls this directly; there is no session. Relays are retried, so
+    // the handler is idempotent and only applies events whose signature PayPal
+    // confirms. Without PAYPAL_WEBHOOK_ID the event is acknowledged but not
+    // applied, so a forged call cannot move money or close an obligation.
+    if (path === "/api/paypal/webhook" && req.method === "POST") {
+      if (!paypalConfigured()) return send(res, 404, { error: "not_found", path });
+      const event = await body(req);
+      let verification;
+      try {
+        verification = await verifyWebhook({ headers: req.headers, event });
+      } catch (error) {
+        console.error("PayPal webhook verification failed:", error?.message || error);
+        return send(res, 502, { error: "verification_unavailable" });
+      }
+      if (!verification.configured) {
+        return send(res, 202, { ok: true, verified: false, applied: false });
+      }
+      if (!verification.verified) {
+        return send(res, 400, { error: "invalid_signature" });
+      }
+
+      let applied = false;
+      for (const workspaceId of workspacesWithKind("payments")) {
+        if (runWithWorkspace(workspaceId, () => applyPaypalEvent(event))) {
+          applied = true;
+          break;
+        }
+      }
+      return send(res, 200, { ok: true, verified: true, applied });
     }
 
     // Everything below this line is the signed-in workspace. The machine API
@@ -968,6 +1100,193 @@ async function handleRequest(req, res) {
     if (sellerPayoutMatch && req.method === "POST") {
       const result = confirmPayoutReceived(sellerPayoutMatch[1], virtualNow());
       return send(res, result.ok ? 200 : result.status || 422, { ...result, state: buildState() });
+    }
+
+    // ---------- PayPal payment rail ----------
+    // PayPal is a fiat rail: it moves money for an obligation, but the proof
+    // rail stays Base. Amounts are rebuilt from stored rows, never from input.
+    if (path === "/api/payments" && req.method === "GET") {
+      const data = loadAll();
+      return send(res, 200, {
+        payments: listPayments(data),
+        summary: paymentsSummary(data),
+        paypal: { configured: paypalConfigured(), mode: paypalMode() },
+      });
+    }
+
+    if (path === "/api/payments/paypal/orders" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      const input = await body(req);
+      const data = loadAll();
+      const obligation = (data.obligations || []).find((item) => item.id === input.obligation_id);
+      if (!obligation) {
+        return send(res, 404, { error: "obligation_not_found", state: buildState() });
+      }
+      if (!["active", "waiting"].includes(obligation.status)) {
+        return send(res, 409, {
+          error: "obligation_not_payable",
+          message: "This obligation is already settled.",
+          state: buildState(),
+        });
+      }
+
+      try {
+        const amount = payableAmount(obligation);
+        const origin = publicOrigin(req);
+        const order = await createOrder(obligation, {
+          returnUrl: `${origin}/obligations?paypal=return`,
+          cancelUrl: `${origin}/obligations?paypal=cancel`,
+        });
+        const payment = beginObligationPayment({
+          obligation,
+          orderId: order.orderId,
+          amount: amount.value,
+          currency: amount.currency,
+        });
+        return send(res, 201, {
+          payment,
+          approve_url: order.approveUrl,
+          mode: paypalMode(),
+          state: buildState(),
+        });
+      } catch (error) {
+        return paypalFailure(res, error);
+      }
+    }
+
+    if (path === "/api/payments/paypal/capture" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      const input = await body(req);
+      const orderId = String(input.order_id || "").trim();
+      if (!orderId) return send(res, 422, { error: "order_id_required", state: buildState() });
+
+      const data = loadAll();
+      const payment = findPayment(data, { orderId });
+      if (!payment) {
+        return send(res, 404, { error: "payment_not_found", state: buildState() });
+      }
+      if (payment.status === "captured") {
+        return send(res, 200, { payment, already_captured: true, state: buildState() });
+      }
+
+      try {
+        const expected = { currency: payment.currency, value: Number(payment.amount).toFixed(2) };
+        let capture;
+        try {
+          capture = await captureOrder(orderId, expected);
+        } catch (error) {
+          // A returned browser can race a webhook or a retried request. Read
+          // the order back instead of charging or failing a paid obligation.
+          const detail = JSON.stringify(error?.details || "");
+          if (!(error instanceof PayPalError) || !detail.includes("ORDER_ALREADY_CAPTURED")) {
+            throw error;
+          }
+          capture = orderCapture(await getOrder(orderId), expected);
+          if (!capture) throw error;
+        }
+
+        const next = markCaptured({
+          orderId,
+          captureId: capture.captureId,
+          amount: capture.amount,
+          currency: capture.currency,
+          payerEmail: capture.payerEmail,
+          providerStatus: capture.captureStatus,
+        });
+
+        const fresh = loadAll();
+        const obligation = (fresh.obligations || []).find(
+          (item) => item.id === payment.obligation_id
+        );
+        if (obligation && ["active", "waiting"].includes(obligation.status)) {
+          completeObligation(obligation.id, {
+            proof: `PayPal capture ${capture.captureId}`,
+            note: `Settled $${capture.amount.toFixed(2)} ${capture.currency} via PayPal.`,
+            by: "PayPal",
+          });
+        }
+
+        return send(res, 200, {
+          payment: next,
+          capture,
+          mode: paypalMode(),
+          state: buildState(),
+        });
+      } catch (error) {
+        if (error instanceof PayPalError && error.code !== "paypal_unreachable") {
+          markFailed({ orderId, reason: error.message });
+        }
+        return paypalFailure(res, error);
+      }
+    }
+
+    if (path === "/api/payments/paypal/payouts" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      const input = await body(req);
+      const payoutId = String(input.payout_id || "").trim();
+      if (!payoutId) return send(res, 422, { error: "payout_id_required", state: buildState() });
+
+      const data = loadAll();
+      const payout = (data.payouts || []).find((item) => item.id === payoutId);
+      if (!payout) return send(res, 404, { error: "payout_not_found", state: buildState() });
+      if (payout.status !== "processing") {
+        return send(res, 409, {
+          error: "payout_state",
+          message: "This payout is already settled.",
+          state: buildState(),
+        });
+      }
+
+      const profile = (data.seller_profile || [])[0];
+      const receiver = String(profile?.payout?.paypal_email || "").trim();
+      if (!receiver) {
+        return send(res, 409, {
+          error: "paypal_email_required",
+          message: "Add a PayPal email to the payout method first.",
+          state: buildState(),
+        });
+      }
+
+      try {
+        const result = await createPayout({ payout, receiverEmail: receiver });
+        const row = recordPayout({
+          payout,
+          batchId: result.batchId,
+          status: "processing",
+          receiver,
+        });
+        return send(res, 201, {
+          payment: row,
+          batch_id: result.batchId,
+          batch_status: result.status,
+          mode: paypalMode(),
+          state: buildState(),
+        });
+      } catch (error) {
+        return paypalFailure(res, error);
+      }
+    }
+
+    const paypalPayoutMatch = path.match(/^\/api\/payments\/paypal\/payouts\/([^/]+)$/);
+    if (paypalPayoutMatch && req.method === "GET") {
+      const batchId = decodeURIComponent(paypalPayoutMatch[1]);
+      const data = loadAll();
+      const row = findPayment(data, { batchId });
+      if (!row) return send(res, 404, { error: "payout_not_found", state: buildState() });
+
+      try {
+        const status = await payoutBatch(batchId);
+        if (status.itemStatus === "SUCCESS" || status.status === "SUCCESS") {
+          markPayoutStatus({ batchId, status: "paid" });
+          const payout = (data.payouts || []).find((item) => item.id === row.payout_id);
+          if (payout && payout.status === "processing") confirmPayoutReceived(payout.id);
+        } else if (["FAILED", "DENIED", "RETURNED", "CANCELED", "BLOCKED"].includes(status.itemStatus)) {
+          markPayoutStatus({ batchId, status: "failed" });
+        }
+        return send(res, 200, { ...status, state: buildState() });
+      } catch (error) {
+        return paypalFailure(res, error);
+      }
     }
 
     if (path === "/api/export" && req.method === "GET") {

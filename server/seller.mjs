@@ -28,7 +28,8 @@ const BOOKING_ORDER = {
   declined: 5,
 };
 
-const PAYOUT_METHODS = ["none", "bank", "wallet", "usdc"];
+const PAYOUT_METHODS = ["none", "bank", "wallet", "usdc", "paypal"];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const uid = (prefix) => `${prefix}_${randomBytes(5).toString("hex")}`;
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
@@ -56,6 +57,7 @@ function defaultPayout() {
     method: "none",
     label: "",
     account_last4: "",
+    paypal_email: "",
     currency: "USD",
     country: getMeta("country", "ET") || "ET",
     connected: false,
@@ -124,13 +126,20 @@ export function updateSellerProfile(patch, now = Date.now()) {
     const last4 = String(patch.payout.account_last4 ?? "").replace(/\D/g, "").slice(-4);
     const currency = (text(patch.payout.currency, 4) || profile.payout.currency || "USD").toUpperCase();
     const country = (text(patch.payout.country, 2) || profile.payout.country || "ET").toUpperCase();
+    const emailIn = text(patch.payout.paypal_email ?? patch.payout.email, 120).toLowerCase();
+    const paypalEmail = EMAIL_RE.test(emailIn)
+      ? emailIn
+      : profile.payout.paypal_email || "";
     next.payout = {
       method,
       label,
       account_last4: last4,
+      paypal_email: paypalEmail,
       currency,
       country,
-      connected: method !== "none" && Boolean(label || last4),
+      connected: method === "paypal"
+        ? Boolean(paypalEmail)
+        : method !== "none" && Boolean(label || last4),
       updated_at: new Date(now).toISOString(),
     };
   }
@@ -320,18 +329,23 @@ export function requestPayout(now = Date.now()) {
   }
   const amount = round2(available.reduce((sum, entry) => sum + entry.amount, 0));
   const stamp = String(now).slice(-6);
+  const destination = profile.payout.method === "paypal"
+    ? `PayPal · ${profile.payout.paypal_email}`
+    : `${profile.payout.label || profile.payout.method} · ${profile.payout.account_last4 || "on file"}`;
   const payout = {
     id: `po_${stamp}`,
     ref: `PO-${new Date(now).getUTCFullYear()}-${stamp}`,
     amount,
     currency: profile.payout.currency || "USD",
     method: profile.payout.method,
-    destination: `${profile.payout.label || profile.payout.method} · ${profile.payout.account_last4 || "on file"}`,
+    destination,
     status: "processing",
     entry_ids: available.map((entry) => entry.id),
     created_at: new Date(now).toISOString(),
     paid_at: null,
-    note: "Payout recorded in the ledger. Connect a payout provider to move funds.",
+    note: profile.payout.method === "paypal"
+      ? "Payout recorded in the ledger. Send it with PayPal to move funds."
+      : "Payout recorded in the ledger. Connect a payout provider to move funds.",
   };
 
   for (const entry of available) {

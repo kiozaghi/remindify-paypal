@@ -5,6 +5,7 @@ import { planForWorkspace, usage } from "./billing.mjs";
 import { connectorConfigured, executeWithConnector, publicAgent } from "./executors.mjs";
 import { dueOutboxJobs, enqueueConnectorRetry, outboxBackoff, outboxLeaseMs } from "./outbox.mjs";
 import { sellerSnapshot } from "./seller.mjs";
+import { paypalConfigured, paypalMode } from "./paypal.mjs";
 
 const DAY = 86400000;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -169,6 +170,8 @@ export function buildState() {
       guardrails: trust.guardrails,
     },
     seller,
+    payments: data.payments || [],
+    paypal: { configured: paypalConfigured(), mode: paypalMode() },
     stats,
     api_calls: usage().calls,
     api_calls_limit: planForWorkspace().call_limit,
