@@ -7,6 +7,7 @@ import workspaces from "./content/concepts-workspaces-and-keys.md?raw";
 import agentTools from "./content/guides-agent-tools.md?raw";
 import executors from "./content/guides-executors.md?raw";
 import wallets from "./content/guides-wallets.md?raw";
+import payments from "./content/guides-payments.md?raw";
 import sellers from "./content/guides-sellers.md?raw";
 import api from "./content/reference-api.md?raw";
 import errors from "./content/reference-errors.md?raw";
@@ -33,8 +34,8 @@ export const DOCS_PAGES: DocsPage[] = [
     label: "Overview",
     title: "Developer docs",
     description:
-      "Build on Remindify: the obligation register, agent passports, signed execution connectors, proof receipts, escrow and marketplace guides.",
-    keywords: "overview start introduction register api agents mcp",
+      "Build on Remindify: the obligation register, agent passports, signed execution connectors, proof receipts, PayPal payments, escrow and marketplace guides.",
+    keywords: "overview start introduction register api agents mcp payments paypal escrow",
     body: overview,
   },
   {
@@ -118,6 +119,16 @@ export const DOCS_PAGES: DocsPage[] = [
     body: wallets,
   },
   {
+    slug: "guides/payments",
+    group: "Guides",
+    label: "Payments",
+    title: "Payments: PayPal and escrow",
+    description:
+      "Settle an obligation with PayPal Orders, send a seller payout through PayPal Payouts, and know when USDC escrow is the better rail.",
+    keywords: "paypal payment orders capture payout sellers webhook usd fiat money escrow usdc",
+    body: payments,
+  },
+  {
     slug: "guides/sellers",
     group: "Guides",
     label: "Sell on Remindify",
@@ -181,7 +192,7 @@ export function docsMeta(slug?: string | null) {
         label: "Developer docs",
         title: "Developer docs — Remindify",
         description:
-          "Build on Remindify: the obligation register, agent passports, signed execution connectors, proof receipts and escrow.",
+          "Build on Remindify: the obligation register, agent passports, signed execution connectors, proof receipts, PayPal payments, escrow and marketplace guides.",
         index: true,
       };
 }

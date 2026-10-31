@@ -3,7 +3,7 @@ import { Icon } from "../components/Icon";
 import type { AuthUser } from "../types";
 import { routeHref } from "../lib/router";
 import { ArrowLink, SectionTag, spaClick, type Navigate } from "./Chrome";
-import { CARRYING, COMMUNITY_PACKS, DELEGATION, SIDES } from "./data";
+import { CARRYING, COMMUNITY_PACKS, DELEGATION, DEV_DOCS, SIDES } from "./data";
 
 type SectionProps = {
   onNavigate: Navigate;
@@ -252,6 +252,59 @@ export function CarryingSection({ onNavigate, user }: SectionProps) {
           <div className="carrying-legend" aria-hidden="true">
             <span><i className="life" /> people</span>
             <span><i className="money" /> money</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** The register as a surface builders can call, with the docs as the next step. */
+export function DeveloperSection({ onNavigate }: SectionProps) {
+  const open = (slug?: string) => onNavigate("docs", slug ? { slug } : undefined);
+
+  return (
+    <section className="dev-section section-wrap" id="developers">
+      <div className="dev-grid">
+        <div className="dev-copy" data-reveal>
+          <SectionTag>For developers</SectionTag>
+          <h2>The register is<br /><em>addressable.</em></h2>
+          <p>
+            Issue a scoped machine key and read or complete obligations over REST or MCP.
+            Agents act through an HTTPS endpoint you control, with signed requests and
+            durable retries. Money stays human: PayPal routes accept a session, never a
+            machine key.
+          </p>
+          <div className="dev-actions">
+            <a className="btn btn-ink btn-sm" href="/docs" onClick={spaClick(() => open())}>
+              Open the docs <Icon name="arrowRight" size={14} />
+            </a>
+            <a className="link-btn" href="/docs/quickstart" onClick={spaClick(() => open("quickstart"))}>
+              Quickstart <Icon name="arrowRight" size={12} />
+            </a>
+          </div>
+        </div>
+
+        <div className="dev-links" data-reveal>
+          {DEV_DOCS.map((doc) => (
+            <a
+              key={doc.slug}
+              className="dev-link"
+              href={`/docs/${doc.slug}`}
+              onClick={spaClick(() => open(doc.slug))}
+            >
+              <span className={`dev-link-icon tone-${doc.tone}`}><Icon name={doc.icon} size={16} /></span>
+              <span className="dev-link-text">
+                <span className="dev-link-kind">{doc.kind}</span>
+                <strong>{doc.title}</strong>
+                <em>{doc.copy}</em>
+              </span>
+              <Icon name="arrowRight" size={13} className="dev-link-arrow" />
+            </a>
+          ))}
+          <div className="dev-links-foot">
+            <Icon name="lock" size={13} />
+            <span>Keys are scoped, expiring and metered. Payment routes stay session-only by design.</span>
           </div>
         </div>
       </div>

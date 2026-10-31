@@ -437,6 +437,96 @@
 
 .docs-toc a.on { font-weight: 600; color: var(--ink); }
 
+/* ---------- Start-here cards ---------- */
+.docs-entry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 768px;
+  margin: 10px 0 0;
+}
+
+.docs-entry-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.55);
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+
+.docs-entry-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-2);
+  background: var(--white);
+  box-shadow: 0 20px 35px -32px rgba(20, 20, 15, 0.5);
+}
+
+.docs-entry-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--tone-soft);
+  color: var(--tone-ink);
+}
+
+.docs-entry-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.docs-entry-meta {
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.docs-entry-text strong { font-size: 12.5px; letter-spacing: -0.02em; color: var(--ink); }
+.docs-entry-text em { font-style: normal; font-size: 10.5px; line-height: 1.45; color: var(--muted); }
+
+.docs-entry-arrow {
+  margin-left: auto;
+  flex: none;
+  margin-top: 3px;
+  color: var(--faint);
+  transition: transform 0.18s, color 0.18s;
+}
+
+.docs-entry-card:hover .docs-entry-arrow { transform: translateX(2px); color: var(--ink); }
+
+.docs-entry-foot {
+  max-width: 768px;
+  margin: 14px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.docs-entry-foot a {
+  color: var(--ink-3);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
+}
+
+.docs-entry-foot a:hover { color: var(--ink); }
+
+.docs-entry-foot kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+}
+
 /* ---------- Pager and missing page ---------- */
 .docs-pager {
   display: grid;
@@ -512,6 +602,7 @@
   .docs-body h2 { font-size: 23px; margin-top: 34px; }
   .docs-body > h1 { font-size: 36px; }
   .docs-body > p:first-of-type { font-size: 14.5px; }
+  .docs-entry { grid-template-columns: 1fr; }
   .docs-pager { grid-template-columns: 1fr; }
   .docs-pager-next { align-items: flex-start; text-align: left; }
 }

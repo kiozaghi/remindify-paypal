@@ -40,6 +40,8 @@ A reasonable passport for a filing agent:
 
 Issuing a key with `obligations:write` does not grant the agent permission to move money. Only the connector can do that, and only if you built it to.
 
+Money routes are deliberately outside the machine API. `/api/payments/*`, `/api/paypal/*` and `/api/seller/*` accept a session cookie only, so a machine key gets `401 unauthorized` even with every scope. A human signs in and pays; an agent can file the obligation that needs paying. If you want an agent to settle something, have it produce the receipt the human then releases against.
+
 ## The ceiling is a hard cap
 
 The agent's ceiling and the obligation's autonomy are combined: the lower of the two wins.

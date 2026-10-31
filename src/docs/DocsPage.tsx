@@ -34,6 +34,75 @@ function score(query: string, page: (typeof DOCS_PAGES)[number]) {
   return total;
 }
 
+const INDEX_MARKER = '<div id="docs-entry-points"></div>';
+
+const DOCS_ENTRY_POINTS = [
+  {
+    slug: "quickstart",
+    icon: "play",
+    tone: "lime",
+    meta: "Start",
+    title: "Quickstart",
+    copy: "Issue a key and make your first machine call in ten minutes.",
+  },
+  {
+    slug: "concepts/agents",
+    icon: "bot",
+    tone: "violet",
+    meta: "Concept",
+    title: "Agents and passports",
+    copy: "A scoped identity, an autonomy ceiling and a record of every run.",
+  },
+  {
+    slug: "guides/agent-tools",
+    icon: "command",
+    tone: "teal",
+    meta: "Guide",
+    title: "Agent tools and models",
+    copy: "MCP recipes for Claude, Cursor, LangGraph, CrewAI and n8n.",
+  },
+  {
+    slug: "guides/executors",
+    icon: "webhook",
+    tone: "amber",
+    meta: "Guide",
+    title: "Execution connectors",
+    copy: "Receive signed requests at your HTTPS endpoint and return proof.",
+  },
+  {
+    slug: "reference/api",
+    icon: "terminal",
+    tone: "blue",
+    meta: "Reference",
+    title: "REST API",
+    copy: "Every endpoint, scope, header and response shape.",
+  },
+  {
+    slug: "guides/payments",
+    icon: "wallet",
+    tone: "coral",
+    meta: "Guide",
+    title: "Payments",
+    copy: "Pay an obligation or a seller with PayPal; keep escrow proof-gated.",
+  },
+  {
+    slug: "concepts/proof-and-escrow",
+    icon: "receipt",
+    tone: "ink",
+    meta: "Concept",
+    title: "Proof and escrow",
+    copy: "Hashed receipts, EIP-712 signatures and release against proof.",
+  },
+  {
+    slug: "guides/sellers",
+    icon: "store",
+    tone: "lime",
+    meta: "Guide",
+    title: "Sell on Remindify",
+    copy: "Listings, proof standards, fees and PayPal payouts for sellers.",
+  },
+] as const;
+
 export default function DocsPage({ slug, onNavigate, user }: DocsPageProps) {
   const page = docsPage(slug);
   const [query, setQuery] = useState("");
@@ -42,6 +111,10 @@ export default function DocsPage({ slug, onNavigate, user }: DocsPageProps) {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const rendered = useMemo(() => renderMarkdown(page?.body || ""), [page?.body]);
+  const [introHtml, restHtml] = useMemo(() => {
+    const parts = rendered.html.split(INDEX_MARKER);
+    return parts.length === 2 ? parts : [rendered.html, ""];
+  }, [rendered.html]);
   const results = useMemo(() => {
     if (!query) return [];
     return DOCS_PAGES
@@ -216,7 +289,7 @@ export default function DocsPage({ slug, onNavigate, user }: DocsPageProps) {
 
             <div className="docs-side-foot">
               <span className="eyebrow">Preview API</span>
-              <p>Machine endpoints are live. Billing and proof uploads are still in preview.</p>
+              <p>Machine endpoints are live. PayPal payments run in sandbox; plan billing and proof uploads are still in preview.</p>
               <a href={docsHref("reference/api")} onClick={spaClick(() => go("reference/api"))}>
                 Read the reference <Icon name="arrowRight" size={12} />
               </a>
@@ -252,8 +325,45 @@ export default function DocsPage({ slug, onNavigate, user }: DocsPageProps) {
                 <article
                   className="docs-body"
                   onClick={onContentClick}
-                  dangerouslySetInnerHTML={{ __html: rendered.html }}
+                  dangerouslySetInnerHTML={{ __html: introHtml }}
                 />
+                {restHtml && (
+                  <>
+                    <div className="docs-entry" aria-label="Start here">
+                      {DOCS_ENTRY_POINTS.map((item) => (
+                        <a
+                          key={item.slug}
+                          className="docs-entry-card"
+                          href={docsHref(item.slug)}
+                          onClick={spaClick(() => go(item.slug))}
+                        >
+                          <span className={`docs-entry-icon tone-${item.tone}`}>
+                            <Icon name={item.icon} size={16} />
+                          </span>
+                          <span className="docs-entry-text">
+                            <span className="docs-entry-meta">{item.meta}</span>
+                            <strong>{item.title}</strong>
+                            <em>{item.copy}</em>
+                          </span>
+                          <Icon name="arrowRight" size={13} className="docs-entry-arrow" />
+                        </a>
+                      ))}
+                    </div>
+                    <p className="docs-entry-foot">
+                      Also in the manual:{" "}
+                      <a href={docsHref("concepts/workspaces-and-keys")} onClick={spaClick(() => go("concepts/workspaces-and-keys"))}>workspaces and keys</a>,{" "}
+                      <a href={docsHref("guides/wallets")} onClick={spaClick(() => go("guides/wallets"))}>wallets and signing</a>,{" "}
+                      <a href={docsHref("reference/errors")} onClick={spaClick(() => go("reference/errors"))}>errors</a> and{" "}
+                      <a href={docsHref("reference/environment")} onClick={spaClick(() => go("reference/environment"))}>environment variables</a>.
+                      Press <kbd>⌘K</kbd> to search.
+                    </p>
+                    <article
+                      className="docs-body"
+                      onClick={onContentClick}
+                      dangerouslySetInnerHTML={{ __html: restHtml }}
+                    />
+                  </>
+                )}
                 <nav className="docs-pager" aria-label="Documentation pages">
                   {previous ? (
                     <a

@@ -81,7 +81,7 @@ export function PricingPage({ onNavigate, user }: PageProps) {
               <li><Icon name="check" size={13} /> Export your register</li>
               <li><Icon name="check" size={13} /> Cancel whenever</li>
             </ul>
-            <span className="price-aside-note">Billing is not switched on during the private preview.</span>
+            <span className="price-aside-note">Plan billing is not switched on during the private preview. PayPal payments for obligations run in sandbox.</span>
           </div>
         }
       />
@@ -200,6 +200,7 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
             <div className="security-aside-row"><span>Token</span><strong>None</strong></div>
             <div className="security-aside-row"><span>Custody</span><strong>None</strong></div>
             <div className="security-aside-row"><span>Server-held keys</span><strong>None</strong></div>
+            <div className="security-aside-row"><span>Fiat rail</span><strong>PayPal</strong></div>
             <div className="security-aside-row"><span>Default proof</span><strong>Offchain</strong></div>
             <div className="security-aside-row"><span>Primary chain</span><strong>Base</strong></div>
             <div className="security-aside-row"><span>Pilot chain</span><strong>Celo</strong></div>
@@ -212,8 +213,8 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
           {[
             { icon: "fingerprint", title: "Your account is yours", copy: "Passwords are salted and hashed with scrypt. Sessions are random tokens, stored as hashes and carried in HttpOnly, SameSite cookies. Google and wallet sign-in are optional." },
             { icon: "receipt", title: "Proof is a hash, not a document", copy: "Proof references and evidence envelopes are hashed with keccak-256. The receipt contains the hashes, not the documents. You choose what, if anything, is anchored." },
-            { icon: "wallet", title: "Your wallet signs", copy: "The server never holds a private key. Anchoring and escrow require your wallet to sign the transaction. The server verifies the result over RPC before updating state." },
-            { icon: "scale", title: "No token, no financial product", copy: "There is no Remindify token and no custody of customer funds. USDC is the only asset the escrow module can move, and only when a contract is configured." },
+            { icon: "wallet", title: "Your wallet signs", copy: "The server never holds a private key. PayPal payments settle between your own accounts without a wallet; anchoring and escrow require your wallet to sign the transaction. The server verifies the result over RPC before updating state." },
+            { icon: "scale", title: "No token, no financial product", copy: "There is no Remindify token and no custody of customer funds. USDC is the only asset the escrow module can move, and only when a contract is configured. PayPal is the fiat rail: Remindify records the capture, never the balance." },
           ].map((item) => (
             <article key={item.title} className="security-card" data-reveal>
               <span className="security-icon"><Icon name={item.icon} size={19} /></span>
@@ -233,7 +234,8 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
               Most obligations never need a chain. A family birthday, a boiler service or a
               domain renewal belongs in a register, not in a block. The trust layer is an
               escalation path for the moments when a third party needs independent evidence
-              or money needs to move.
+              or money must release against proof. Ordinary payment does not need a chain at
+              all — that is the PayPal rail.
             </p>
             <p>
               Receipts begin as <code>prepared</code>, become <code>signed</code> when a valid
@@ -297,10 +299,11 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
             <p>
               Remindify is a functional preview, not a finished financial service. The reference
               contracts in the repository are unaudited and are not automatically deployed. No
-              mainnet escrow or anchoring has been verified with real funds. Wallet and payment
-              features remain offchain in Ethiopia until the National Bank of Ethiopia authorises
-              virtual-asset activity. We will publish audit and deployment details before asking
-              anyone to rely on them.
+              mainnet escrow or anchoring has been verified with real funds, and PayPal runs
+              against the sandbox. Wallet, escrow and PayPal routes are region-gated where the
+              operator's rules require it, so those features stay offchain in Ethiopia until the
+              National Bank of Ethiopia authorises virtual-asset activity. We will publish audit
+              and deployment details before asking anyone to rely on them.
             </p>
           </div>
         </div>
@@ -309,8 +312,8 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
             <span className="eyebrow">Report a vulnerability</span>
             <p>If you find a security issue, please tell us before disclosing it publicly.</p>
           </div>
-          <a className="btn btn-ghost btn-sm" href="mailto:security@remindify.app">
-            security@remindify.app <Icon name="external" size={13} />
+          <a className="btn btn-ghost btn-sm" href="mailto:liyusoftwaresolution@gmail.com">
+            liyusoftwaresolution@gmail.com <Icon name="external" size={13} />
           </a>
         </div>
       </section>

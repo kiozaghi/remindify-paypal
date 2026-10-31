@@ -109,7 +109,7 @@ curl -X POST http://localhost:4178/api/trust/escrows \
   }'
 ```
 
-Escrow is a trust boundary, not a payment processor. There is no card rail, no fiat custody and no refund desk. Do not advertise it as one.
+Escrow is a proof-gated trust boundary, not a general payment processor. It does not hold fiat, settle cards or run a refund desk, and a receipt does not prove the underlying work is good. For ordinary money movement, PayPal is the fiat rail: paying an obligation and paying a seller both go through PayPal Orders and Payouts, with no chain and no wallet ([Payments](/docs/guides/payments)). Keep the two stories separate when you describe the product.
 
 ## What is verifiable
 

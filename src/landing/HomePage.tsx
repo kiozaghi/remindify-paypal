@@ -6,7 +6,7 @@ import {
 } from "./Chrome";
 import { CHAPTERS, FAQS, PLANS, PRODUCTS } from "./data";
 import {
-  CarryingSection, DelegationPaths, PacksSection, TwoSidesSection,
+  CarryingSection, DelegationPaths, DeveloperSection, PacksSection, TwoSidesSection,
 } from "./Sections";
 import { scrollToId, useActiveSection, useReveal, useScrollProgress } from "./hooks";
 
@@ -427,9 +427,14 @@ export default function HomePage({
                 than your word, anchor the hash to Base. If a provider needs to be paid on
                 delivery, put USDC in escrow that releases only against a valid receipt.
               </p>
+              <p>
+                Everyday money is simpler: pay the bill or the seller through PayPal, and the
+                capture is filed as proof. No wallet, no chain, no seed phrase.
+              </p>
               <div className="trust-pills">
                 <span><Icon name="fingerprint" size={13} /> EIP-712 signed</span>
                 <span><Icon name="shield" size={13} /> No custody</span>
+                <span><Icon name="send" size={13} /> PayPal for fiat</span>
                 <span><Icon name="wallet" size={13} /> Wallet optional</span>
                 <span><Icon name="globe" size={13} /> Base-first · Celo-ready</span>
               </div>
@@ -561,9 +566,10 @@ export default function HomePage({
               <SectionTag light>The trust layer</SectionTag>
               <h2>Proof is a feature.<br /><em>Not a promise.</em></h2>
               <p>
-                Base-first, Celo-ready and deliberately boring about custody. No token.
-                No server-held keys. USDC is the only asset that can move, and only when
-                you sign the transaction yourself.
+                Base-first, Celo-ready and deliberately boring about custody. No token, no
+                server-held keys, no balance held here. Everyday money settles through PayPal
+                between your own accounts; USDC escrow is opt-in, and only when you sign the
+                transaction yourself.
               </p>
               <ArrowLink light href={routeHref("security")} onClick={() => onNavigate("security")}>
                 Read the security model
@@ -591,12 +597,14 @@ export default function HomePage({
               <article>
                 <span className="trust-card-icon tone-amber"><Icon name="lock" size={18} /></span>
                 <strong>No custody</strong>
-                <p>Remindify never holds a private key or moves funds. Your wallet signs.</p>
+                <p>Remindify never holds a private key, a balance or your funds. PayPal settles between your accounts; your wallet signs escrow.</p>
                 <span className="trust-card-foot">non-custodial</span>
               </article>
             </div>
           </div>
         </section>
+
+        <DeveloperSection onNavigate={onNavigate} user={user} />
 
         {/* ---------- Pricing preview ---------- */}
         <section className="pricing-preview section-wrap" id="pricing">
@@ -606,7 +614,7 @@ export default function HomePage({
               <h2>Start free.<br /><em>Grow when it earns it.</em></h2>
             </div>
             <p>
-              No token. No usage trap. No card during the preview. The register should feel
+              No token. No usage trap. No card to subscribe. The register should feel
               cheap compared with the thing it stops you from missing.
             </p>
           </div>

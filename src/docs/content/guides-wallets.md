@@ -1,6 +1,8 @@
 # Wallets, networks and signing
 
-A wallet is optional. Email and Google sign-in work without one. Wallets matter for two things: signing proof receipts and funding escrow. Remindify never holds a private key.
+A wallet is optional. Email and Google sign-in work without one, and paying an obligation with PayPal needs no wallet at all. Wallets matter for two things only: signing proof receipts and funding USDC escrow. Remindify never holds a private key.
+
+If you are here to take money rather than prove work, read [Payments](/docs/guides/payments) instead: PayPal Orders and Payouts are the fiat rails, and they never touch a chain.
 
 ## Sign in with a wallet
 

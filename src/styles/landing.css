@@ -757,6 +757,37 @@
 .product-open { margin-top: auto; display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 7px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink); opacity: 0.35; transition: opacity 0.2s; }
 .product-card:hover .product-open { opacity: 1; }
 
+/* ---------- Developer docs band ---------- */
+.dev-section { padding-top: 104px; padding-bottom: 104px; }
+.dev-grid { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 56px; align-items: start; }
+.dev-copy h2 { font-size: clamp(38px, 4.2vw, 56px); line-height: 0.99; margin: 14px 0 18px; }
+.dev-copy h2 em { color: var(--ink-2); }
+.dev-copy > p { max-width: 420px; font-size: 13.5px; line-height: 1.65; color: var(--ink-3); }
+.dev-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 22px; }
+.dev-links { display: flex; flex-direction: column; gap: 8px; }
+.dev-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.55);
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.dev-link:hover { transform: translateY(-2px); border-color: var(--line-2); background: var(--white); box-shadow: 0 22px 38px -34px rgba(20, 20, 15, 0.5); }
+.dev-link-icon { flex: none; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--tone-soft); color: var(--tone-ink); }
+.dev-link-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dev-link-kind { font-family: var(--mono); font-size: 7px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+.dev-link-text strong { font-size: 13px; letter-spacing: -0.02em; }
+.dev-link-text em { font-style: normal; font-size: 11px; line-height: 1.45; color: var(--muted); }
+.dev-link-arrow { margin-left: auto; flex: none; margin-top: 3px; color: var(--faint); transition: transform 0.18s, color 0.18s; }
+.dev-link:hover .dev-link-arrow { transform: translateX(2px); color: var(--ink); }
+.dev-links-foot { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; padding-top: 14px; border-top: 1px dashed var(--line-2); font-size: 10.5px; line-height: 1.55; color: var(--muted); }
+.dev-links-foot svg { flex: none; margin-top: 2px; color: var(--ink-3); }
+
 /* ---------- Trust band ---------- */
 .trust-band { background: #14150f; color: var(--paper); padding: 104px 0; }
 .trust-band-grid { display: grid; grid-template-columns: 0.82fr 1.18fr; gap: 72px; align-items: center; }
@@ -1400,6 +1431,9 @@
 
   .trust-band-grid { grid-template-columns: 1fr; gap: 40px; }
   .trust-band-copy > p { max-width: 590px; }
+  .dev-grid { grid-template-columns: 1fr; gap: 34px; }
+  .dev-copy > p { max-width: 620px; }
+  .dev-section { padding-top: 80px; padding-bottom: 80px; }
   .faq-grid { grid-template-columns: 1fr; gap: 35px; }
   .page-hero { grid-template-columns: 1fr; gap: 40px; padding-top: 70px; padding-bottom: 60px; }
   .page-hero-aside { max-width: 500px; }

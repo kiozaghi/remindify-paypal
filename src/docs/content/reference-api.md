@@ -197,6 +197,21 @@ curl -X POST "$REMINDIFY_URL/api/v1/trust/receipts" \
 
 `201` with `{ "receipt": { ... } }`. The receipt is `prepared`; signing and anchoring happen in the trust layer.
 
+## Payments
+
+PayPal routes are **session-cookie** routes under `/api/payments`. They are not part of `/api/v1` and a machine key cannot call them: moving money stays a human action. The full flow is in [Payments](/docs/guides/payments).
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/payments` | Payment rows plus `summary` and `paypal: { configured, mode }`. |
+| `POST` | `/api/payments/paypal/orders` | Create an order for `{ obligation_id }`; returns `approve_url`. |
+| `POST` | `/api/payments/paypal/capture` | Capture `{ order_id }` and complete the obligation. |
+| `POST` | `/api/payments/paypal/payouts` | Send a seller payout `{ payout_id }` through Payouts. |
+| `GET` | `/api/payments/paypal/payouts/:batch` | Poll a payout batch and update the ledger. |
+| `POST` | `/api/paypal/webhook` | PayPal callback; applied only with a verified signature. |
+
+Amount and currency come from the stored obligation, never from the request. Orders are USD-only and capped at $10,000. Capture is idempotent: replaying an order id returns `already_captured: true`. Without `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` every route fails closed with `503 paypal_not_configured`.
+
 ## Agents
 
 ```bash
@@ -231,6 +246,6 @@ curl "$REMINDIFY_URL/api/v1/agents" \
 
 ## App endpoints
 
-`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing` and `/api/demo/*` require a signed-in session cookie. A machine key does not open them.
+`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/payments/*`, `/api/seller/*`, `/api/billing` and `/api/demo/*` require a signed-in session cookie. A machine key does not open them.
 
-Public endpoints are `/api/auth/*`, `/api/health`, `/api/v1/*` and the secret-protected `/api/cron/*` schedulers.
+Public endpoints are `/api/auth/*`, `/api/health`, `/api/v1/*`, `/api/paypal/webhook` (signature-verified) and the secret-protected `/api/cron/*` schedulers.

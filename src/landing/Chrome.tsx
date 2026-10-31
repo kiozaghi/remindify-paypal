@@ -270,7 +270,7 @@ export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?
         <span className="site-footer-values">
           <i>No token</i>
           <i>Wallet optional</i>
-          <i>USDC only</i>
+          <i>PayPal + USDC</i>
           <i>MIT-licensed</i>
         </span>
         <span>Preview build · v1.0</span>

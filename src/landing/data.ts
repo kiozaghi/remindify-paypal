@@ -44,7 +44,7 @@ export const PRODUCTS: Array<{
     route: "market",
     icon: "store",
     title: "Marketplace",
-    copy: "Community-built agents and vetted humans, side by side. Hire for one obligation, with scoped access and payment on proof.",
+    copy: "Community-built agents and vetted humans, side by side. Hire for one obligation, with scoped access and payment released on accepted proof.",
     tone: "coral",
     badge: "Extra hands",
   },
@@ -60,7 +60,7 @@ export const PRODUCTS: Array<{
     route: "trust",
     icon: "shield",
     title: "Trust layer",
-    copy: "EIP-712 receipts, optional Base or Celo anchoring, and USDC escrow that releases against proof.",
+    copy: "EIP-712 receipts, optional Base or Celo anchoring, and USDC escrow that releases against proof. Everyday payments ride PayPal.",
     tone: "violet",
     badge: "Base-first",
   },
@@ -144,11 +144,19 @@ export const FAQS = [
   },
   {
     q: "What does the blockchain actually add?",
-    a: "A checkable record. Completed work files a hashed EIP-712 proof receipt offchain. If a counterparty needs more than your word, anchor that hash to Base. If a provider needs to be paid on delivery, USDC sits in non-custodial escrow that releases only against a valid receipt. No documents onchain, no custody, no token.",
+    a: "A checkable record, when you need one. Completed work files a hashed EIP-712 proof receipt offchain. If a counterparty needs more than your word, anchor that hash to Base. If a provider needs to be paid on delivery, USDC sits in non-custodial escrow that releases only against a valid receipt. No documents onchain, no custody, no token. Ordinary payments do not need any of this — they ride PayPal.",
+  },
+  {
+    q: "How do payments work?",
+    a: "Two rails. Everyday money moves through PayPal: pay an obligation from your own PayPal account, or send a seller a payout, and the capture is filed as proof. USDC escrow is the optional onchain rail for work that must release against a signed receipt. Remindify records payments; it never holds a balance, a card or a private key.",
   },
   {
     q: "Do I need a wallet to use it?",
-    a: "No. Remindify is wallet-optional. You can sign in with email or Google and keep everything offchain. Wallet sign-in exists for people who want it. USDC escrow is only used when a contract is configured and you explicitly choose it.",
+    a: "No. Sign in with email or Google, and pay through PayPal without ever creating a wallet. A wallet is only needed if you choose to sign a proof receipt yourself or fund USDC escrow.",
+  },
+  {
+    q: "Do I need crypto at all?",
+    a: "No. There is no token and nothing to buy. Crypto only appears if you choose to anchor a proof hash or fund an escrow on Base or Celo.",
   },
   {
     q: "What is actually onchain?",
@@ -160,11 +168,11 @@ export const FAQS = [
   },
   {
     q: "Does it work in Ethiopia?",
-    a: "The register, capture, agents and offchain proof work today. Wallet and payment features remain offchain in Ethiopia until the National Bank of Ethiopia authorises virtual-asset activity. We do not pretend otherwise.",
+    a: "The register, capture, agents and offchain proof work today. Wallet, escrow and PayPal routes are region-gated where the operator's rules require it, so those features stay offchain in Ethiopia until the National Bank of Ethiopia authorises virtual-asset activity. We do not pretend otherwise.",
   },
   {
     q: "Is the product live?",
-    a: "This is a preview build. The core workspace is functional and every action writes to the live register. Billing, paid workspaces and onchain contracts are still being prepared. Pricing shown is preview pricing.",
+    a: "This is a preview build. The core workspace is functional and every action writes to the live register. PayPal payments and seller payouts run against the sandbox; plan billing and onchain contracts are still being prepared. Pricing shown is preview pricing.",
   },
   {
     q: "What happens to my data?",
@@ -229,8 +237,52 @@ export const DELEGATION = [
     tone: "violet",
     icon: "store",
     title: "Hire the community",
-    copy: "Borrow a marketplace agent or a human specialist for one obligation. Fixed price, scoped access, USDC released when the proof is accepted.",
+    copy: "Borrow a marketplace agent or a human specialist for one obligation. Fixed price, scoped access, payment released when the proof is accepted.",
     tag: "community",
+  },
+] as const;
+
+/** Where builders land when they want the register inside their own stack. */
+export const DEV_DOCS = [
+  {
+    slug: "concepts/agents",
+    icon: "bot",
+    tone: "violet",
+    kind: "Concept",
+    title: "Agents and passports",
+    copy: "Scopes, an autonomy ceiling and a paper trail for every run.",
+  },
+  {
+    slug: "guides/agent-tools",
+    icon: "command",
+    tone: "teal",
+    kind: "Guide",
+    title: "MCP and agent tools",
+    copy: "Wire the register into Claude, Cursor, LangGraph or n8n.",
+  },
+  {
+    slug: "guides/executors",
+    icon: "webhook",
+    tone: "amber",
+    kind: "Guide",
+    title: "Execution connectors",
+    copy: "Receive signed requests at an HTTPS endpoint and return proof.",
+  },
+  {
+    slug: "guides/payments",
+    icon: "wallet",
+    tone: "coral",
+    kind: "Guide",
+    title: "Payments",
+    copy: "PayPal Orders and Payouts, plus proof-gated USDC escrow.",
+  },
+  {
+    slug: "reference/api",
+    icon: "terminal",
+    tone: "blue",
+    kind: "Reference",
+    title: "REST API",
+    copy: "Endpoints, scopes, headers and error codes in one place.",
   },
 ] as const;
 
@@ -357,4 +409,5 @@ export const CHAPTERS = [
   { id: "chapter-four", label: "The proof" },
   { id: "chapter-five", label: "The Monday" },
   { id: "product", label: "The rooms" },
+  { id: "developers", label: "The API" },
 ];

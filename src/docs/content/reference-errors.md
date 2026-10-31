@@ -23,7 +23,7 @@ Some add fields such as `scope`, `plan`, `limit` or `retry_after`. The HTTP stat
 | `422` | `invalid_email` | Malformed address or longer than 254 characters. | Send a valid address. |
 | `422` | `weak_password` | Password outside 8–256 characters. | Use a longer password. |
 | `429` | `rate_limited` | Too many auth attempts. | Wait for `Retry-After` or a minute. |
-| `451` | `region_blocked` | New account or escrow movement from a blocked country. | Only the operator can change `BLOCKED_COUNTRIES`. |
+| `451` | `region_blocked` | New account, escrow movement or a payment route from a blocked country. | Only the operator can change `BLOCKED_COUNTRIES`. |
 
 ## Machine API
 
@@ -61,6 +61,24 @@ Some add fields such as `scope`, `plan`, `limit` or `retry_after`. The HTTP stat
 | `422` | `escrow_not_draft` | Commit on an already committed escrow. | Open a new intent. |
 | `422` | `escrow_not_releasable` | Release on a draft or released escrow. | Commit or fund it first. |
 | `422` | `escrow_already_funded` / `escrow_already_released` | Duplicate state transition. | Read the escrow instead. |
+
+## Payments
+
+Payment routes are session-cookie routes; a machine key gets `401 unauthorized` on them.
+
+| Status | Code | Cause | Fix |
+| --- | --- | --- | --- |
+| `404` | `payment_not_found` | Unknown order id on capture. | Capture the order id from the approval redirect. |
+| `404` | `payout_not_found` | Unknown payout or batch id. | Read `GET /api/payments` for current ids. |
+| `409` | `obligation_not_payable` | The obligation is already settled or archived. | Refresh the register; pay a live obligation. |
+| `409` | `payout_state` | Paying a payout that is not `processing`. | Request a new payout from cleared earnings. |
+| `409` | `paypal_email_required` | A seller payout without a PayPal email on the profile. | Set one under Seller desk → Payout account. |
+| `422` | `nothing_to_pay` | The obligation has no amount. | Set an `amount` above zero. |
+| `422` | `currency_unsupported` | Obligation currency is not USD. | PayPal settles USD only here. |
+| `422` | `amount_too_large` | Above $10,000 per payment. | Split the obligation or use escrow. |
+| `422` | `amount_mismatch` / `currency_mismatch` | PayPal returned a different total than the stored row. | Do not retry blindly; the payment is marked failed. |
+| `502` | `paypal_unreachable` | Network failure or timeout to PayPal. | Retry; the order is idempotent on capture. |
+| `503` | `paypal_not_configured` | Missing `PAYPAL_CLIENT_ID` or `PAYPAL_CLIENT_SECRET`. | Configure the rail or hide the pay control. |
 
 ## Connection and execution
 

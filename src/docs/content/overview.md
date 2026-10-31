@@ -10,18 +10,9 @@ These docs cover three audiences:
 
 ## Start here
 
-| If you want to... | Read |
-| --- | --- |
-| Make your first call in ten minutes | [Quickstart](/docs/quickstart) |
-| Understand the record you are reading and writing | [Obligations](/docs/concepts/obligations) |
-| Give an agent a scoped identity | [Agents and passports](/docs/concepts/agents) |
-| Understand proof, signatures and escrow | [Proof and escrow](/docs/concepts/proof-and-escrow) |
-| Connect an agent to a real executor | [Execution connectors](/docs/guides/executors) |
-| Use Claude, Cursor or another agent tool | [Agent tools and models](/docs/guides/agent-tools) |
-| Sign with a wallet | [Wallets and signing](/docs/guides/wallets) |
-| Sell work on the marketplace | [Sell on Remindify](/docs/guides/sellers) |
-| Look up an endpoint or an error | [REST API](/docs/reference/api) · [Errors](/docs/reference/errors) |
-| Configure a deployment | [Environment variables](/docs/reference/environment) |
+Pick the path that matches what you are building.
+
+<div id="docs-entry-points"></div>
 
 ## The mental model
 
@@ -61,17 +52,18 @@ The REST API and the included MCP server are two views of the same register. See
 | Execution connectors with signed requests and durable retries | Available |
 | Proof receipts, EIP-712 signing, optional anchoring | Available; anchoring needs deployed contracts |
 | Escrow intents | Available; onchain funding needs deployed contracts and a funded wallet |
-| Billing | Preview: plans and metering work, payment provider is not connected |
+| PayPal payments and seller payouts | Available; needs `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, sandbox by default |
+| Billing | Preview: plans and metering work, subscription billing is not connected |
 | Proof file uploads | Not yet: proof is a reference string, not a stored file |
-| Seller workspace, earnings and payouts | In progress; see [Sell on Remindify](/docs/guides/sellers) |
+| Seller workspace, earnings and payouts | Live in preview; PayPal Payouts is the only connected payout rail |
 
-Remindify does not hold private keys or custody funds. Escrow is non-custodial and releases only against a valid proof receipt.
+Remindify does not hold private keys or custody funds. Escrow is non-custodial and releases only against a valid proof receipt. A PayPal payment moves between the payer's and payee's own PayPal accounts; Remindify records the capture and files it as proof.
 
 ## Conventions
 
 - Requests and responses are JSON. Send `content-type: application/json`.
 - Timestamps are ISO 8601 strings. Dates in machine responses are UTC.
-- Money is a number in the obligation's `currency`; the demo register uses USD. Onchain amounts are USDC.
+- Money is a number in the obligation's `currency`; the demo register uses USD. Onchain amounts are USDC. PayPal settles USD only; escrow moves USDC only.
 - Mutating machine calls accept `Idempotency-Key`. Reuse it when retrying.
 - Every response includes `x-ratelimit-limit` and `x-ratelimit-remaining`.
 - Errors are `{ "error": "code", "message": "..." }`, with extra fields when useful. See [Errors](/docs/reference/errors).

@@ -72,6 +72,21 @@ Plans, metering and key limits work without a payment provider. Plan switching i
 
 When `EMAIL_WEBHOOK_URL` is set, an email account must confirm its address before switching to a paid plan.
 
+## Payments (PayPal)
+
+Optional. Without credentials every payment route fails closed with `503 paypal_not_configured`, and `state.paypal.configured` is `false` so the app hides the pay control. Amounts are rebuilt from the stored obligation and must be USD.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PAYPAL_ENV` | `sandbox` | `sandbox` or `live`; picks the API base and the checkout host |
+| `PAYPAL_CLIENT_ID` | — | REST app client id |
+| `PAYPAL_CLIENT_SECRET` | — | REST app secret |
+| `PAYPAL_WEBHOOK_ID` | — | Webhook id used to verify signatures at `/api/paypal/webhook`; without it events are acknowledged but not applied |
+| `PAYPAL_BASE_URL` | derived from `PAYPAL_ENV` | Override the API base; tests only |
+| `PAYPAL_TIMEOUT_MS` | `15000` | Per-request timeout for PayPal calls |
+
+`npm run dev` copies only the `PAYPAL_*` lines from `.env.local` into the server process. The rest of that file is left alone, so a pulled production `.env.local` does not point local runs at the cloud database. Subscribe the webhook to `PAYMENT.CAPTURE.*` and `PAYMENT.PAYOUTS-ITEM.*` events.
+
 ## Machine API
 
 | Variable | Default | Purpose |
@@ -82,7 +97,7 @@ Counters live in workspace metadata, so the limit holds across instances sharing
 
 ## Marketplace and seller desk
 
-Bookings, receipts and the earnings ledger are stored per workspace. Payouts are ledger entries only; no provider is connected.
+Bookings, receipts and the earnings ledger are stored per workspace. Payouts start as ledger entries; with PayPal configured, a seller payout is sent through Payouts to the email on file and tracked by batch id.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -95,7 +110,7 @@ The fee is clamped to 0–3000 bps and the hold to 0–30 days. Payout requests 
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BLOCKED_COUNTRIES` | — | Comma-separated ISO 3166-1 alpha-2 codes denied new accounts and escrow movement |
+| `BLOCKED_COUNTRIES` | — | Comma-separated ISO 3166-1 alpha-2 codes denied new accounts, escrow movement and PayPal routes |
 
 The country is read from `x-vercel-ip-country`, `cf-ipcountry` or `x-country-code`, in that order. Only set these behind a proxy you control: a client that reaches the server directly can forge them. Blocked requests receive `451 region_blocked`.
 
@@ -195,6 +210,10 @@ EMAIL_WEBHOOK_SECRET=...
 OUTBOX_SECRET=...
 CRON_SECRET=...
 BLOCKED_COUNTRIES=KP,IR,SY,CU
+PAYPAL_ENV=sandbox
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_WEBHOOK_ID=...
 ```
 
 Then schedule `/api/cron/outbox` and `/api/cron/sweep`. Without a scheduler, executions still happen inline and retries queue but do not drain on their own.
