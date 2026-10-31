@@ -114,9 +114,9 @@ Expected without any PayPal credentials: steps 2–5 and 7 work; step 6 explains
 - [x] PayPal order creation, approval redirect, return/cancel handling and the decline path exercised against the live sandbox API.
 - [x] PayPal ledger on Trust; payout flow is two-step and labelled.
 - [ ] **Capture on camera:** sign in with the sandbox buyer account (see §6). Guest card checkout does not work for this merchant.
-- [ ] Push the final commit and tag `paypal-hackathon-2026`.
-- [ ] Set repo topics/description/homepage on GitHub.
-- [ ] Deploy this branch to the public Vercel project and confirm the seeded sign-in works.
+- [x] Push the final commit and tag `paypal-hackathon-2026`. `main` is at `1d57353`; the tag is pushed.
+- [ ] Set repo topics/description/homepage on GitHub (no `gh` CLI on this machine — 30 seconds in the repo settings; suggested topics: `paypal`, `paypal-apis`, `ai-agents`, `hackathon`, `react`, `nodejs`).
+- [ ] Deploy this branch to the public Vercel project and confirm the seeded sign-in works. No Vercel CLI/token on this machine; the GitHub integration should redeploy `main` if the new repo is connected.
 - [ ] Record the video against the live or local sandbox build, under 3:00.
 - [ ] Paste fields into Devpost and submit before **Nov 12, 12:00pm PST**.
 
