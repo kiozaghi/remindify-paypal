@@ -213,6 +213,12 @@ function clampAutonomyToCeiling(ob) {
   return ob;
 }
 
+// The account name resolved for this workspace. Provisioning writes it to meta
+// on signup, so every human action can be attributed to whoever is signed in.
+function humanActor() {
+  return getMeta("user", "Operator");
+}
+
 function normalizeObligation(input) {
   const now = new Date();
   const due = input.due_at ? new Date(input.due_at) : new Date(now.getTime() + 14 * 86400000);
@@ -221,7 +227,7 @@ function normalizeObligation(input) {
     title: String(input.title || "Untitled obligation").slice(0, 140),
     category: input.category || "other",
     provider: input.provider || "Unassigned",
-    owner: input.owner || "Solomon Tigabu",
+    owner: input.owner || humanActor(),
     owner_kind: input.owner_kind || "human",
     agent_id: input.agent_id || null,
     backup: input.backup || "",
@@ -648,7 +654,7 @@ async function handleRequest(req, res) {
       clampAutonomyToCeiling(input);
       put("obligations", input);
       logEvent({
-        actor_type: "human", actor: "Solomon Tigabu",
+        actor_type: "human", actor: humanActor(),
         verb: "created an obligation", object: input.title,
         detail: `${input.source} · ${input.autonomy}`, kind: "human",
       });
@@ -687,7 +693,7 @@ async function handleRequest(req, res) {
       put("obligations", ob);
       if ("autonomy" in patch) {
         logEvent({
-          actor_type: "human", actor: "Solomon Tigabu", verb: "changed autonomy",
+          actor_type: "human", actor: humanActor(), verb: "changed autonomy",
           object: ob.title, detail: `Now ${patch.autonomy}`, kind: "human",
         });
       }
@@ -751,7 +757,7 @@ async function handleRequest(req, res) {
       };
       put("agents", agent);
       logEvent({
-        actor_type: "human", actor: "Solomon Tigabu", verb: "created an agent",
+        actor_type: "human", actor: humanActor(), verb: "created an agent",
         object: agent.name, detail: `${agent.role} · ceiling ${agent.autonomy_ceiling}`,
         kind: "human",
       });
@@ -785,7 +791,7 @@ async function handleRequest(req, res) {
         delete agent.executor_secret;
         put("agents", agent);
         logEvent({
-          actor_type: "human", actor: "Solomon Tigabu", verb: "disconnected an executor",
+          actor_type: "human", actor: humanActor(), verb: "disconnected an executor",
           object: agent.name, detail: "The agent can draft and request approval, but not act.",
           kind: "human",
         });
@@ -806,7 +812,7 @@ async function handleRequest(req, res) {
         host = new URL(check.url).host;
       } catch {}
       logEvent({
-        actor_type: "human", actor: "Solomon Tigabu", verb: "connected an executor",
+        actor_type: "human", actor: humanActor(), verb: "connected an executor",
         object: agent.name, detail: `${host} · signed requests`,
         kind: "human",
       });
@@ -838,7 +844,7 @@ async function handleRequest(req, res) {
         stored.backup = provider.name;
         put("obligations", stored);
         logEvent({
-          actor_type: "human", actor: "Solomon Tigabu",
+          actor_type: "human", actor: humanActor(),
           verb: `booked ${provider.kind === "agent" ? "an agent" : "a specialist"}`,
           object: ob.title, detail: `${provider.name} · $${provider.price} · SLA ${provider.sla}`,
           kind: "human",
@@ -855,7 +861,7 @@ async function handleRequest(req, res) {
         });
         put("obligations", created);
         logEvent({
-          actor_type: "human", actor: "Solomon Tigabu",
+          actor_type: "human", actor: humanActor(),
           verb: "created a job from the marketplace", object: title,
           detail: `${provider.name} · $${provider.price}`,
           kind: "human",
@@ -897,7 +903,7 @@ async function handleRequest(req, res) {
       };
       put("keys", key);
       logEvent({
-        actor_type: "human", actor: "Solomon Tigabu", verb: "issued an agent key",
+        actor_type: "human", actor: humanActor(), verb: "issued an agent key",
         object: key.name, detail: `${key.prefix}… · expires in ${days} days`, kind: "human",
       });
       return send(res, 201, { state: buildState(), key: { ...publicKey(key), secret } });
@@ -918,7 +924,7 @@ async function handleRequest(req, res) {
       delete key.secret;
       put("keys", key);
       logEvent({
-        actor_type: "human", actor: "Solomon Tigabu", verb: "rotated an agent key",
+        actor_type: "human", actor: humanActor(), verb: "rotated an agent key",
         object: key.name, detail: `${key.prefix}… · the old secret no longer works`, kind: "human",
       });
       return send(res, 200, { state: buildState(), key: { ...publicKey(key), secret } });
@@ -932,7 +938,7 @@ async function handleRequest(req, res) {
       remove("keys", keyMatch[1]);
       if (revoked) {
         logEvent({
-          actor_type: "human", actor: "Solomon Tigabu", verb: "revoked an agent key",
+          actor_type: "human", actor: humanActor(), verb: "revoked an agent key",
           object: revoked.name, detail: `${revoked.prefix}… · every client using it is locked out`,
           kind: "human",
         });
@@ -1330,7 +1336,7 @@ async function handleRequest(req, res) {
     }
   } catch (error) {
     console.error(error);
-    return send(res, 500, { error: "server_error", message: error.message });
+    return send(res, 500, { error: "server_error", message: "Something went wrong on our side." });
   }
 }
 
@@ -1555,7 +1561,7 @@ export async function handle(req, res) {
   } catch (error) {
     console.error("Postgres request failed:", error);
     if (!res.headersSent) {
-      return send(res, 500, { error: "server_error", message: error.message });
+      return send(res, 500, { error: "server_error", message: "Something went wrong on our side." });
     }
     if (!res.writableEnded) res.end();
   }

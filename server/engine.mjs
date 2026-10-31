@@ -152,7 +152,7 @@ export function buildState() {
     clock_offset_days: getMeta("clock_offset_days", 0) || 0,
     live: getMeta("live", true),
     workspace: getMeta("workspace", "Exopya Studio"),
-    user: getMeta("user", "Solomon Tigabu"),
+    user: getMeta("user", "Operator"),
     plan: getMeta("plan", "Studio"),
     storage: isPostgres ? "cloud" : "local",
     obligations,
