@@ -1,7 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Remindify">
-  <rect width="64" height="64" rx="16" fill="#14140F"/>
-  <path d="M17 35.5c0-8.6 6.4-15 14.8-15 6.1 0 11.3 3.2 13.6 8.4" stroke="#D9F26A" stroke-width="5" fill="none" stroke-linecap="round"/>
-  <circle cx="46" cy="27.5" r="3.6" fill="#D9F26A"/>
-  <path d="M47 42.5c0 8.6-6.4 15-14.8 15-6.1 0-11.3-3.2-13.6-8.4" stroke="#FBF9F3" stroke-width="5" fill="none" stroke-linecap="round"/>
-  <circle cx="18" cy="49.5" r="3.6" fill="#FBF9F3"/>
+  <rect width="64" height="64" rx="18" fill="#14140F"/>
+  <circle cx="32" cy="32" r="13.5" fill="none" stroke="#D9F26A" stroke-width="5"/>
+  <path d="M23 33 29 39 42 25.5" fill="none" stroke="#14140F" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M23 33 29 39 42 25.5" fill="none" stroke="#FBF9F3" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
