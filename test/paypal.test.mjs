@@ -116,6 +116,7 @@ test("orders are created with the stored amount and a fresh approve link", async
   const createCall = calls.find((call) => call.url.endsWith("/v2/checkout/orders"));
   const payload = JSON.parse(createCall.options.body);
   assert.equal(payload.purchase_units[0].amount.value, "42.50");
+  assert.equal(payload.purchase_units[0].amount.currency_code, "USD");
   assert.equal(payload.purchase_units[0].custom_id, "ob_test");
 });
 

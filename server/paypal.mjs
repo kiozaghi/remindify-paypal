@@ -184,7 +184,9 @@ export async function createOrder(obligation, { returnUrl, cancelUrl, env = proc
           custom_id: obligation.id,
           invoice_id: `RM-${String(obligation.id).slice(0, 12)}-${Date.now()}`,
           description: String(obligation.title || "Remindify obligation").slice(0, 127),
-          amount,
+          // Orders v2 calls this currency_code; only the Payouts API uses `currency`,
+          // so `amount` cannot be passed through unchanged.
+          amount: { currency_code: amount.currency, value: amount.value },
         },
       ],
       application_context: {
