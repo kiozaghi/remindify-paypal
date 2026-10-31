@@ -44,8 +44,8 @@ Use these numbers; do not inflate them.
   - Read back from the contracts: `anchored(receipt) = true`, and the escrow shows `funded = true`, `released = true` with the proof receipt bound to it.
   - It ran against a local server with the deployed addresses configured, with 1 test USDC and a real EIP-712 signature from the deployer wallet.
   - The base-sepolia deployment record now carries the receipt id, escrow id, every tx hash and the state checks.
-- **35 automated tests** pass; `npm run check` (TypeScript + production build) passes.
-- MIT license is in the repo. The GitHub repository is currently **private**.
+- **41 automated tests** pass; `npm run check` (TypeScript + production build) passes.
+- MIT license is in the repo, which is public at **https://github.com/kiozaghi/remindify-paypal**.
 - **No paying users, no mainnet deployment, no Celo integration, no ERC-8004 registration, no Self Agent ID, no KarmaGAP profile.**
 
 If an application asks for traction, lead with what is built and be explicit about
@@ -246,9 +246,9 @@ A plan is not a deployment.
 | **Website** | https://remindify-xi.vercel.app |
 | **X Handle** | `[FILL]` |
 | **KarmaGAP profile** | **BLOCKED** — create the profile and paste the URL. |
-| **Github** | `https://github.com/DesmondSol/remindify` (currently private; MIT license) |
+| **Github** | `https://github.com/kiozaghi/remindify-paypal` (public; MIT license) |
 | **ERC-8004 registration** | **BLOCKED** — register the Remindify agent/project under ERC-8004 on Celo mainnet and paste the registration. |
-| **Is your project fully open source** | MIT licensed. The repository is private today; it can be made public for grant review. **Decision needed before submission.** |
+| **Is your project fully open source** | Yes. MIT licensed and public at https://github.com/kiozaghi/remindify-paypal. |
 | **Deployed on Celo mainnet** | **BLOCKED** — no mainnet deployment yet. The deploy script is ready; it needs a funded wallet and a security review. |
 | **Self Agent ID** | **BLOCKED** — no Self Protocol Agent ID yet. |
 
@@ -404,7 +404,7 @@ Celo card, label it “planned pilot.”
 - [ ] Integrate **Self Protocol Agent ID** and paste the ID.
 - [ ] Create the **KarmaGAP** profile.
 - [ ] Complete KYC and confirm the registered country.
-- [ ] Decide whether the repo becomes public. Celo prefers open source; the MIT license is already in place.
+- [x] Made the repo public with the MIT license in place: https://github.com/kiozaghi/remindify-paypal.
 - [ ] Record a Celo-specific demo that does not imply Ethiopian users can use wallets.
 - [ ] Read and agree to the Prezenti legal documents.
 
@@ -413,7 +413,7 @@ Celo card, label it “planned pilot.”
 ## 9. Decisions only the founder can make
 
 1. **Public demo hosting.** Done: the app is live on Vercel at **https://remindify-xi.vercel.app** against Neon Postgres. Keep a reset path for the demo and confirm the seeded workspace is intact before recording.
-2. **Repo visibility.** MIT is already chosen. Celo prefers open source; Base does not require it. The safest sequence is to make the repo public after the Base testnet rehearsal and before the Celo submission, not before.
+2. **Repo visibility.** Done: MIT licensed and public at https://github.com/kiozaghi/remindify-paypal, after the Base Sepolia rehearsal and before any Celo submission.
 3. **Registered entity and KYC country.** Celo asks for the country of registration and a lead applicant for KYC. This must be accurate.
 4. **Fundraising number.** The pitch says $400k for 10%. Base Ecosystem Fund may invest a different amount. Confirm the number before submitting.
 5. **Celo grant amount.** The form does not ask for a number in the fields above, but the budget should be ready. Do not anchor on a number until the deployment and security-review quotes are known.
