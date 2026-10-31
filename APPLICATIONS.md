@@ -211,7 +211,7 @@ required funding field.
 | **What is the problem you are solving?** | Recurring obligations fail silently. A lapsed insurance policy, a late payroll filing or a missed licence renewal costs far more than a reminder app. The people who carry this load — founders, freelancers, caregivers, small teams and diaspora families — have no single system of record for the obligation, the owner, the backup, the consequence and the evidence. Existing tools store dates, not accountability. |
 | **Why are you working on this idea?** | I built the first Remindify deck from lived experience of missed renewals and informal coordination. The 2026 version exists because agents can now do the work, not just remind you about it. The missing layer is trust: who acted, under what scope, and what proof exists. That is the product I want to exist. |
 | **How long have you been working on this company idea?** | 1–3 years |
-| **What’s your current traction?** | Working prototype, pre-revenue. Public demo at https://remindify-xi.vercel.app, 16 seeded obligations, 7 agents, 8 providers, per-account workspaces, REST and MCP access, EIP-712 proof receipts, 35 automated tests and a production build. Two Solidity contracts are deployed to Base Sepolia and source-verified, and the anchor → fund → release lifecycle has been rehearsed onchain with four recorded transactions. The contracts are unaudited and testnet-only. No paying users yet. The next milestone is the first 10 design partners. |
+| **What’s your current traction?** | Working prototype, pre-revenue. Public demo at https://remindify-xi.vercel.app, 16 seeded obligations, 7 agents, 8 providers, per-account workspaces, REST and MCP access, EIP-712 proof receipts, 41 automated tests and a production build. Two Solidity contracts are deployed to Base Sepolia and source-verified, and the anchor → fund → release lifecycle has been rehearsed onchain with four recorded transactions. The contracts are unaudited and testnet-only. No paying users yet. The next milestone is the first 10 design partners. |
 
 ### Funding
 
@@ -274,7 +274,7 @@ A plan is not a deployment.
 | Field | Draft |
 | --- | --- |
 | **Clear contribution to the ecosystem** | Celo’s agent economy needs a neutral answer to “did the agent actually do the work?” Remindify contributes an open proof-receipt format, an attestation registry, a proof-gated USDC escrow and an MCP/REST surface that other Celo agent projects can depend on. It is accountability infrastructure, not another consumer app. |
-| **Technical credibility** | The product is built and tested: React 19 + TypeScript client, zero-framework Node API, SQLite locally and Postgres in production, REST and MCP access, EIP-712 receipts verified with viem, keccak-256 proof/evidence hashes, two Solidity contracts compiled with solc 0.8.24 and deployed to Base Sepolia, and 35 automated tests. The contracts are unaudited; a security review is part of the grant budget. The architecture is Base-first and Celo-reusable, not a fork. |
+| **Technical credibility** | The product is built and tested: React 19 + TypeScript client, zero-framework Node API, SQLite locally and Postgres in production, REST and MCP access, EIP-712 receipts verified with viem, keccak-256 proof/evidence hashes, two Solidity contracts compiled with solc 0.8.24 and deployed to Base Sepolia, and 41 automated tests. The contracts are unaudited; a security review is part of the grant budget. The architecture is Base-first and Celo-reusable, not a fork. |
 | **Additional information** | Ethiopia’s NBE has not authorised virtual-asset activity, so Ethiopian obligations stay offchain and the Celo module is geo-fenced to non-Ethiopian counterparties. Escrow creation requires an explicit jurisdiction acknowledgment. There is no token and no custody. The repo is MIT licensed. |
 
 ### Grant delivery
@@ -321,7 +321,7 @@ Use this only if the form asks for a budget. Adjust the amount before submitting
 > Remindify is the obligation register for humans and agents. Every obligation gets an owner, a backup, a risk score, an autonomy level and a proof requirement. Agents get passports with scopes and ceilings. When an agent completes a task, it files an EIP-712 proof receipt. The receipt can stay offchain, or it can be anchored to Base. USDC escrow releases only when the proof matches the obligation.
 >
 > The product is live at remindify-xi.vercel.app: 16 seeded obligations, 7 agents,
-> 8 providers, per-account workspaces, REST and MCP access, 35 tests. The trust
+> 8 providers, per-account workspaces, REST and MCP access, 41 tests. The trust
 > contracts are deployed on Base Sepolia and unaudited; the anchor → fund →
 > release flow is rehearsed onchain with recorded transactions. We are
 > pre-revenue, and the next target is 10 design partners on Base.
@@ -337,7 +337,7 @@ Use this only if the form asks for a budget. Adjust the amount before submitting
 5. **Demo** — Today → approve & run → proof receipt → Trust page → escrow intent.
 6. **Market** — 400M knowledge workers, 40M small teams, marketplace take, agent/API access.
 7. **Business model** — free, Plus, Studio, marketplace, enterprise, agent platform.
-8. **Traction** — live public demo, 35 tests, Base Sepolia contracts deployed; pre-revenue and honest about it.
+8. **Traction** — live public demo, 41 tests, Base Sepolia contracts deployed; pre-revenue and honest about it.
 9. **Go-to-market** — Addis/diaspora wedge, Exopya network, renewal audit, backups as distribution.
 10. **Team + ask** — Solomon Tigabu; $400k pre-seed for 18 months.
 
