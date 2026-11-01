@@ -120,9 +120,9 @@ Expected without any PayPal credentials: steps 2–6 and 8 work; step 7 explains
 - [x] Authorization-hold escrow, 10% application fee and AI proof auditor exercised in the browser.
 - [x] PayPal invoicing and reminders covered by tests.
 - [ ] **Capture on camera:** sign in with the sandbox buyer account (see §6). Guest card checkout does not work for this merchant.
-- [ ] Push the final commit and tag `paypal-hackathon-2026` on `feat/paypal-agentic-commerce`.
+- [x] Pushed `feat/paypal-agentic-commerce`; `paypal-hackathon-2026` tags the submission commit.
 - [ ] Set repo topics/description/homepage on GitHub (no `gh` CLI on this machine — 30 seconds in the repo settings; suggested topics: `paypal`, `paypal-apis`, `ai-agents`, `hackathon`, `react`, `nodejs`).
-- [ ] Deploy this branch to the public Vercel project and confirm the seeded sign-in works. No Vercel CLI/token on this machine; the GitHub integration should redeploy the branch if the project is connected.
+- [ ] Deploy the branch to the `remindify-paypal` Vercel project and confirm the seeded sign-in works (runbook in §7).
 - [ ] Record the video against the live or local sandbox build, under 3:00.
 - [ ] Paste fields into Devpost and submit before **Nov 12, 12:00pm PST**.
 
@@ -169,3 +169,33 @@ If sign-in fails on camera, cut to the ledger and say the capture was performed 
 - `markFailed` records `provider_status` and `failure_code`, rendered as a chip in the ledger.
 - Sweeps expire unpaid orders after three hours of virtual time (`expireStalePayments`), so the ledger tells the truth.
 - Reclaim timestamps use the virtual clock, so a reclaim can never precede the handover it reverses (regression test in `test/handover.test.mjs`).
+
+---
+
+## 7. Deploy runbook (Vercel, `remindify-paypal`)
+
+The hosted preview at `remindify-xi.vercel.app` serves an older build; `remindify-paypal.vercel.app` does not exist yet, and every canonical URL, the deck and `package.json` already point at it. Create that project rather than renaming strings.
+
+1. **Import.** Vercel → Add New… → Project → Import Git Repository → `kiozaghi/remindify-paypal`. Leave Root Directory at `./`. The framework preset may read `vite`; `vercel.json` already sets build `npm run build` and output `dist`.
+2. **Node version.** Settings → General → Node.js Version → **22.x** (`package.json` requires `>=22`; `node:sqlite` is only a local fallback).
+3. **Environment variables** (Production and Preview):
+
+   | Name | Value | Why |
+   | --- | --- | --- |
+   | `DATABASE_URL` | your Neon **pooled** connection string | Required. Without it the server falls back to SQLite, which cannot write on Vercel. |
+   | `PUBLIC_ORIGIN` | `https://remindify-paypal.vercel.app` | PayPal return URL, canonical links, cookie origin. |
+   | `PAYPAL_ENV` | `sandbox` | Keeps the demo off live money. |
+   | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | sandbox app credentials | Orders, Payouts, Invoicing. |
+   | `PAYPAL_WEBHOOK_ID` | the registered webhook id | Without it events are acknowledged but not applied. |
+   | `COOKIE_SECURE` | `true` | Session cookies over HTTPS only. |
+   | `PAYPAL_PLATFORM_FEE_PERCENT` | `10` | Fee deducted at release. |
+   | `GEMINI_API_KEY` | optional | Capture and the proof auditor use Gemini 2.5 Flash; without it both fall back to deterministic rules. |
+   | `TRUST_RECEIPT_SECRET` | optional | Otherwise generated once and stored in the database, which is also stable across functions. |
+
+   Paste secrets in the dashboard, never in chat or the repo.
+4. **Serve the submission branch.** Settings → Git → Production Branch → `feat/paypal-agentic-commerce`, then Deployments → Redeploy. Alternatively deploy the branch and use ⋯ → Promote to Production.
+5. **Domain.** If the project name `remindify-paypal` was free, the production domain is already `remindify-paypal.vercel.app`. Confirm under Settings → Domains before submitting.
+6. **Verify on the live host:** `/` shows "Your back office never clocks out." and the DUTY/MONEY packs; `/signup` creates a workspace and seeds it; `/demo` plays the video with the three proof PDFs; `/trust` renders the ledger. Then run the judge path in §3.
+7. **GitHub metadata.** Repo → About (gear) → Description "The governance and escrow layer for recurring business operations, settled on PayPal"; Website `https://remindify-paypal.vercel.app`; Topics `paypal`, `paypal-apis`, `ai-agents`, `hackathon`, `react`, `nodejs`.
+
+Serverless has no background timers: the outbox sweep and the demo time machine run on request, so +7 days still works but nothing advances by itself between visits.
