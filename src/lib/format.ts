@@ -71,6 +71,12 @@ export const longDate = (iso: string) =>
 export const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
+// Local calendar date for <input type="date">, which has no timezone.
+export function dateInput(value: number | string) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function dueLabel(iso: string, nowMs: number) {
   const diff = (new Date(iso).getTime() - nowMs) / DAY;
   if (diff < -1) return `${Math.abs(Math.round(diff))}d overdue`;

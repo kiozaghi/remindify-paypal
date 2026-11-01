@@ -4,7 +4,7 @@ import { useAuth } from "../auth";
 import { api, request } from "../lib/api";
 import { Icon } from "./Icon";
 import { Field, Modal, Monogram, CategoryTile, RiskMeter } from "./ui";
-import { CATEGORIES, AUTONOMY, money, dueLabel, TONES, download } from "../lib/format";
+import { CATEGORIES, AUTONOMY, money, dueLabel, dateInput, TONES, download } from "../lib/format";
 
 const RECS = [
   { value: "none", label: "One-off" },
@@ -14,17 +14,13 @@ const RECS = [
   { value: "year:1", label: "Annual" },
 ];
 
-function dateInput(iso: string) {
-  return new Date(iso).toISOString().slice(0, 10);
-}
-
 export function NewObligationModal() {
-  const { state, overlays, setOverlays, actions } = useApp();
+  const { state, overlays, setOverlays, actions, nowMs } = useApp();
   const [form, setForm] = useState({
     title: "",
     category: "finance",
     provider: "",
-    due: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+    due: dateInput(nowMs + 14 * 86400000),
     rec: "none",
     amount: "",
     autonomy: "prepare",
@@ -258,7 +254,8 @@ export function HireModal() {
   const [mode, setMode] = useState<"obligation" | "job">("obligation");
   const [obligationId, setObligationId] = useState("");
   const [jobTitle, setJobTitle] = useState("");
-  const [jobDue, setJobDue] = useState(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+  const [jobDue, setJobDue] = useState(() => dateInput(nowMs + 7 * 86400000));
+  const [jobTime, setJobTime] = useState("09:00");
 
   const candidates = useMemo(
     () =>
@@ -274,12 +271,15 @@ export function HireModal() {
   const selected = candidates.find((o) => o.id === obligationId);
   const canSubmit = mode === "obligation" ? !!selected : jobTitle.trim().length > 2;
 
+  const jobDueMs = new Date(`${jobDue}T${jobTime || "09:00"}:00`).getTime();
+  const jobDueIso = Number.isFinite(jobDueMs) ? new Date(jobDueMs).toISOString() : null;
+
   const submit = () => {
     if (!canSubmit) return;
     if (mode === "obligation") {
       actions.hire({ provider_id: provider.id, obligation_id: obligationId });
     } else {
-      actions.hire({ provider_id: provider.id, title: jobTitle.trim() });
+      actions.hire({ provider_id: provider.id, title: jobTitle.trim(), due_at: jobDueIso });
     }
   };
 
@@ -338,9 +338,17 @@ export function HireModal() {
           <Field label="What needs doing?">
             <input autoFocus value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Renew the Trade Bureau licence" />
           </Field>
-          <Field label="Needed by">
-            <input type="date" value={jobDue} onChange={(e) => setJobDue(e.target.value)} />
-          </Field>
+          <div className="hire-due">
+            <Field label="Needed by">
+              <input type="date" value={jobDue} onChange={(e) => setJobDue(e.target.value)} />
+            </Field>
+            <Field label="At">
+              <input type="time" value={jobTime} onChange={(e) => setJobTime(e.target.value || "09:00")} />
+            </Field>
+          </div>
+          <p className="hire-due-note">
+            <Icon name="calendar" size={12} /> Lands on your register {jobDueIso ? dueLabel(jobDueIso, nowMs) : "today"} — the provider works to that date.
+          </p>
         </div>
       )}
 

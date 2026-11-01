@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
 import { CategoryTile, Modal } from "./ui";
-import { CATEGORIES, dueLabel, money } from "../lib/format";
+import { CATEGORIES, dateInput, dueLabel, money } from "../lib/format";
 
 const DAY = 86400000;
 
@@ -429,6 +429,11 @@ export function TemplatesModal() {
   const { state, overlays, setOverlays, actions, nowMs } = useApp();
   const [selected, setSelected] = useState<string[]>(["compliance"]);
   const [lens, setLens] = useState<"all" | "life" | "money">("all");
+  // Packs carry relative spacing, so the operator sets the anchor once and can
+  // still move a single row if their calendar says otherwise.
+  const [anchor, setAnchor] = useState(() => dateInput(nowMs));
+  const [startTime, setStartTime] = useState("09:00");
+  const [dueOverrides, setDueOverrides] = useState<Record<string, string>>({});
   if (!state || !overlays.templates) return null;
 
   const close = () => setOverlays((o) => ({ ...o, templates: false }));
@@ -436,25 +441,47 @@ export function TemplatesModal() {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const visiblePacks = PACKS.filter((pack) => lens === "all" || pack.lens === lens);
 
+  const anchorMs = new Date(`${anchor}T${startTime || "09:00"}:00`).getTime();
+  const packStart = Number.isFinite(anchorMs) ? anchorMs : nowMs;
+  const rebase = (value: string) => {
+    setAnchor(value);
+    setDueOverrides({});
+  };
+  const resetDates = () => {
+    setAnchor(dateInput(nowMs));
+    setStartTime("09:00");
+    setDueOverrides({});
+  };
+  const setRowDue = (id: string, value: string) =>
+    setDueOverrides((current) => ({ ...current, [id]: value }));
+  const datesMoved = anchor !== dateInput(nowMs) || startTime !== "09:00" || Object.keys(dueOverrides).length > 0;
+
   const tracked = new Set(
     state.obligations.map((o) => o.title.toLowerCase().replace(/\s*[—–].*$/, "").trim())
   );
   const items = PACKS.filter((p) => selected.includes(p.id)).flatMap((p) =>
-    p.items.filter((item) => !tracked.has(item.title.toLowerCase().trim())).map((item) => ({
-      ...item,
-      id: `draft_${p.id}_${item.title}`.replace(/\s+/g, "_"),
-      due_at: new Date(nowMs + item.inDays * DAY).toISOString(),
-      currency: "USD",
-      source: "template",
-      channel: "template",
-      owner: "Solomon Tigabu",
-      owner_kind: item.agent_id ? "agent" : "human",
-      backup: "Hanna Bekele",
-      confidence: 0.92,
-      grace_days: 0,
-      notes: `Added from the ${p.name} pack.`,
-      checklist: ["Review the details", "Assign the owner", "File proof when done"],
-    }))
+    p.items.filter((item) => !tracked.has(item.title.toLowerCase().trim())).map((item) => {
+      const id = `draft_${p.id}_${item.title}`.replace(/\s+/g, "_");
+      const overridden = dueOverrides[id]
+        ? new Date(`${dueOverrides[id]}T${startTime || "09:00"}:00`).getTime()
+        : NaN;
+      const dueMs = Number.isFinite(overridden) ? overridden : packStart + item.inDays * DAY;
+      return {
+        ...item,
+        id,
+        due_at: new Date(dueMs).toISOString(),
+        currency: "USD",
+        source: "template",
+        channel: "template",
+        owner: "Solomon Tigabu",
+        owner_kind: item.agent_id ? "agent" : "human",
+        backup: "Hanna Bekele",
+        confidence: 0.92,
+        grace_days: 0,
+        notes: `Added from the ${p.name} pack.`,
+        checklist: ["Review the details", "Assign the owner", "File proof when done"],
+      };
+    })
   );
   const chosenCount = PACKS.filter((p) => selected.includes(p.id)).reduce((n, p) => n + p.items.length, 0);
 
@@ -521,6 +548,29 @@ export function TemplatesModal() {
         })}
       </div>
 
+      <div className="template-dates">
+        <span className="template-dates-copy">
+          <Icon name="calendar" size={14} />
+          <span>
+            <strong>Fit the pack to your calendar</strong>
+            <em>Set the start and every item keeps its spacing. Or move one row on its own.</em>
+          </span>
+        </span>
+        <label className="template-date-field">
+          <span>Starts</span>
+          <input type="date" value={anchor} onChange={(e) => rebase(e.target.value)} />
+        </label>
+        <label className="template-date-field">
+          <span>At</span>
+          <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value || "09:00")} />
+        </label>
+        {datesMoved && (
+          <button className="link-btn template-dates-reset" onClick={resetDates}>
+            <Icon name="refresh" size={12} /> Reset
+          </button>
+        )}
+      </div>
+
       <div className="template-preview">
         <div className="template-preview-head">
           <span className="eyebrow">Preview</span>
@@ -534,7 +584,15 @@ export function TemplatesModal() {
               <strong>{item.title}</strong>
               <em>{item.provider} · {CATEGORIES[item.category]?.label || item.category}</em>
             </div>
-            <span className="template-row-due">{dueLabel(item.due_at, nowMs)}</span>
+            <label className="template-row-due">
+              <input
+                type="date"
+                value={dateInput(item.due_at)}
+                onChange={(e) => setRowDue(item.id, e.target.value)}
+                aria-label={`Due date for ${item.title}`}
+              />
+              <em>{dueLabel(item.due_at, nowMs)}</em>
+            </label>
             <span className="template-row-cost">{money(item.amount || 0)}</span>
             <span className="template-row-auto">{item.autonomy === "autopilot" ? "Auto" : item.autonomy}</span>
           </div>

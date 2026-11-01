@@ -228,8 +228,10 @@ function paypalEmail(value) {
 }
 
 function normalizeObligation(input) {
-  const now = new Date();
-  const due = input.due_at ? new Date(input.due_at) : new Date(now.getTime() + 14 * 86400000);
+  const parsed = input.due_at ? new Date(input.due_at) : null;
+  const due = parsed && !Number.isNaN(parsed.getTime())
+    ? parsed
+    : new Date(virtualNow() + 14 * 86400000);
   return {
     id: input.id && !String(input.id).startsWith("draft_") ? input.id : uid("ob"),
     title: String(input.title || "Untitled obligation").slice(0, 140),
@@ -902,7 +904,7 @@ async function handleRequest(req, res) {
     }
 
     if (path === "/api/hire" && req.method === "POST") {
-      const { provider_id, obligation_id, title, note } = await body(req);
+      const { provider_id, obligation_id, title, note, due_at } = await body(req);
       const state0 = buildState();
       const provider = state0.providers.find((p) => p.id === provider_id);
       if (!provider) return send(res, 404, { error: "provider_not_found" });
@@ -930,6 +932,7 @@ async function handleRequest(req, res) {
         const created = normalizeObligation({
           title, provider: provider.name, owner: provider.name, owner_kind: "team",
           backup: "Solomon Tigabu", amount: provider.price, source: "marketplace",
+          due_at,
           autonomy: provider.kind === "agent" ? "approve" : "notify",
           marketplace: {
             provider_id, provider_name: provider.name, kind: provider.kind,
