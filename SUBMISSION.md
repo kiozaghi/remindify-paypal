@@ -123,7 +123,7 @@ Expected without any PayPal credentials: steps 2–6 and 8 work; step 7 explains
 - [x] Pushed `feat/paypal-agentic-commerce`; `paypal-hackathon-2026` tags the submission commit.
 - [ ] Set repo topics/description/homepage on GitHub (no `gh` CLI on this machine — 30 seconds in the repo settings; suggested topics: `paypal`, `paypal-apis`, `ai-agents`, `hackathon`, `react`, `nodejs`).
 - [ ] Deploy the branch to the `remindify-paypal` Vercel project and confirm the seeded sign-in works (runbook in §7).
-- [ ] Record the video against the live or local sandbox build, under 3:00.
+- [ ] Record the video against the live or local sandbox build, under 3:00. **`public/demo/remindify-demo.mp4` is still the pre-scrub recording (car loan, dental check-up, "people and money") — replace it with the new 3:00 capture before deploying; the poster and OG card are already rebuilt from the B2B seed.**
 - [ ] Paste fields into Devpost and submit before **Nov 12, 12:00pm PST**.
 
 ---
