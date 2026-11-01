@@ -336,7 +336,7 @@ export function HireModal() {
       ) : (
         <div className="form-stack">
           <Field label="What needs doing?">
-            <input autoFocus value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Queue for my passport renewal" />
+            <input autoFocus value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Renew the Trade Bureau licence" />
           </Field>
           <Field label="Needed by">
             <input type="date" value={jobDue} onChange={(e) => setJobDue(e.target.value)} />

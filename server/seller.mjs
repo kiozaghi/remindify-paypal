@@ -28,7 +28,7 @@ const BOOKING_ORDER = {
   declined: 5,
 };
 
-const PAYOUT_METHODS = ["none", "bank", "wallet", "usdc", "paypal"];
+const PAYOUT_METHODS = ["none", "bank", "paypal"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const uid = (prefix) => `${prefix}_${randomBytes(5).toString("hex")}`;

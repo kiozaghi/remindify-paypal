@@ -52,14 +52,15 @@ export default function HomePage({
             <div className="hero-story-copy" data-reveal>
               <SectionTag>For everything that comes back</SectionTag>
               <h1>
-                You have a second job.<br />
-                <em>It’s remembering.</em>
+                Your back office<br />
+                <em>never clocks out.</em>
               </h1>
               <p className="hero-lede">
-                Some of what you carry is money: renewals, filings, subscriptions, cover.
-                Some of it is people: birthdays, school terms, the call you keep postponing.
-                Remindify is one calm register for both — with humans and agents who can
-                actually do the work, and proof when it matters.
+                Vendor renewals, compliance filings, contractor milestones, overdue invoices.
+                The work that keeps a business alive never stops arriving — and it never fits
+                in one inbox. Remindify is one governed register for all of it, with agents
+                that carry a spending ceiling, humans who sign off, and proof before any
+                money moves.
               </p>
               <div className="hero-story-actions">
                 <a
@@ -79,9 +80,9 @@ export default function HomePage({
                 </a>
               </div>
               <div className="hero-trustline">
-                <span><i className="dot dot-teal" /> Email, Google or wallet</span>
-                <span><i className="dot dot-lime" /> Wallet optional</span>
-                <span><i className="dot dot-violet" /> No token</span>
+                <span><i className="dot dot-teal" /> Email or Google</span>
+                <span><i className="dot dot-lime" /> PayPal only</span>
+                <span><i className="dot dot-violet" /> 10% on settled work</span>
               </div>
             </div>
 
@@ -89,7 +90,7 @@ export default function HomePage({
               <div className="desk-top">
                 <span className="desk-dot" />
                 <span>Tuesday, 8:42pm</span>
-                <em>the kitchen table</em>
+                <em>the studio desk</em>
               </div>
               <div className="desk-paper">
                 <div className="desk-paper-head">
@@ -115,8 +116,8 @@ export default function HomePage({
                 <div className="desk-item">
                   <span className="desk-item-check" />
                   <div>
-                    <strong>Mum’s birthday</strong>
-                    <em>People · backup: Mira</em>
+                    <strong>Kestrel pen-test sign-off</strong>
+                    <em>Vendor · $350 held · proof required</em>
                   </div>
                   <span className="desk-due soft">6d</span>
                 </div>
@@ -136,8 +137,8 @@ export default function HomePage({
               </div>
               <div className="desk-receipt">
                 <span className="eyebrow">Proof filed</span>
-                <strong>0x8f3a…c21b</strong>
-                <em>EIP-712 · signed</em>
+                <strong>RF-0291</strong>
+                <em>HMAC-SHA256 · verified</em>
                 <Icon name="checkCircle" size={18} />
               </div>
               <div className="desk-stamp">handled</div>
@@ -147,15 +148,15 @@ export default function HomePage({
           </div>
 
           <div className="hero-story-foot">
-            <span className="hero-foot-label">Built for the person who remembers everything for everyone</span>
+            <span className="hero-foot-label">Built for the operator who remembers everything for everyone</span>
             <div className="hero-marquee" aria-hidden="true">
               <span>RENEWALS</span><i />
-              <span>BIRTHDAYS</span><i />
+              <span>CONTRACTORS</span><i />
               <span>FILINGS</span><i />
-              <span>SUBSCRIPTIONS</span><i />
+              <span>INVOICES</span><i />
               <span>PAYROLL</span><i />
-              <span>THE PEOPLE YOU LOVE</span><i />
-              <span>THE THINGS THAT COME BACK</span><i />
+              <span>THE VENDORS YOU PAY</span><i />
+              <span>THE WORK THAT COMES BACK</span><i />
               <span>RENEWALS</span><i />
             </div>
             <a
@@ -178,8 +179,8 @@ export default function HomePage({
             </div>
             <div className="story-intro-copy" data-reveal>
               <p>
-                A letter arrives on a Tuesday. It joins a school form, a domain renewal,
-                a tax deadline and a dentist appointment in the same tired corner of your mind.
+                A vendor email arrives on a Tuesday. It joins a contract renewal, a tax
+                deadline and an unsigned invoice in the same tired corner of your mind.
                 Nothing is on fire. But something is always about to be.
               </p>
               <p>
@@ -200,9 +201,9 @@ export default function HomePage({
           </div>
           <div className="story-strip" data-reveal>
             <div><strong>One</strong><span>register for everything that returns</span></div>
-            <div><strong>Two</strong><span>kinds of weight: people and money</span></div>
+            <div><strong>Two</strong><span>kinds of weight: duty and money</span></div>
             <div><strong>Three</strong><span>layers of calm: own it, do it, prove it</span></div>
-            <div><strong>Zero</strong><span>tokens, custody or server-held keys</span></div>
+            <div><strong>Zero</strong><span>balances held · PayPal settles direct</span></div>
           </div>
         </section>
 
@@ -222,7 +223,7 @@ export default function HomePage({
               </p>
               <ul className="chapter-list">
                 <li><span>01</span> Paste the letter, email or note. No forms.</li>
-                <li><span>02</span> The parser finds the date, amount, provider and recurrence.</li>
+                <li><span>02</span> The model reads the date, amount, counterparty and recurrence.</li>
                 <li><span>03</span> You confirm the owner, the backup and what proof counts.</li>
               </ul>
               <ArrowLink
@@ -279,8 +280,8 @@ export default function HomePage({
               <h2>A kept promise<br /><em>has anatomy.</em></h2>
               <p>
                 “I’ll handle it” is not a system. An obligation needs one owner and one backup.
-                It needs a risk score that knows the difference between a birthday and a filing
-                deadline. It needs a proof requirement so “done” is not a feeling.
+                It needs a risk score that knows the difference between a newsletter renewal
+                and a filing deadline. It needs a proof requirement so “done” is not a feeling.
               </p>
               <ul className="chapter-list">
                 <li><span>01</span> One owner, one backup. Never a group chat.</li>
@@ -421,22 +422,24 @@ export default function HomePage({
               <SectionTag light>The proof</SectionTag>
               <h2>The database can be wrong.<br /><em>The receipt can be checked.</em></h2>
               <p>
-                Every completed obligation files an offchain proof receipt: a hashed reference
-                to the proof, signed with EIP-712. That includes work done by a community agent
-                or a hired human — same receipt, same standard. If a counterparty needs more
-                than your word, anchor the hash to Base. If a provider needs to be paid on
-                delivery, put USDC in escrow that releases only against a valid receipt.
+                Every completed obligation files a proof receipt: an HMAC-SHA256 signature
+                by the server over the obligation id, the actor, the proof hash and the
+                completion time. Before any money moves, the AI proof auditor reads the
+                evidence and scores it against the amount, reference and date. Below 80%,
+                it does not pass.
               </p>
               <p>
-                Everyday money is simpler: pay the bill or the seller through PayPal, and the
-                capture is filed as proof. No wallet, no chain, no seed phrase.
+                A verified proof releases the payer's PayPal authorization hold. PayPal
+                captures the hold, the 10% platform fee comes off the top, and the provider
+                is paid the net to their PayPal email. A rejected proof leaves the hold
+                untouched.
               </p>
               <div className="trust-pills">
-                <span><Icon name="fingerprint" size={13} /> EIP-712 signed</span>
+                <span><Icon name="fingerprint" size={13} /> HMAC-SHA256 signed</span>
                 <span><Icon name="shield" size={13} /> No custody</span>
-                <span><Icon name="send" size={13} /> PayPal for fiat</span>
-                <span><Icon name="wallet" size={13} /> Wallet optional</span>
-                <span><Icon name="globe" size={13} /> Base-first · Celo-ready</span>
+                <span><Icon name="send" size={13} /> PayPal holds</span>
+                <span><Icon name="sparkle" size={13} /> AI proof audit</span>
+                <span><Icon name="receipt" size={13} /> 10% on settled work</span>
               </div>
               <ArrowLink
                 light
@@ -458,15 +461,15 @@ export default function HomePage({
                 <div className="receipt-rule" />
                 <div className="receipt-row"><span>Proof</span><code>0x8f3a…c21b</code></div>
                 <div className="receipt-row"><span>Evidence</span><code>0x41d0…8e77</code></div>
-                <div className="receipt-row"><span>Network</span><strong>Base</strong></div>
+                <div className="receipt-row"><span>Auditor</span><strong>Gemini 2.5 Flash</strong></div>
                 <div className="receipt-rule" />
                 <div className="receipt-sign">
-                  <span><Icon name="checkCircle" size={16} /> Signature verified</span>
-                  <code>0x71b2…9d04</code>
+                  <span><Icon name="checkCircle" size={16} /> HMAC-SHA256 verified</span>
+                  <code>82% confidence</code>
                 </div>
                 <div className="receipt-foot">remindify · proof, not promises</div>
               </div>
-              <div className="chain-chip"><span>Base</span><i /><span>Celo</span><em>one module</em></div>
+              <div className="chain-chip"><span>PayPal hold</span><i /><span>Proof release</span><em>10% fee</em></div>
               <div className="proof-note">The work happened.<br /><em>Here is the proof.</em></div>
               <div className="proof-orbit" aria-hidden="true" />
             </div>
@@ -482,9 +485,9 @@ export default function HomePage({
               <h2>A quieter Monday.<br /><em>Not a busier dashboard.</em></h2>
               <p>
                 The goal is not to check another app. It is to open one place, see that
-                everything that comes back — the people you love and the money you can’t
-                lose — has an owner, and close the laptop. The agents keep working. The
-                proof keeps filing. You get the part of your mind back.
+                every vendor, filing and contractor handoff has an owner and a proof trail,
+                and close the laptop. The agents keep working. The holds keep waiting on
+                evidence. You get the part of your mind back.
               </p>
               <blockquote>
                 “The point isn’t to do more.<br /><em>It’s to carry less.”</em>
@@ -513,7 +516,7 @@ export default function HomePage({
               </div>
               <div className="day-event">
                 <span className="day-time">14:20</span>
-                <div><strong>A receipt is filed</strong><em>Signed, hashed, offchain. Anchored only if needed.</em></div>
+                <div><strong>A receipt is filed</strong><em>Signed with HMAC, filed with a proof hash. The auditor scored it.</em></div>
                 <span className="day-icon tone-violet"><Icon name="receipt" size={16} /></span>
               </div>
               <div className="day-event">
@@ -566,10 +569,10 @@ export default function HomePage({
               <SectionTag light>The trust layer</SectionTag>
               <h2>Proof is a feature.<br /><em>Not a promise.</em></h2>
               <p>
-                Base-first, Celo-ready and deliberately boring about custody. No token, no
-                server-held keys, no balance held here. Everyday money settles through PayPal
-                between your own accounts; USDC escrow is opt-in, and only when you sign the
-                transaction yourself.
+                PayPal in, PayPal out, and a proof gate in between. Remindify never holds a
+                balance, a card or a key. A payer approves an authorization hold of up to
+                29 days; a verified proof captures it, the 10% fee comes off, and the
+                provider is paid the net to their PayPal email.
               </p>
               <ArrowLink light href={routeHref("security")} onClick={() => onNavigate("security")}>
                 Read the security model
@@ -578,26 +581,26 @@ export default function HomePage({
             <div className="trust-cards" data-reveal>
               <article>
                 <span className="trust-card-icon tone-violet"><Icon name="fingerprint" size={18} /></span>
-                <strong>EIP-712 receipts</strong>
-                <p>Sign a typed proof receipt offchain. Verify it anywhere. No gas required.</p>
-                <span className="trust-card-foot">default</span>
+                <strong>HMAC receipts</strong>
+                <p>The server signs the obligation id, actor, proof hash and completion time. The receipt can be checked without trusting the screen.</p>
+                <span className="trust-card-foot">every completion</span>
               </article>
               <article>
-                <span className="trust-card-icon tone-lime"><Icon name="shield" size={18} /></span>
-                <strong>Optional anchoring</strong>
-                <p>Anchor the proof hash to Base when a counterparty needs independent verification.</p>
-                <span className="trust-card-foot">when needed</span>
+                <span className="trust-card-icon tone-lime"><Icon name="sparkle" size={18} /></span>
+                <strong>AI proof audit</strong>
+                <p>Gemini 2.5 Flash reads the evidence and scores it against amount, reference and date. Below 80% is not verified.</p>
+                <span className="trust-card-foot">80% threshold</span>
               </article>
               <article>
-                <span className="trust-card-icon tone-teal"><Icon name="wallet" size={18} /></span>
-                <strong>USDC escrow</strong>
-                <p>Fund work on a contract. Release only against a receipt for that obligation.</p>
-                <span className="trust-card-foot">proof-gated</span>
+                <span className="trust-card-icon tone-teal"><Icon name="send" size={18} /></span>
+                <strong>PayPal holds</strong>
+                <p>The payer approves a hold for up to 29 days. It is captured only when a proof is verified.</p>
+                <span className="trust-card-foot">up to 29 days</span>
               </article>
               <article>
                 <span className="trust-card-icon tone-amber"><Icon name="lock" size={18} /></span>
                 <strong>No custody</strong>
-                <p>Remindify never holds a private key, a balance or your funds. PayPal settles between your accounts; your wallet signs escrow.</p>
+                <p>Remindify never holds a balance, a card or a private key. PayPal settles between your account and the provider's.</p>
                 <span className="trust-card-foot">non-custodial</span>
               </article>
             </div>
@@ -614,8 +617,9 @@ export default function HomePage({
               <h2>Start free.<br /><em>Grow when it earns it.</em></h2>
             </div>
             <p>
-              No token. No usage trap. No card to subscribe. The register should feel
-              cheap compared with the thing it stops you from missing.
+              No usage trap. No card to start. The platform fee is 10%, taken only when a
+              verified proof lets the money settle. The register should feel cheap compared
+              with the thing it stops you from missing.
             </p>
           </div>
           <div className="plan-row">
@@ -675,10 +679,10 @@ export default function HomePage({
           <div className="ending-inner" data-reveal>
             <span className="ending-mark" aria-hidden="true">R</span>
             <SectionTag light>Your turn</SectionTag>
-            <h2>You have enough to remember.<br /><em>Let this remember for you.</em></h2>
+            <h2>You have enough to run.<br /><em>Let this run the remembering.</em></h2>
             <p>
-              Open a register, put in the first thing you’re carrying — a birthday, a
-              renewal, the call you keep postponing — and give it an owner. It takes about
+              Open a register, put in the first thing that comes back — a vendor renewal,
+              a filing, a contractor milestone — and give it an owner. It takes about
               ninety seconds. The relief lasts longer.
             </p>
             <div className="ending-actions">
@@ -697,7 +701,7 @@ export default function HomePage({
                 Read the story again
               </a>
             </div>
-            <span className="ending-small">Free while in preview · no card · no token · wallet optional</span>
+            <span className="ending-small">Free while in preview · PayPal only · 10% on settled work</span>
           </div>
         </section>
       </main>

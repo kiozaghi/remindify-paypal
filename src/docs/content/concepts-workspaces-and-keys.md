@@ -1,6 +1,6 @@
 # Workspaces and machine keys
 
-Every account gets its own workspace. A workspace owns obligations, agents, runs, receipts, escrows, machine keys and plan usage. Auth rows — users, sessions, wallet challenges, reset tokens — live outside any workspace.
+Every account gets its own workspace. A workspace owns obligations, agents, runs, receipts, escrows, machine keys and plan usage. Auth rows — users, sessions, auth challenges, reset tokens — live outside any workspace.
 
 ## Two ways to authenticate
 

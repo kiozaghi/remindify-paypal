@@ -2,13 +2,13 @@
 
 **Pitch v2 · 2026 · Solomon Tigabu**
 
-> Everyone has a second job they never applied for: running their life. Remindify turns that job into an owned, auditable system — and hands the repeatable parts to agents you can actually trust.
+> Every operator has a second job they never applied for: running the back office. Remindify turns that job into an owned, auditable system — and hands the repeatable parts to agents you can actually trust.
 
 ---
 
 ## 1. The original insight still holds
 
-The 2024 deck named a real, unglamorous problem: **recurring obligations slip**. Insurance lapses, licences expire, payroll filings are late, birthdays are missed, subscriptions quietly compound, families carry the mental load of remembering.
+The 2024 deck named a real, unglamorous problem: **recurring obligations slip**. Insurance lapses, licences expire, payroll filings are late, contractor handoffs go unsigned, subscriptions quietly compound, and the back office nobody put on the org chart carries the mental load of remembering.
 
 The deck’s solution was an intuitive recurring-task app linked to Google/Apple, with templates, collaborators/backups and paid professional help. That was the right shape for 2024.
 
@@ -20,7 +20,7 @@ Remindify is built for that gap.
 
 ## 2. The problem, restated for an agent economy
 
-Life admin and compliance are **recurring, high-consequence and low-glamour**. They fail for four reasons:
+Recurring operations and compliance are **high-consequence and low-glamour**. They fail for four reasons:
 
 1. **Forgetting** — the default human failure mode.
 2. **No owner** — “we should renew that” is not an owner.
@@ -29,7 +29,7 @@ Life admin and compliance are **recurring, high-consequence and low-glamour**. T
 
 Existing tools solve fragments: calendars remember, task apps list, accountants file, marketplaces match. None of them hold the **obligation** — owner, backup, deadline, consequence, autonomy, evidence — as one object.
 
-The result is a tax on attention that falls hardest on people with the least slack: founders, freelancers, caregivers, small teams and diaspora families managing obligations across borders.
+The result is a tax on attention that falls hardest on people with the least slack: founders, freelancers, small studios and teams managing obligations across borders.
 
 ---
 
@@ -50,13 +50,13 @@ Every obligation carries:
 | Surface | Job |
 | --- | --- |
 | **Today** | What needs a human now: approvals, both ledgers, closest-to-the-edge, agent activity. |
-| **Register** | The full obligation graph, searchable and risk-ranked, with People/Money lenses and community packs. |
+| **Register** | The full obligation graph, searchable and risk-ranked, with Duty/Money lenses and community packs. |
 | **Capture** | Turn a letter, email or note into structured obligations — locally, with review. |
 | **Bench** | Agent passports: scopes, trust, ceilings, work on desk. |
 | **Marketplace** | Hire a human or an agent by the job. Escrow releases on proof. |
 | **Seller desk** | Provider storefront: requests, active work, proof, hold ledger and payouts. |
 | **Proof** | The audit trail and evidence vault. |
-| **Trust layer** | EIP-712 receipts, optional Base anchoring, proof-gated USDC escrow. |
+| **Trust layer** | HMAC-signed proof receipts, Gemini proof audit, PayPal authorization holds and release on verified proof. |
 | **Agent access** | REST + MCP, scoped keys, webhooks, guardrails. |
 
 ### The 2026 difference: agents are first-class, not features
@@ -73,7 +73,7 @@ Every obligation carries:
 
 1. **Agents can execute.** Browser use, document understanding, payments via mandates and tool APIs turned “remind me” into “handle it”.
 2. **Trust infrastructure arrived.** Scoped credentials, human-in-the-loop approvals, audit logs and escrow are now expected primitives, not enterprise luxuries.
-3. **The market is being re-bundled.** Calendars, tasks, notes and inboxes are all adding AI, but they are anchored to *content*, not *consequences*. The obligation graph is still unowned.
+3. **The market is being re-bundled.** Calendars, tasks, notes and inboxes are all adding AI, but they are built around *content*, not *consequences*. The obligation graph is still unowned.
 4. **Agent commerce needs a trust layer.** Marketplaces will list agents alongside humans. Whoever holds the proof and the mandate holds the relationship.
 
 The window is to become the **system of record for recurring obligations** before calendars or horizontal agent platforms collapse it into a feature.
@@ -84,8 +84,8 @@ The window is to become the **system of record for recurring obligations** befor
 
 The original deck: **TAM 1B people, SAM 100M, SOM 1M**. That framing is still useful, but the buyer set has expanded:
 
-- **Individuals and households** — life admin, renewals, health, family.
-- **Solo operators and small teams** — licences, payroll, contracts, compliance.
+- **Founders and solo operators** — vendor admin, filings, contractor paperwork.
+- **Small studios and teams** — licences, payroll, deliverables, collections.
 - **Agencies and back offices** — recurring client filings as a service.
 - **Agent platforms** — a register and proof layer they can plug into via API/MCP.
 
@@ -95,7 +95,7 @@ A more defensible bottoms-up view:
 | --- | --- | --- | --- |
 | Knowledge workers with recurring admin (global) | ~400M | $60/yr | ~$24B |
 | Small teams / studios needing compliance | ~40M orgs | $300/yr | ~$12B |
-| Marketplace take on delegated work | — | 15% of GMV | Services upside |
+| Application fee on captured escrow | — | 10% of GMV | Services upside |
 | Agent/API access | — | usage + platform | Infra upside |
 
 **Beachhead:** founders, freelancers and small studios in Addis Ababa and the diaspora — high obligation density, low back-office support, mobile-first, underserved by US-centric task apps. Then English-speaking solo operators globally, then teams.
@@ -109,7 +109,7 @@ A more defensible bottoms-up view:
 | **Free** | $0 | 10 active obligations, 1 agent, local capture. Creates the habit. |
 | **Plus** | $8/mo | Unlimited obligations, 3 agents, proof vault, calendar sync. |
 | **Studio** | $24/seat/mo | Shared register, approvals, agent passports, audit export, API keys. |
-| **Marketplace** | 15% take | Human/agent providers are paid on accepted proof. |
+| **Marketplace** | 10% application fee | Human/agent providers are paid on accepted proof. |
 | **Enterprise** | from $12/seat/mo | SSO, retention, custom agents, on-prem/private deployment. |
 | **Agent platform** | usage-based | MCP/REST access, webhook events, verified proof receipts. |
 
@@ -126,12 +126,12 @@ The original deck’s partnership and licensing lines remain valid: insurers, ba
 | Reminders / tasks | Apple Reminders, Google Tasks, Todoist | No consequence, proof, backup or autonomy. |
 | Calendars | Google/Apple Calendar | Stores dates, not obligations. |
 | Docs / notes | Notion, Amplenote | Flexible, but you build the system yourself. |
-| Life-admin services | TaskRabbit, concierge | Human-only, transactional, no recurring graph. |
+| Concierge / back-office services | TaskRabbit, virtual assistants | Human-only, transactional, no recurring graph. |
 | Horizontal agents | Claude, ChatGPT, Copilot | Powerful, but no persistent obligation ownership, proof vault or marketplace. |
 
 **The moat compounds in four loops:**
 
-1. **Obligation graph** — the longer you use it, the more of your life’s recurring surface it holds. Switching means rebuilding your second brain.
+1. **Obligation graph** — the longer you use it, the more of your operation’s recurring surface it holds. Switching means rebuilding your second brain.
 2. **Proof graph** — accepted evidence trains trust and autonomy. Agents that have filed 200 clean proofs are more valuable than agents that have not.
 3. **Marketplace liquidity** — demand for specific obligations attracts verified providers; proof history makes matching safer.
 4. **Protocol distribution** — MCP/REST puts Remindify inside other agents’ workflows. The register becomes infrastructure, not an app.
@@ -156,7 +156,7 @@ Reminders are a feature. **An obligation graph with proof and mandates is a syst
 
 | Now (this prototype) | Next 90 days | Next 12 months |
 | --- | --- | --- |
-| Working register, risk engine, autonomy, proof, audit | Base mainnet deploy, contract review | Mobile apps, calendar/email sync, payments |
+| Working register, risk engine, autonomy, proof, audit | PayPal live-mode operations, fee and payout tooling | Mobile apps, calendar/email sync, more settlement rails |
 | Deterministic capture parser | Hybrid PDF/image extraction + review | Inbox and document vault ingestion |
 | Human + agent marketplace, seller desk, proof-gated payouts | Provider onboarding, ratings, disputes | Agent SDK, verified provider badges |
 | REST + MCP with scoped keys, metering and idempotency | Signed webhooks, usage plans, sandbox keys | Usage billing, agent commerce protocol |

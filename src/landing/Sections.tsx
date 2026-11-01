@@ -10,7 +10,7 @@ type SectionProps = {
   user?: AuthUser | null;
 };
 
-/** The two kinds of weight: people and money, side by side. */
+/** The two kinds of weight: duty and money, side by side. */
 export function TwoSidesSection({ onNavigate, user }: SectionProps) {
   const openRegister = () => onNavigate(user ? "obligations" : "login", user ? undefined : { next: "obligations" });
 
@@ -18,13 +18,13 @@ export function TwoSidesSection({ onNavigate, user }: SectionProps) {
     <section className="two-sides section-wrap" id="two-sides">
       <div className="section-heading split" data-reveal>
         <div>
-          <SectionTag>One life, two ledgers</SectionTag>
-          <h2>Some of it is money.<br /><em>Some of it is people.</em></h2>
+          <SectionTag>Two books, one operator</SectionTag>
+          <h2>Some of it is vendors.<br /><em>Some of it is compliance.</em></h2>
         </div>
         <p>
-          Most tools pick one. A finance app ignores your mother’s birthday. A family
-          calendar forgets the insurance renewal. The weight is both, and it lands on
-          the same person: you.
+          Most tools pick one. A finance app forgets the contractor handoff. A project
+          board forgets the tax filing. The work is both, and it lands on the same
+          operator: you.
         </p>
       </div>
 
@@ -55,11 +55,11 @@ export function TwoSidesSection({ onNavigate, user }: SectionProps) {
 
       <div className="sides-foot" data-reveal>
         <div>
-          <strong>Two kinds of weight.</strong>
+          <strong>Two books of work.</strong>
           <span>One register, one owner, one proof trail.</span>
         </div>
         <ArrowLink href={user ? "/obligations" : routeHref("login", { next: "obligations" })} onClick={openRegister}>
-          Open both sides
+          Open both books
         </ArrowLink>
       </div>
     </section>
@@ -129,9 +129,10 @@ export function PacksSection({ onNavigate, user }: SectionProps) {
           <h2>Somebody already mapped<br /><em>your kind of year.</em></h2>
         </div>
         <p>
-          Date nights. School terms. Tax filings. Holidays. Caregiving. Moving country.
-          Import a pack built by someone who has already survived that year, edit it,
-          and make it yours. Every item arrives with an owner, a due date and a proof.
+          Tax filings. Vendor onboarding. Contractor milestones. Facilities inspections.
+          Cross-border registrations. Import a pack built by someone who has already run
+          that playbook, edit it, and make it yours. Every item arrives with an owner,
+          a due date and a proof requirement.
         </p>
       </div>
 
@@ -146,7 +147,7 @@ export function PacksSection({ onNavigate, user }: SectionProps) {
           >
             <div className="pack-top">
               <span className={`pack-icon tone-${pack.tone}`}><Icon name={pack.icon} size={17} /></span>
-              <span className={`pack-lens lens-${pack.lens}`}>{pack.lens === "life" ? "People" : "Money"}</span>
+              <span className={`pack-lens lens-${pack.lens}`}>{pack.lens === "life" ? "Duty" : "Money"}</span>
             </div>
             <h3>{pack.name}</h3>
             <p>{pack.tagline}</p>
@@ -208,11 +209,11 @@ export function CarryingSection({ onNavigate, user }: SectionProps) {
           </p>
           <div className="carrying-count">
             <strong>{String(count).padStart(2, "0")}</strong>
-            <span>{count === 1 ? "thing you’re holding for other people" : "things you’re holding for other people"}</span>
+            <span>{count === 1 ? "thing your operation is holding" : "things your operation is holding"}</span>
           </div>
           {count > 0 && (
             <div className="carrying-split">
-              <span className="life">{lifeCount} people</span>
+              <span className="life">{lifeCount} duty</span>
               <span className="money">{moneyCount} money</span>
             </div>
           )}
@@ -250,7 +251,7 @@ export function CarryingSection({ onNavigate, user }: SectionProps) {
             );
           })}
           <div className="carrying-legend" aria-hidden="true">
-            <span><i className="life" /> people</span>
+            <span><i className="life" /> duty</span>
             <span><i className="money" /> money</span>
           </div>
         </div>

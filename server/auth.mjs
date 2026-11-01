@@ -1,12 +1,11 @@
 import {
   createHash, randomBytes, scryptSync, timingSafeEqual,
 } from "node:crypto";
-import { getAddress, isAddress, verifyMessage } from "viem";
 import {
-  consumeAuthChallenge, consumeAuthToken, createAuthChallenge, createAuthSession,
+  consumeAuthToken, createAuthSession,
   createAuthToken, createUser, deleteAuthSession, deleteAuthSessionsForUser,
   deleteAuthTokensForUser, deleteUser, deleteWorkspace, findUserByEmail,
-  findUserByGoogleSub, findUserByWallet, getAuthSession, getUser, updateUser,
+  findUserByGoogleSub, getAuthSession, getUser, updateUser,
 } from "./db.mjs";
 import { emailConfigured, sendEmail } from "./email.mjs";
 import { provisionWorkspace } from "./provision.mjs";
@@ -16,7 +15,6 @@ import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
 const SESSION_COOKIE = "remindify_session";
 const OAUTH_COOKIE = "remindify_oauth";
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
-const CHALLENGE_SECONDS = 60 * 10;
 const RESET_SECONDS = 60 * 30;
 const VERIFY_SECONDS = 60 * 60 * 24;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -47,23 +45,17 @@ function nameFromEmail(email) {
     .slice(0, 80);
 }
 
-function walletName(address) {
-  return `Wallet ${address.slice(0, 6)}…${address.slice(-4)}`;
-}
-
 function publicUser(user) {
   if (!user) return null;
   const providers = [];
   if (user.password_hash) providers.push("email");
   if (user.google_sub) providers.push("google");
-  if (user.wallet_address) providers.push("wallet");
   return {
     id: user.id,
     name: user.name,
     email: user.email || null,
     email_verified: Boolean(user.email_verified_at || user.google_sub),
     avatar_url: user.avatar_url || null,
-    wallet_address: user.wallet_address || null,
     providers,
     created_at: user.created_at,
   };
@@ -247,36 +239,6 @@ function findOrCreateGoogleUser(profile) {
   return user;
 }
 
-function findOrCreateWalletUser(address) {
-  let user = findUserByWallet(address);
-  if (user) return updateUser(user.id, { last_login_at: nowIso() });
-  user = createUser({
-    id: uid("usr"),
-    email: null,
-    name: walletName(address),
-    wallet_address: address,
-    created_at: nowIso(),
-    last_login_at: nowIso(),
-  });
-  return user;
-}
-
-function walletMessage(req, address, nonce) {
-  const issuedAt = new Date().toISOString();
-  return [
-    "Remindify wants you to sign in with your Ethereum account:",
-    address,
-    "",
-    "Sign in to Remindify. This request will not trigger a blockchain transaction or cost any gas.",
-    "",
-    `URI: ${originFor(req)}`,
-    "Version: 1",
-    "Chain ID: 8453",
-    `Nonce: ${nonce}`,
-    `Issued At: ${issuedAt}`,
-  ].join("\n");
-}
-
 // Email verification is soft during preview: unverified accounts keep full
 // access, but the register stays marked until the address is confirmed.
 async function sendVerificationEmail(req, user) {
@@ -318,7 +280,6 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
     send(res, 200, {
       email: true,
       google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
-      wallet: true,
       reset: emailConfigured(),
       verify: emailConfigured(),
     });
@@ -628,70 +589,6 @@ export async function handleAuthRoute(req, res, url, { send, body }) {
       const notice = error.message === "google_not_configured" ? "google_not_configured" : "google_failed";
       redirect(res, `/login?notice=${normaliseNotice(notice)}`, cleared);
     }
-    return true;
-  }
-
-  if (path === "/api/auth/wallet/challenge" && req.method === "POST") {
-    if (limited(req, path, 30)) {
-      send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
-      return true;
-    }
-    if (regionBlocked(req)) {
-      send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
-      return true;
-    }
-    const input = await body(req);
-    if (!isAddress(String(input.address || ""))) {
-      send(res, 422, { error: "invalid_address", message: "That wallet address doesn't look right." });
-      return true;
-    }
-    const address = getAddress(input.address);
-    const nonce = randomBytes(16).toString("hex");
-    const message = walletMessage(req, address, nonce);
-    const createdAt = nowIso();
-    const expiresAt = new Date(Date.now() + CHALLENGE_SECONDS * 1000).toISOString();
-    createAuthChallenge({ nonce, address, message, createdAt, expiresAt });
-    send(res, 200, { address, nonce, message, expires_at: expiresAt });
-    return true;
-  }
-
-  if (path === "/api/auth/wallet/verify" && req.method === "POST") {
-    if (limited(req, path, 30)) {
-      send(res, 429, { error: "rate_limited", message: "Too many attempts. Wait a minute and try again." });
-      return true;
-    }
-    if (regionBlocked(req)) {
-      send(res, 451, { error: "region_blocked", message: REGION_BLOCKED_MESSAGE });
-      return true;
-    }
-    const input = await body(req);
-    if (!isAddress(String(input.address || ""))) {
-      send(res, 422, { error: "invalid_address", message: "That wallet address doesn't look right." });
-      return true;
-    }
-    const address = getAddress(input.address);
-    const challenge = consumeAuthChallenge(String(input.nonce || ""), address);
-    if (!challenge) {
-      send(res, 401, { error: "challenge_expired", message: "The sign-in request expired. Please try again." });
-      return true;
-    }
-    let valid = false;
-    try {
-      valid = await verifyMessage({
-        address,
-        message: challenge.message,
-        signature: String(input.signature || ""),
-      });
-    } catch {
-      valid = false;
-    }
-    if (!valid) {
-      send(res, 401, { error: "invalid_signature", message: "That signature didn't verify. Please try again." });
-      return true;
-    }
-    const user = ensureWorkspaceForUser(findOrCreateWalletUser(address));
-    startSession(req, res, user.id);
-    send(res, 200, { user: publicUser(user) });
     return true;
   }
 

@@ -75,9 +75,6 @@ test("region gating blocks account creation and escrow movement", async () => {
     assert.equal(refused.status, 451);
     assert.equal((await refused.json()).error, "region_blocked");
 
-    const refusedWallet = await post("/api/auth/wallet/challenge", { address: "0x0000000000000000000000000000000000000001" }, { country: "IR" });
-    assert.equal(refusedWallet.status, 451);
-
     const signup = await post("/api/auth/signup", { name: "Regional", email, password }, { country: "FR" });
     assert.equal(signup.status, 201);
     const cookie = signup.headers.get("set-cookie").split(";")[0];
@@ -85,8 +82,7 @@ test("region gating blocks account creation and escrow movement", async () => {
     const opened = await post("/api/trust/escrows", {
       obligation_id: "ob_domain",
       amount: 5,
-      chain: "base",
-      jurisdiction_ack: true,
+      payee_paypal_email: "cpa-sandbox@business.example.com",
     }, { cookie });
     assert.equal(opened.status, 201);
     const { escrow } = await opened.json();
@@ -94,14 +90,13 @@ test("region gating blocks account creation and escrow movement", async () => {
     const blockedCreate = await post("/api/trust/escrows", {
       obligation_id: "ob_domain",
       amount: 5,
-      chain: "base",
-      jurisdiction_ack: true,
+      payee_paypal_email: "cpa-sandbox@business.example.com",
     }, { cookie, country: "IR" });
     assert.equal(blockedCreate.status, 451);
     assert.equal((await blockedCreate.json()).error, "region_blocked");
 
-    const blockedFund = await post(`/api/trust/escrows/${escrow.id}/fund`, { tx_hash: `0x${"ab".repeat(32)}` }, { cookie, country: "ir" });
-    assert.equal(blockedFund.status, 451);
+    const blockedHold = await post(`/api/trust/escrows/${escrow.id}/hold`, {}, { cookie, country: "ir" });
+    assert.equal(blockedHold.status, 451);
 
     const blockedRelease = await post(`/api/trust/escrows/${escrow.id}/release`, {}, { cookie, country: "KP" });
     assert.equal(blockedRelease.status, 451);

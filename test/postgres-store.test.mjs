@@ -34,14 +34,14 @@ test("postgres store seeds, persists a request snapshot and preserves auth acros
   await withSnapshot(async () => {
     assert.equal(store.seedDatabase(), true);
     assert.equal(store.seeded(), true);
-    assert.equal(store.loadAll().obligations.length, 16);
-    assert.equal(store.loadAll().agents.length, 7);
+    assert.equal(store.loadAll().obligations.length, 19);
+    assert.equal(store.loadAll().agents.length, 10);
     assert.equal(store.getMeta("workspace"), "Exopya Studio");
   });
 
   await withSnapshot(async () => {
     assert.equal(store.seedDatabase(), false);
-    assert.equal(store.loadAll().obligations.length, 16);
+    assert.equal(store.loadAll().obligations.length, 19);
     store.put("obligations", {
       id: "ob_test",
       title: "Persist me",

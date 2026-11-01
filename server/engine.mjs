@@ -5,6 +5,7 @@ import { planForWorkspace, usage } from "./billing.mjs";
 import { connectorConfigured, executeWithConnector, publicAgent } from "./executors.mjs";
 import { dueOutboxJobs, enqueueConnectorRetry, outboxBackoff, outboxLeaseMs } from "./outbox.mjs";
 import { sellerSnapshot } from "./seller.mjs";
+import { listInvoices } from "./invoices.mjs";
 import { paypalConfigured, paypalMode } from "./paypal.mjs";
 import { expireStalePayments } from "./payments.mjs";
 
@@ -167,12 +168,13 @@ export function buildState() {
     receipts: trust.receipts,
     escrows: trust.escrows,
     trust: {
-      networks: trust.networks,
+      rail: trust.rail,
       stats: trust.stats,
       guardrails: trust.guardrails,
     },
     seller,
     payments: data.payments || [],
+    invoices: listInvoices(data),
     paypal: { configured: paypalConfigured(), mode: paypalMode() },
     stats,
     api_calls: usage().calls,
@@ -573,11 +575,32 @@ export function autonomyRank(a) {
   return { notify: 0, prepare: 1, approve: 2, autopilot: 3 }[a] ?? 0;
 }
 
+export function agentSpendCeiling(agent) {
+  const value = Number(agent?.spend_ceiling);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 // The obligation can never act above the agent's ceiling: a prepare-ceiling
-// agent asked to run an autopilot obligation gets downgraded to prepare.
+// agent asked to run an autopilot obligation gets downgraded to prepare. A run
+// priced above the agent's spend ceiling always needs a human, whatever the
+// autonomy level says.
 export function effectiveAutonomy(ob, agent) {
   const ceiling = agent?.autonomy_ceiling || "autopilot";
-  return autonomyRank(ob.autonomy) > autonomyRank(ceiling) ? ceiling : ob.autonomy;
+  const capped = autonomyRank(ob.autonomy) > autonomyRank(ceiling) ? ceiling : ob.autonomy;
+  const budget = agentSpendCeiling(agent);
+  if (budget !== null && Number(ob.amount || 0) > budget && autonomyRank(capped) > autonomyRank("approve")) {
+    return "approve";
+  }
+  return capped;
+}
+
+export function autonomyCapNote(ob, agent) {
+  if (effectiveAutonomy(ob, agent) === ob.autonomy) return "";
+  const budget = agentSpendCeiling(agent);
+  if (budget !== null && Number(ob.amount || 0) > budget) {
+    return ` Capped by ${agent.name}'s $${budget.toLocaleString("en-US")} spend ceiling.`;
+  }
+  return ` Capped by ${agent.name}'s ${agent.autonomy_ceiling} ceiling.`;
 }
 
 function proposalFor(ob, agent) {
@@ -586,8 +609,8 @@ function proposalFor(ob, agent) {
     finance: `Pay ${money} to ${ob.provider} using the verified account, then archive the receipt.`,
     work: `Submit the prepared ${ob.title.toLowerCase()} packet to ${ob.provider}, pay any fees and file the confirmation.`,
     home: `Confirm the held slot with ${ob.provider} and pay ${money} on completion.`,
-    health: `Book the earliest available slot, confirm by phone and add it to the calendar.`,
-    people: `Order the shortlisted gift and schedule delivery before the day.`,
+    health: `Book the earliest inspection slot, confirm in writing and file the certificate.`,
+    people: `Send the signed handoff to ${ob.provider} and file the acceptance.`,
     identity: `Book the appointment, upload the new photos and pay the ${money} fee.`,
     other: `Complete the task with ${ob.provider} and file proof.`,
   };
@@ -631,8 +654,7 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
 
     const started = Date.now();
     const autonomy = effectiveAutonomy(o, agent);
-    const capNote =
-      autonomy !== o.autonomy ? ` Capped by ${agent.name}'s ${agent.autonomy_ceiling} ceiling.` : "";
+    const capNote = autonomyCapNote(o, agent);
 
     if (autonomy === "autopilot") {
       if (!connectorConfigured(agent)) {
@@ -870,8 +892,7 @@ export async function runObligation(id) {
   const risk = riskFor(ob);
   const started = Date.now();
   const autonomy = effectiveAutonomy(ob, agent);
-  const capNote =
-    autonomy !== ob.autonomy ? ` Capped by ${agent.name}'s ${agent.autonomy_ceiling} ceiling.` : "";
+  const capNote = autonomyCapNote(ob, agent);
   if (autonomy === "autopilot") {
     if (connectorConfigured(agent)) {
       const outcome = await executeAction(agent, ob, {

@@ -160,6 +160,17 @@ await rf.obligations.create({
             <span><Icon name="shield" size={13} /> Scoped bearer keys</span>
             <span><Icon name="webhook" size={13} /> Signed webhooks</span>
           </div>
+          <a
+            className="apimatic-badge"
+            href="https://www.apimatic.io"
+            target="_blank"
+            rel="noreferrer"
+            title="Orders v2, authorizations and captures run through the APIMatic-generated PayPal Server SDK"
+          >
+            <Icon name="checkCircle" size={12} />
+            APIMatic Validated PayPal Schema
+            <Icon name="arrowUpRight" size={11} />
+          </a>
         </div>
         <div className="api-hero-stat">
           <strong>{state.api_calls.toLocaleString()} / {state.api_calls_limit.toLocaleString()}</strong>

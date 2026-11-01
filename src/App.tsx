@@ -62,7 +62,7 @@ const TITLES: Record<string, { title: string; sub: string }> = {
   market: { title: "Marketplace", sub: "Humans and agents, on the same bench" },
   seller: { title: "Seller desk", sub: "Bookings, proof and earnings in one ledger" },
   activity: { title: "Proof", sub: "What happened, who did it, what's on file" },
-  trust: { title: "Trust layer", sub: "Proof receipts and USDC escrow, anchored when needed" },
+  trust: { title: "Trust layer", sub: "PayPal holds, AI proof audit and receipts released on evidence" },
   access: { title: "Agent access", sub: "Obligations as a protocol" },
 };
 
@@ -76,7 +76,7 @@ function Shell() {
   const [verifyState, setVerifyState] = useState<"idle" | "sending" | "sent">("idle");
 
   const displayUser = user?.name || state?.user || "Operator";
-  const displayDetail = user?.email || user?.wallet_address || "Signed in";
+  const displayDetail = user?.email || "Signed in";
   const proofsOnFile = state ? state.runs.filter((run) => run.proof).length : 0;
   const needsVerify = Boolean(user?.email && !user.email_verified && config.verify);
 

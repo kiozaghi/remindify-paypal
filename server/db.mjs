@@ -35,7 +35,6 @@ export const findKeyBySecret = (...args) => impl.findKeyBySecret(...args);
 export const getUser = (...args) => impl.getUser(...args);
 export const findUserByEmail = (...args) => impl.findUserByEmail(...args);
 export const findUserByGoogleSub = (...args) => impl.findUserByGoogleSub(...args);
-export const findUserByWallet = (...args) => impl.findUserByWallet(...args);
 export const createUser = (...args) => impl.createUser(...args);
 export const updateUser = (...args) => impl.updateUser(...args);
 export const deleteUser = (...args) => impl.deleteUser(...args);
@@ -49,8 +48,6 @@ export const deleteAuthSessionsForUser = (...args) => impl.deleteAuthSessionsFor
 export const createAuthToken = (...args) => impl.createAuthToken(...args);
 export const deleteAuthTokensForUser = (...args) => impl.deleteAuthTokensForUser(...args);
 export const consumeAuthToken = (...args) => impl.consumeAuthToken(...args);
-export const createAuthChallenge = (...args) => impl.createAuthChallenge(...args);
-export const consumeAuthChallenge = (...args) => impl.consumeAuthChallenge(...args);
 export const pruneAuth = (...args) => impl.pruneAuth(...args);
 
 export const seeded = (...args) => impl.seeded(...args);

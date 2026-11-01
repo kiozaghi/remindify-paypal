@@ -186,7 +186,7 @@ test("payouts send the Payouts API currency field", async () => {
 
 test("webhooks are not trusted without a configured id", async () => {
   const result = await verifyWebhook({ headers: {}, event: {}, env: {} });
-  assert.deepEqual(result, { configured: false, verified: false });
+  assert.deepEqual(result, { configured: false, verified: false, mode: "missing_headers" });
   assert.equal(paypalConfigured({}), false);
   assert.equal(paypalMode({ PAYPAL_ENV: "LIVE" }), "live");
 });
@@ -211,12 +211,13 @@ test("the PayPal rail moves an obligation and a seller payout end to end", async
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;
 
-  const call = async (path, method = "GET", payload, cookie) => {
+  const call = async (path, method = "GET", payload, cookie, extra = {}) => {
     const response = await realFetch(`${base}${path}`, {
       method,
       headers: {
         ...(cookie ? { cookie } : {}),
         ...(payload ? { "content-type": "application/json" } : {}),
+        ...extra,
       },
       body: payload ? JSON.stringify(payload) : undefined,
     });
@@ -315,6 +316,12 @@ test("the PayPal rail moves an obligation and a seller payout end to end", async
         amount: { currency_code: "USD", value: "10.00" },
         supplementary_data: { related_ids: { order_id: webhookOrder } },
       },
+    }, undefined, {
+      "paypal-transmission-id": "sim-1",
+      "paypal-auth-algo": "SHA256withRSA",
+      "paypal-cert-url": "https://api.sandbox.paypal.com/cert.pem",
+      "paypal-transmission-sig": "signature",
+      "paypal-transmission-time": new Date().toISOString(),
     });
     assert.equal(result.status, 200);
     assert.equal(result.data.verified, true);

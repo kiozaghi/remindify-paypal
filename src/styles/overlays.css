@@ -102,6 +102,10 @@
 .complete-form { display: flex; align-items: center; gap: 6px; width: 100%; }
 .complete-form input { flex: 1; height: 36px; border: 1px solid var(--line-2); border-radius: 8px; padding: 0 10px; font-size: 11.5px; background: var(--white); outline: none; }
 .complete-form input:focus { border-color: var(--ink); }
+.invoice-box { margin-bottom: 7px; }
+.invoice-box .btn { flex: none; }
+.invoice-form { margin-bottom: 7px; }
+.invoice-form input { height: 32px; font-size: 10.5px; }
 
 /* Agent drawer */
 .passport-status { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }

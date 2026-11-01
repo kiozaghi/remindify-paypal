@@ -1,14 +1,14 @@
 # Remindify OS
 
-**The autonomy layer for everything that comes back.**
+**The governance, risk and proof-gated escrow layer for PayPal agentic commerce.**
 
-Remindify turns recurring obligations — renewals, filings, maintenance, birthdays, payroll — into an owned, risk-scored, proof-backed register. Humans and agents share the same work surface. Every action is scoped, every outcome needs evidence, and every decision is auditable.
+Remindify turns recurring business obligations — vendor renewals, compliance filings, contractor deliverables, invoice collections and payroll — into an owned, risk-scored, proof-backed register. AI agents and human merchants share the same work surface, each agent carries a scoped passport and a spending ceiling, and money moves only after evidence clears the proof auditor.
 
-The repo now includes a public, story-led site and a real account gate. Anyone can read the story, pricing, security model, legal pages and manifesto. The register itself is private: email, Google or wallet sign-in is required, while the product wallet remains optional for ordinary obligations.
+The repo now includes a public, story-led site and a real account gate. Anyone can read the story, pricing, security model, legal pages and manifesto. The register itself is private: email/password or Google sign-in is required.
 
 Built from the original Remindify pitch, modernised for a world where agents are first-class operators, not just notifications.
 
-**Live preview:** https://remindify-xi.vercel.app
+**Live preview:** https://remindify-paypal.vercel.app
 
 ```bash
 npm install
@@ -18,7 +18,7 @@ npm run dev                  # API on :4178, app on :5173
 npm run build && npm start   # production build on :4178
 ```
 
-Open **http://localhost:5173** (dev) or **http://localhost:4178** (built). Create an account on the first visit. Google sign-in explains what is missing until OAuth credentials are configured; email and wallet sign-in work without Google.
+Open **http://localhost:5173** (dev) or **http://localhost:4178** (built). Create an account on the first visit. Google sign-in explains what is missing until OAuth credentials are configured; email and password sign-in work without Google.
 
 ## PayPal AI Hackathon
 
@@ -26,15 +26,22 @@ This public repository is the hackathon entry. The licence is MIT. Everything on
 
 **What was added for this submission**
 
-- **PayPal Orders v2** — create and capture a payment for an obligation. The amount is rebuilt server-side from the stored obligation, never from the request; capture is idempotent and reconciles an `ORDER_ALREADY_CAPTURED` race by reading the order back.
-- **PayPal Payouts v1** — send seller earnings in a separate two-step flow: request the payout, then send it with PayPal. The seller desk never says money moved until PayPal confirms.
-- **Signed webhooks** at `/api/paypal/webhook` verify the PayPal transmission signature before a capture or payout changes the register. Without `PAYPAL_WEBHOOK_ID`, events are acknowledged but not applied.
-- **A built-in sandbox executor** at `/api/demo/executor`, so seeded agents exercise the real HMAC-signed connector round-trip (run, proof, receipt) without pretending money moved. Only the seeded agents point at it; an executor you connect yourself must be your own HTTPS endpoint.
+- **AI-first capture** — Gemini 2.5 Flash (`AI_MODEL_ID`, default `gemini-2.5-flash`) extracts the obligation, amount, payee PayPal email and proof requirement from pasted text. Without `GEMINI_API_KEY`, the deterministic parser runs as a fallback so the app and the test suite stay offline-safe.
+- **Multimodal proof auditor** — Gemini scores the filed evidence against the obligation's amount, reference and date, and returns a confidence score plus discrepancies. Below `AUDIT_MIN_CONFIDENCE` (default 0.80) nothing settles. Without a key, the same checks run as local rules.
+- **PayPal Orders v2 authorization holds** — the payer approves an `AUTHORIZE` order for up to 29 days. Nothing is captured until the auditor verifies the proof; a rejected proof leaves the hold untouched.
+- **Hybrid escrow settlement** — on a verified proof the hold is captured, a 10% platform fee is computed in application logic, and the 90% net is sent to the merchant through **PayPal Payouts v1**. Standard sandbox accounts are not asked for `platform_fees`.
+- **PayPal Invoicing v2** — `@ar-collector` creates and immediately sends invoices (never leaves them in `DRAFT`), then files the payer URL as proof.
+- **Signed webhooks** at `/api/paypal/webhook` verify the PayPal transmission signature first. When the Developer Dashboard simulator produces a `FAILURE`, `PAYPAL_ALLOW_WEBHOOK_SIMULATOR=true` plus transmission headers accepts the event and tags the log `sandbox_simulator`.
+- **Idempotent retries** — `PayPal-Request-Id` on orders and captures, `sender_batch_id` on payouts, so the durable outbox can retry safely.
+- **Spending ceilings** — every seeded agent (`@ar-collector` $2,500, `@pr-escrow-bot` $500, `@finops-guardian` $200) has an autonomy ceiling and a per-run spend cap. Anything above the cap escalates to `approve`.
+- **A native executor** at `POST /api/internal/agent-executor`, pre-wired into the seeded agents, so one click exercises the HMAC-signed connector round-trip (run, proof, receipt) without pasting an external webhook.
+- **AG Studio register** — the Obligations table flips to an AG Grid view with custom cells for the obligation, risk meter, inline autonomy, agent passport and PayPal escrow status.
+- **Workspace-scoped Postgres locking** — `pg_advisory_xact_lock(hashtext(workspace_id))` replaces a single global lock, so concurrent workspaces never block each other.
 - **Real backup handover** — when an obligation passes its deadline with a backup named, the backup becomes the owner, the escalation is written to the audit trail and portfolio stats, and the owner can reclaim it from the drawer.
 - **A PayPal ledger** on the Trust page: every order, capture and payout with its PayPal reference and status.
 - UI for paying an obligation from its drawer (PayPal button + sandbox return handling), the seller payout method and the “Send with PayPal” step.
 
-**Commit range:** `f7d5310..HEAD` on `main`. The first commit adds the rail; everything after it is UI, documentation, tests, sandbox execution and handover.
+**Commit range:** `f7d5310..HEAD` on `feat/paypal-agentic-commerce`. The first commit adds the rail; everything after it is UI, documentation, tests, sandbox execution and handover.
 
 **Run it (judges)**
 
@@ -44,22 +51,22 @@ npm run build
 npm start            # http://localhost:4178
 ```
 
-Create an account on first run; the workspace seeds itself with recent obligations, agents, approvals and history. No PayPal credentials are needed to walk the register, the sandbox executor, handover or the trust layer.
+Create an account on first run; the workspace seeds itself with recent obligations, agents, approvals, an authorized PayPal hold and history. No PayPal credentials are needed to walk the register, the AG Studio grid, the executor, handover or the trust layer.
 
-To exercise the live PayPal sandbox rail, export `PAYPAL_ENV=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (and optionally `PAYPAL_WEBHOOK_ID`), then restart. `npm start` does not read `.env.local`, so export the variables in the shell or pass them inline. Pay an obligation from its drawer while signed in to a PayPal **sandbox buyer** account — the guest card form does not accept test cards on this merchant. Payouts need a sandbox receiver email on the seller desk.
+To exercise the live PayPal sandbox rail, export `PAYPAL_ENV=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (and optionally `PAYPAL_WEBHOOK_ID`, `PAYPAL_ALLOW_WEBHOOK_SIMULATOR=true`), then restart. `npm start` does not read `.env.local`, so export the variables in the shell or pass them inline. Pay an obligation from its drawer while signed in to a PayPal **sandbox buyer** account — the guest card form does not accept test cards on this merchant. Payouts need a sandbox receiver email on the seller desk.
 
-**Two-minute demo path**
+**Three-minute demo path**
 
-1. **Today → Run agent sweep.** Agents with an executor act; agents without one draft. The summary counts both.
-2. **Obligations → Car service → Run now → Approve & run.** The sandbox executor answers with signed proof, the run is logged, and a completion receipt is filed.
-3. **Open an overdue obligation.** The coral banner shows the backup now owns it. **Reclaim** puts it back in your hands and keeps the history.
-4. **Trust → PayPal ledger** shows each order, capture and payout with its PayPal reference.
-5. **Trust → receipt → Sign** (wallet or pasted signature) and release an escrow against it.
+1. **Today → Run agent sweep.** Agents with an executor act; agents without one draft. The summary counts both. The PayPal escrow strip shows the $180 Apex hold in flight.
+2. **Obligations → Agent Studio.** Flip the register to AG Grid: risk meter, inline autonomy, agent passport with its spend cap, and the PayPal escrow state.
+3. **Time machine +7 days → Run agent sweep.** Overdue work escalates to its backup and the agent wire fills with drafts. Open the Northwind retainer and **Send invoice**: `@ar-collector` creates and sends a PayPal Sandbox invoice, and the payer URL is filed as proof.
+4. **Trust → $180 Q4 filing.** File [`public/demo/proofs/unverified-wrong-amount.pdf`](public/demo/proofs/unverified-wrong-amount.pdf); the auditor rejects it and the hold stays locked. File [`public/demo/proofs/delaware-tax-receipt-verified.pdf`](public/demo/proofs/delaware-tax-receipt-verified.pdf); the auditor verifies it. Release then captures $180, retains the $18 fee and pays $162 through Payouts. The seeded row is a rehearsal with placeholder PayPal ids and says so; authorize a fresh sandbox hold from the filing to run the capture end to end.
+5. **Access → MCP.** The same register over REST and MCP, with scoped keys and the APIMatic-validated PayPal schema badge.
 
 **Honest limits**
 
 - PayPal payouts to Ethiopia are limited; the payout demo uses a sandbox receiver. Receiving fiat is the rail’s own constraint, not something this app hides.
-- The record is the product: Remindify files proof and the audit trail. Base anchoring stays separate from the fiat rail and is never implied by a PayPal payment.
+- The record is the product: Remindify files proof and the audit trail. A PayPal capture and a proof receipt are separate records, and neither implies the other.
 
 ## Deploy on Vercel
 
@@ -89,26 +96,26 @@ If a CLI deployment is blocked because the latest Git commit author is not a mem
 | Surface | What it does |
 | --- | --- |
 | **Public site** | Story-led landing page, pricing, security model, about, privacy, terms and auth screens, all in the same warm editorial system. |
-| **Accounts** | Email/password, Google OAuth and wallet sign-in; emailed email confirmation and single-use password reset; 30-day HttpOnly sessions; every app API route is gated. |
+| **Accounts** | Email/password and Google OAuth; emailed email confirmation and single-use password reset; 30-day HttpOnly sessions; every app API route is gated. |
 | **Today** | Greeting, live approvals, closest-to-the-edge obligations, portfolio pulse, agent wire, failsafe policy. |
 | **Obligations** | The register. Search, filter by risk/owner/autonomy, inline autonomy control, risk meters, due dates, backups. |
-| **Capture** | Paste a letter, email or messy note, or drop a text-based PDF. A deterministic parser extracts obligations, dates, amounts, recurrence, provider and category — then asks you to review before scheduling. No external AI API is called; text-based PDFs are read in the browser, while scanned PDFs need OCR or a vision service. |
+| **Capture** | Paste a vendor letter, regulator email or messy handoff note, or drop a text-based PDF. Gemini 2.5 Flash extracts obligations, dates, amounts, recurrence, provider and category through structured output; without a key the deterministic parser takes over. Review before anything is scheduled. Text-based PDFs are read in the browser; images and scanned PDFs are read by the vision model once attached as proof. |
 | **Agents** | Agent passports: role, scopes, trust, runs, success rate, autonomy ceiling, execution connector, obligations on desk, recent runs, exportable passport JSON. |
 | **Marketplace** | Vetted humans and agents side by side. Fixed price, escrow on proof, scoped access, SLA. Attach a provider to an obligation or post a new job. |
 | **Activity & proof** | Immutable event stream, filterable by agents/humans/system/API/proof, exportable audit log, proof vault. |
-| **Trust layer** | Offchain proof receipts, EIP-712 signing, optional Base/Celo anchoring, USDC escrow intents that release on proof, and a PayPal ledger of every order, capture and payout. Preview mode needs no wallet or contract. |
+| **Trust layer** | Server-signed HMAC-SHA256 proof receipts, a multimodal Gemini proof auditor (text, images and scanned PDFs), PayPal authorization holds that release on verified proof, capture, payout net of the platform fee, and a PayPal ledger of every order, capture and payout. |
 | **Agent access** | Machine API keys, endpoint reference, webhooks, live test call, recent machine calls, guardrails. |
 
 Plus: **⌘K command palette**, obligation drawer with autonomy + checklist + proof + timeline, agent passport drawer, create-agent / new-obligation / hire flows, toasts, and a virtual clock.
 
 ### The demo, in 90 seconds
 
-1. **Today** — 5 approvals are waiting. Open one and **Approve**. With no executor connected, the decision is recorded and the obligation stays open for you. Connect an executor in an agent's passport, then the same button reads **Approve & run** and the agent executes.
-2. **Capture** — choose “Insurance renewal letter” → **Parse & structure**. One obligation appears with due date, amount, provider, recurrence and the exact source sentence. Confirm and schedule it.
+1. **Today** — 6 approvals are waiting. Open one and **Approve**. With no executor connected, the decision is recorded and the obligation stays open for you. Connect an executor in an agent's passport, then the same button reads **Approve & run** and the agent executes.
+2. **Capture** — choose “Policy renewal letter” → **Parse & structure**. One obligation appears with due date, amount, provider, recurrence and the exact source sentence. Confirm and schedule it.
 3. **Obligations** — open any row. Change autonomy from Notify to Auto and watch the risk score recalculate. Add proof to complete it.
 4. **Agents** — open **Ledger**’s passport. See its ceiling, scopes, trust, work on desk, and the execution connector.
 5. **Marketplace** — delegate the payroll filing to a human PA or an agent. Access is scoped to that obligation; payment releases on proof.
-6. **Trust layer** — every completion files an offchain receipt. Open it, **Sign** with a wallet or copy the EIP-712 payload. With a contract configured, **Anchor** writes the proof hash to Base. Escrow intents release only against a signed or anchored receipt.
+6. **Trust layer** — every completion files a receipt signed by the server. Open it and **Audit** the evidence; a PayPal escrow hold releases only against a verified receipt, then captures and pays the provider net of the fee.
 7. **Agent access** — hit **Test live call**, create a key, or run the MCP server.
 8. **Time machine** — on Today, **Run agent sweep**, then **Time machine · +7 days**. Agents draft plans and escalate approvals; overdue obligations are handed to their backup, and the drawer shows the escalation with a **Reclaim** action. Autopilot obligations execute only where a connector is connected; otherwise the sweep tells you how many are waiting on one. Reset from the clock chip.
 
@@ -215,24 +222,24 @@ Without a connector the agent is draft-only: sweeps produce plans, approvals are
 src/                 React 19 + Vite + TypeScript (no UI framework)
   views/             Today, Obligations, Capture, Agents, Market, Activity, Trust, Access
   landing/           public story, pricing, security, about, legal and auth pages
-  auth.tsx           session context, email/Google/wallet flows, 401 handling
+  auth.tsx           session context, email/Google flows, 401 handling
   lib/router.ts      hash routing for public and authenticated surfaces
   components/        drawers, modals, command palette, icons, shared UI
   styles/            custom warm-editorial design system (Instrument Sans/Serif, JetBrains Mono)
 server/
   index.mjs          shared HTTP handler for Node and Vercel, plus static serving
-  auth.mjs           scrypt passwords, hashed sessions, Google OAuth, wallet verification
+  auth.mjs           scrypt passwords, hashed sessions, Google OAuth
   db.mjs             database facade: SQLite locally, Postgres on Vercel
   db-sqlite.mjs      node:sqlite store (JSON row documents, WAL), auth tables
   db-postgres.mjs    request-scoped Postgres snapshot, auth tables, advisory lock
-  seed.mjs           rich demo workspace: 16 obligations, 7 agents, 8 providers, events, keys
+  seed.mjs           rich demo workspace: 19 obligations, 10 agents, 11 providers, events, keys
   engine.mjs         risk scoring, recurrence, approvals, sweep, autopilot, virtual clock
-  parse.mjs          deterministic capture parser (no external AI)
-  trust.mjs          Base/Celo registry, EIP-712 receipts, anchoring, escrow intents
+  parse.mjs          Gemini capture (structured output) with deterministic fallback
+  audit.mjs          proof auditor: Gemini text/image/PDF, deterministic fallback
+  trust.mjs          HMAC proof receipts, proof auditor gate, PayPal holds/capture/payout
   dev.mjs            runs API + Vite together
 api/[...path].js     Vercel serverless entrypoint for /api/*
 vercel.json          Vercel build and function configuration
-contracts/           reference Solidity: attestations registry + USDC escrow
 mcp/server.mjs       zero-dependency MCP stdio server (tools + structured content)
 data/                local SQLite database (created on first run)
 public/fonts/        self-hosted fonts
@@ -242,7 +249,7 @@ public/fonts/        self-hosted fonts
 - **Risk** = `severity × 15 × urgency(days) × autonomyFactor × confidenceFactor`, clamped to 2–97 and banded critical/high/guarded/low.
 - **Recurrence** advances from the current due date, preserving the original day-of-month where possible.
 - **Virtual clock** is a persisted offset (`clock_offset_days`), so time-machine demos are consistent across API, UI and seeded relative dates.
-- **No blockchain keys, no document upload, no tracking.** The capture parser is deterministic, calls no external AI service and is covered by `npm test`. Text-based PDFs are read in the browser; only the extracted text is sent to the workspace API. Scanned PDFs need OCR or a vision service. Authentication is the only place the product stores identity data.
+- **No card data, no document upload, no tracking.** Capture and the proof auditor send text or an attached evidence file to Gemini 2.5 Flash only when `GEMINI_API_KEY` is set; otherwise both run locally and the deterministic checks are covered by `npm test`. Text-based PDFs are read in the browser; images and scanned PDFs stay on the device until you attach them as proof, and only that artifact is sent for audit. Authentication is the only place the product stores identity data.
 
 ### Data
 
@@ -283,15 +290,14 @@ Public pages use real paths, so each one is a crawlable URL with its own metadat
 | `/privacy`, `/terms` | Legal preview |
 | `/login`, `/signup` | Account access |
 
-App routes (`/today`, `/obligations`, `/capture`, `/agents`, `/market`, `/activity`, `/trust`, `/access`) require a session. Visiting one while signed out opens the auth page with a `next` target, so email and wallet sign-in return to the requested surface. Old `#/route` links are still accepted and rewritten to the clean path.
+App routes (`/today`, `/obligations`, `/capture`, `/agents`, `/market`, `/activity`, `/trust`, `/access`) require a session. Visiting one while signed out opens the auth page with a `next` target, so email and Google sign-in return to the requested surface. Old `#/route` links are still accepted and rewritten to the clean path.
 
 ### Sign-in methods
 
 - **Email and password** — scrypt hashes with a per-user salt. Passwords are never stored in plain text.
-- **Google OAuth** — authorization code flow with a one-time state cookie and verified profile email. If credentials are absent, the button shows a short configuration notice and email/wallet remain available.
-- **Wallet** — `personal_sign` over a one-time, ten-minute nonce. The server verifies the signature with viem; no transaction, gas or private key is involved. The signed message names chain ID 8453 because the trust layer is Base-first, but signing in does not touch a chain.
+- **Google OAuth** — authorization code flow with a one-time state cookie and verified profile email. If credentials are absent, the button shows a short configuration notice and email/password remain available.
 
-Sessions last 30 days. The cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` when served over HTTPS. Only a SHA-256 hash of the session token is stored. The browser wallet remains optional: an email-only account can use the full register, capture, agents, proof and export. Ethiopian obligations stay offchain.
+Sessions last 30 days. The cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` when served over HTTPS. Only a SHA-256 hash of the session token is stored. An email-only account can use the full register, capture, agents, proof and export.
 
 ### Auth configuration
 
@@ -315,7 +321,7 @@ For Google sign-in, create an OAuth web client and register this exact redirect 
 https://your-domain.example/api/auth/google/callback
 ```
 
-Then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Use `GOOGLE_REDIRECT_URI` if the callback differs from `${PUBLIC_ORIGIN}/api/auth/google/callback`. Without credentials, the Google button shows a short configuration notice and email/wallet remain available.
+Then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Use `GOOGLE_REDIRECT_URI` if the callback differs from `${PUBLIC_ORIGIN}/api/auth/google/callback`. Without credentials, the Google button shows a short configuration notice and email/password remain available.
 
 ### Password reset
 
@@ -325,9 +331,9 @@ Reset email goes through a single HTTPS webhook, so the app holds no SMTP creden
 
 ### Email confirmation
 
-Signup sends a confirmation link to `/login?verify=…` when email is configured. The token is hashed, single-use and valid for 24 hours; a resend replaces the previous link. `POST /api/auth/verify/request` (signed in) sends or resends it, and `POST /api/auth/verify/confirm` with `{ "token" }` records `email_verified_at`. Google sign-ins and password resets count as confirmed because both prove control of the address. Confirmation is soft for the register: unverified accounts keep full access and only see an in-app banner with a Resend button. Wallet accounts have no email and never see the banner.
+Signup sends a confirmation link to `/login?verify=…` when email is configured. The token is hashed, single-use and valid for 24 hours; a resend replaces the previous link. `POST /api/auth/verify/request` (signed in) sends or resends it, and `POST /api/auth/verify/confirm` with `{ "token" }` records `email_verified_at`. Google sign-ins and password resets count as confirmed because both prove control of the address. Confirmation is soft for the register: unverified accounts keep full access and only see an in-app banner with a Resend button.
 
-Plan changes are stricter once `EMAIL_WEBHOOK_URL` is set: `POST /api/billing/plan` answers `403 {"error":"email_unverified"}` when an email account asks for a paid plan without confirming first. Downgrades to Free and wallet-only accounts stay open, and without an email provider nobody could confirm, so the gate stays open in that preview configuration.
+Plan changes are stricter once `EMAIL_WEBHOOK_URL` is set: `POST /api/billing/plan` answers `403 {"error":"email_unverified"}` when an email account asks for a paid plan without confirming first. Downgrades to Free stay open, and without an email provider nobody could confirm, so the gate stays open in that preview configuration.
 
 ### Account deletion
 
@@ -337,16 +343,10 @@ Plan changes are stricter once `EMAIL_WEBHOOK_URL` is set: `POST /api/billing/pl
 
 Set `BLOCKED_COUNTRIES` to a comma-separated list of ISO 3166-1 alpha-2 codes (`KP,IR,SY,CU`) to refuse account creation and escrow money movement for visitors geolocated there. The default is empty: Remindify does not decide on its own which jurisdictions its operator may serve. When configured, these calls answer `451 {"error":"region_blocked"}`:
 
-- `POST /api/auth/signup`, `GET /api/auth/google` (and its callback, which redirects to `/login?notice=region_blocked`), `POST /api/auth/wallet/challenge` and `POST /api/auth/wallet/verify`;
-- `POST /api/trust/escrows`, `/fund` and `/release`.
+- `POST /api/auth/signup`, `GET /api/auth/google` (and its callback, which redirects to `/login?notice=region_blocked`);
+- `POST /api/trust/escrows`, `/hold` and `/release`.
 
 Sign-in for an existing account still works, so someone who moves or travels keeps access to their register; only new accounts and new money movement are refused.
-
-### Sanctions screening
-
-Set `SANCTIONS_API_URL` to screen the signed-in account's connected wallet before escrow money moves. Remindify POSTs `{ "addresses": [...] }` and expects `{ "hits": [{ "address", "reason" }] }`; a matching address stops `POST /api/trust/escrows`, `/fund` and `/release` with `403 {"error":"sanctions_hit"}` and the hit list. `SANCTIONS_API_KEY` adds a Bearer header and `SANCTIONS_TIMEOUT_MS` bounds the call (5 seconds by default). A provider outage lets the movement through by default; set `SANCTIONS_FAIL_CLOSED=1` to answer `503 {"error":"sanctions_unavailable"}` instead.
-
-This is a seam, not a compliance program: only wallets the account has connected are screened, escrows funded from an external wallet and marketplace provider payout addresses are not, and hits are reported as the provider returns them. Pick a provider with the coverage and record-keeping your jurisdiction requires.
 
 The country comes from `x-vercel-ip-country`, `cf-ipcountry` or `x-country-code`, in that order. Requests with no usable header are allowed so local development and self-hosted installs without a geo proxy keep working. These headers are only trustworthy behind a proxy you control: a client that reaches the Node server directly can send any value, so terminate traffic at Vercel or Cloudflare, or have your own proxy set the header from a source you trust. This is coarse geolocation, not a sanctions screening service; combine it with a provider check if you are required to screen individuals.
 
@@ -354,7 +354,7 @@ The country comes from `x-vercel-ip-country`, `cf-ipcountry` or `x-country-code`
 
 `/api/auth/*` and `/api/health` are public. The machine API under `/api/v1/*` still authenticates with `Authorization: Bearer rfy_live_...`. Every app endpoint (`/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/demo/*`, `/api/account/delete`) returns `401 {"error":"unauthorized"}` without a valid session cookie.
 
-The server partitions obligations, agents, runs, receipts, escrows, API keys and meta keys by workspace. A session cookie resolves to that account's workspace; a machine API key resolves to the workspace that issued it. New accounts get a seeded copy of the demo register in their own workspace, and `POST /api/demo/reset` only clears the caller's workspace. Auth rows (users, sessions, wallet challenges) live outside any workspace, so a reset never signs anyone out or touches another account.
+The server partitions obligations, agents, runs, receipts, escrows, API keys and meta keys by workspace. A session cookie resolves to that account's workspace; a machine API key resolves to the workspace that issued it. New accounts get a seeded copy of the demo register in their own workspace, and `POST /api/demo/reset` only clears the caller's workspace. Auth rows (users, sessions, auth challenges) live outside any workspace, so a reset never signs anyone out or touches another account.
 
 Every API response carries `x-content-type-options: nosniff`, `x-frame-options: DENY` with `content-security-policy: frame-ancestors 'none'`, `referrer-policy: strict-origin-when-cross-origin` and a `permissions-policy` that turns off camera, microphone, geolocation and payment. `strict-transport-security` is added when the request arrives over TLS. Static pages served straight from the Vercel CDN never reach the Node handler, so they carry only the platform's HSTS header; the same values belong in `vercel.json` once the current worktree changes land.
 
@@ -365,7 +365,7 @@ Existing single-workspace databases are migrated in place: rows that predate thi
 ### Status hints
 
 - Google: requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and a registered redirect URI.
-- Wallet: requires a browser wallet for manual testing. The server flow is verified with viem-generated accounts.
+- PayPal: requires `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`; `PAYPAL_ENV` defaults to `sandbox`.
 - Contacts: `liyusoftwaresolution@gmail.com` (product and security).
 
 ### Search and AI discovery
@@ -400,147 +400,55 @@ After deploying, submit `https://your-domain.example/sitemap.xml` in Google Sear
 
 ## Trust layer
 
-The trust layer is **Base-first and wallet-optional**. It exists for the moment when a provider, auditor or counterparty needs to verify that work happened without trusting Remindify's database.
+The trust layer is PayPal-only and proof-first. It exists for the moment when a provider, auditor or counterparty needs to verify that work happened without trusting Remindify's database, and for the moment when money should move only after that proof is verified.
 
-There is **no token**. USDC is the only asset that can move, and only when a contract is configured and the owner's wallet signs the transaction. The server never holds a private key.
+There is **no token**. The platform fee is deducted from the captured amount at release, and the provider receives the net. Remindify never holds a balance or a card.
 
 ### The receipt lifecycle
 
-1. **File** — completing an obligation writes a receipt with `status: prepared`. The proof label/reference is hashed with the obligation id and a random nonce; the evidence envelope is hashed separately. Document contents are never uploaded or stored.
-2. **Sign** — the trust page presents EIP-712 typed data (`ProofReceipt`) with the obligation id, proof hash, evidence hash, agent id, issued-at and nonce. The server verifies the signature with viem and stores the signer. `status: signed`.
-3. **Anchor** (optional) — if an attestation contract is configured, the owner's wallet sends `anchor(...)`. The server verifies the transaction receipt and the `ReceiptAnchored` event over RPC before setting `status: anchored`.
-4. **Escrow** — an escrow intent starts as `draft`. `POST /commit` records an offchain commitment; `POST /fund` records an onchain USDC funding when a contract is configured. `POST /release` requires a signed or anchored receipt for the same obligation.
+1. **File** — completing an obligation writes a receipt with `status: filed`. The evidence text is stored with its SHA-256 hash, and the server signs a canonical payload with HMAC-SHA256.
+2. **Audit** — the proof auditor scores the evidence against the obligation's amount, reference and date. A pass moves the receipt to `verified`; a fail moves it to `rejected` and keeps the reasons.
+3. **Settle** — a PayPal escrow release captures the authorization and pays the provider. The receipt becomes `settled` and stores the capture, payout, fee and net.
 
-A receipt can stay offchain forever. Anchoring is an escalation, not a requirement.
+A receipt can stay `filed` forever. Verification is only required when money is going to move against it.
 
-### Networks
+### PayPal rail
 
-| Key | Chain | ID | USDC | Role |
-| --- | --- | --- | --- | --- |
-| `base` | Base | 8453 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | Primary |
-| `base-sepolia` | Base Sepolia | 84532 | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | Testnet |
-| `celo` | Celo | 42220 | `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | Grant pilot |
-| `celo-sepolia` | Celo Sepolia | 11142220 | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | Testnet |
-
-USDC addresses are the Circle-issued tokens for each network. Base is the long-term ecosystem; Celo is the near-term Prezenti pilot.
-
-### Preview mode vs configured mode
-
-Preview mode is the default and is deliberately useful on its own:
-
-- receipts are created, signed and verified offchain;
-- the EIP-712 domain uses the zero address as `verifyingContract`;
-- anchor calldata is prepared and copyable, but no transaction is sent;
-- escrow intents can be committed and released offchain.
-
-Configure a contract when you have deployed one:
-
-```bash
-# Base
-BASE_RPC_URL=https://mainnet.base.org
-BASE_ATTESTATION_CONTRACT=0x...
-BASE_ESCROW_CONTRACT=0x...
-
-# Base Sepolia
-BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
-BASE_SEPOLIA_ATTESTATION_CONTRACT=0x...
-BASE_SEPOLIA_ESCROW_CONTRACT=0x...
-
-# Celo
-CELO_RPC_URL=https://forno.celo.org
-CELO_ATTESTATION_CONTRACT=0x...
-CELO_ESCROW_CONTRACT=0x...
-
-# Celo Sepolia
-CELO_SEPOLIA_RPC_URL=https://forno.celo-sepolia.celo-testnet.org
-CELO_SEPOLIA_ATTESTATION_CONTRACT=0x...
-CELO_SEPOLIA_ESCROW_CONTRACT=0x...
-```
-
-When an address is present, the server checks transaction receipts against the configured RPC and contract before recording an anchor, funding or release. The RPC URL is configurable; the default public endpoints are only for demos.
-
-### Contracts
-
-`contracts/RemindifyAttestations.sol` verifies the EIP-712 signature onchain and stores `anchored[receiptId]`. `contracts/RemindifyEscrow.sol` is a minimal USDC escrow that releases only when the attestation registry says the proof receipt is anchored.
-
-Both are **reference implementations and unaudited**. They are deployed to Base Sepolia only; nothing is deployed to mainnet.
-
-| Network | Contract | Address |
-| --- | --- | --- |
-| `base-sepolia` | `RemindifyAttestations` | [`0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9`](https://sepolia.basescan.org/address/0x22C9241F34107D829DC67Df530aEbD7aC14eF7f9) |
-| `base-sepolia` | `RemindifyEscrow` | [`0x647F30587B925F1aFb71D3C9CE25CfbDA17872db`](https://sepolia.basescan.org/address/0x647F30587B925F1aFb71D3C9CE25CfbDA17872db) |
-
-Both contracts show an exact-match source verification on Basescan. Deployment records, including transaction hashes and block numbers, are written to `contracts/deployments/<network>.json`.
-
-They compile with `solc 0.8.24`, which is pinned as a dev dependency:
-
-```bash
-npm run contracts:compile
-```
-
-That writes ABI and bytecode to `contracts/artifacts/` (ignored by git) so the contracts can be inspected without a full Solidity toolchain.
-
-Deploy to a testnet first. The deploy script compiles in memory, checks the RPC chain ID, deploys the attestation registry, then deploys the escrow against the verified USDC address:
-
-```bash
-# Validate the RPC and deployer without sending a transaction
-npm run contracts:deploy -- base-sepolia --dry-run
-
-# Deploy (private key is read from the environment and never written to disk)
-DEPLOYER_PRIVATE_KEY=0x... npm run contracts:deploy -- base-sepolia
-```
-
-The script prints the `*_RPC_URL`, `*_ATTESTATION_CONTRACT` and `*_ESCROW_CONTRACT` values for the server, and records the addresses and transaction hashes in `contracts/deployments/<network>.json`. Supported network keys: `base`, `base-sepolia`, `celo`, `celo-sepolia`.
-
-Verify both contracts on Basescan or Celoscan after deployment. Use `solc 0.8.24` with the optimizer enabled at 200 runs, matching `contracts/compile.mjs`.
-
-After deploying, set the env vars, restart the server, and rehearse the full flow. The product works without a deployment in preview mode.
-
-### Rehearsing the deployed flow
-
-```bash
-npm run chain:rehearse
-```
-
-The script drives the real HTTP API and chain with one funded wallet: it files a receipt, signs it, anchors it, opens an escrow, approves and funds USDC, then releases on proof. It prints every transaction hash and explorer link. Before signing anything it checks the wallet has gas and test USDC, that the server reports `configured` mode, and that the server's contract addresses match the shell's.
-
-A full run is recorded on Base Sepolia (2026-10-29) against the deployed reference contracts:
-
-| Step | Transaction |
+| Item | Value |
 | --- | --- |
-| Anchor the EIP-712 receipt | [`0x8bc6…4288`](https://sepolia.basescan.org/tx/0x8bc6985593c26761a9d2480e4e51751e95d31c4dbcb72c1d9a7c552fc79d4288) |
-| Approve 1 USDC | [`0x5f17…f532`](https://sepolia.basescan.org/tx/0x5f1724191badc89129dbfac18f4bedd323e409f3ce313caee71f2b381354f532) |
-| Fund the escrow | [`0xa935…cc66`](https://sepolia.basescan.org/tx/0xa93554f61c6a2e862b1209b3f63c72cf56c081d6ad021b3bdf6e2ff35a2fcc66) |
-| Release on proof | [`0x6ca7…70db`](https://sepolia.basescan.org/tx/0x6ca7830b8b3835899af8261aba5b7db9ae5b054ff181c049da36a8b39b1870db) |
+| Settlement | PayPal Orders v2 (`intent=AUTHORIZE`), capture, Payouts v1 |
+| Asset | USD |
+| Hold | Up to 29 days (`HOLD_DAYS=29`) |
+| Fee | `PAYPAL_PLATFORM_FEE_PERCENT`, default 10 |
+| Auditor | Gemini 2.5 Flash (`AI_MODEL_ID`) with deterministic fallback |
 
-`anchored(receipt)`, `escrows(id).funded` and `escrows(id).released` were read back from the contracts as `true`, with the proof receipt bound to the escrow. The receipt id, escrow id, hashes and block numbers are stored in `contracts/deployments/base-sepolia.json`.
+A hold reserves the payer's funds without moving them. On release the server captures the authorization with `POST /v2/payments/authorizations/{id}/capture` and sends a Payout to the provider's PayPal email for the net. A payout failure leaves the escrow in `captured_awaiting_payout` so it is never reported as settled.
 
-Without `REHEARSAL_PRIVATE_KEY` it generates a throwaway wallet, prints its address, and waits for you to fund it, so the key never touches the shell history or disk. It also accepts an existing key.
+### Sandbox and live
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `REHEARSAL_PRIVATE_KEY` | generated | Payer and signer. Needs native gas and test USDC. |
-| `REHEARSAL_CHAIN` | `base-sepolia` | Any key from `contracts/networks.mjs`. |
-| `REHEARSAL_USDC` | `1` | Amount to fund. |
-| `REHEARSAL_WAIT_SECONDS` | `900` | How long to wait for a generated wallet to be funded. |
-| `REHEARSAL_API` | `http://localhost:4178` | Running server. |
-| `REHEARSAL_PAYEE` | the payer | Address the escrow releases to. |
+`PAYPAL_ENV=sandbox` is the default. It uses the PayPal sandbox APIs and checkout host, so orders, holds and payouts can be exercised without real money. `live` uses the production APIs and moves real funds with separate credentials. Never mix the two.
 
-The wallet needs test USDC from `faucet.circle.com`; the app has no UI for funding or releasing with a wallet yet, which is why this runs through the API.
+Without `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, every escrow hold and release fails closed with `paypal_not_configured`. Receipts and the auditor keep working.
+
+### Proof auditor
+
+The auditor uses Gemini 2.5 Flash with structured JSON output and returns `verified`, `confidence`, a matching verdict and discrepancies. The release threshold is `AUDIT_MIN_CONFIDENCE` (default `0.8`). Without `GEMINI_API_KEY`, or when the Gemini call fails, it falls back to deterministic offline rules and labels the result `deterministic_fallback`.
+
+A release runs the auditor first if the receipt is not already verified. A rejected proof returns `proof_rejected` and leaves the payer's hold untouched.
 
 ### Trust API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/trust` | Networks, receipts, escrows, stats and guardrails. |
-| `POST` | `/api/trust/receipts` | File a receipt: `{ obligation_id, proof, chain }`. |
-| `POST` | `/api/trust/receipts/:id/sign` | Verify and store `{ signature, signer }`. |
-| `POST` | `/api/trust/receipts/:id/anchor` | Verify `{ tx_hash }` against the configured contract. |
-| `GET` | `/api/trust/receipts/:id/calldata` | Prepared `anchor(...)` calldata. |
-| `POST` | `/api/trust/escrows` | Open an intent. Requires `jurisdiction_ack: true`; `451` in a blocked region. |
-| `POST` | `/api/trust/escrows/:id/commit` | Commit the intent offchain. |
-| `POST` | `/api/trust/escrows/:id/fund` | Record `{ tx_hash }` when an escrow contract is configured. |
-| `POST` | `/api/trust/escrows/:id/release` | Release against `{ proof_receipt_id }` (or the latest signed receipt). |
+| `GET` | `/api/trust` | Rail, receipts, escrows, stats and guardrails. |
+| `POST` | `/api/trust/receipts` | File a receipt: `{ obligation_id, proof, artifact? }`. |
+| `POST` | `/api/trust/receipts/:id/audit` | Run the proof auditor; optional `{ artifact }`. |
+| `GET` | `/api/trust/receipts/:id/verify` | `{ status, valid, proof_hash, settlement }`. |
+| `POST` | `/api/trust/escrows` | Open a draft with `payee_paypal_email`; `451` in a blocked region. |
+| `POST` | `/api/trust/escrows/:id/hold` | Create the PayPal authorization order and return `approve_url`. |
+| `GET` | `/api/trust/escrows/paypal/return?token=` | PayPal return; authorizes the hold and redirects to `/trust`. |
+| `POST` | `/api/trust/escrows/:id/release` | Audit if needed, capture and pay out `{ proof_receipt_id }`. |
+| `POST` | `/api/trust/escrows/:id/void` | Release an outstanding hold back to the payer. |
 
 Machine-native agents can read trust state and file a receipt:
 
@@ -548,20 +456,19 @@ Machine-native agents can read trust state and file a receipt:
 curl -X POST http://localhost:4178/api/v1/trust/receipts \
   -H "Authorization: Bearer rfy_live_7c2a91f4d0e8b6a3c5d2" \
   -H "content-type: application/json" \
-  -d '{"obligation_id":"ob_domain","proof":"renewal confirmation","chain":"base"}'
+  -d '{"obligation_id":"ob_domain","proof":"renewal confirmation","artifact":{"name":"registrar.txt","type":"text","text":"Cloudflare order CF-88213 renewed to 2027-11-15 for USD 24.00"}}'
 ```
 
 `GET /api/v1/trust` returns the same snapshot for agents.
 
 ### Guardrails
 
-- **Ethiopia stays offchain.** No wallets or USDC payments for Ethiopian obligations until the NBE authorises virtual-asset activity. Escrow creation requires an explicit `jurisdiction_ack: true` at the API boundary and a required checkbox in the UI. Celo is gated to non-Ethiopian counterparties.
+- **Proof before money.** A hold is captured only after the auditor verifies the artifact. A rejection leaves the payer's funds in place.
 - **Operator-managed region list.** `BLOCKED_COUNTRIES` refuses new accounts and escrow movement from listed countries. It is empty unless the operator sets it, and it reads edge-proxy geolocation, not a sanctions list.
 - **No token.** No points, no airdrop, no speculative asset.
-- **No custody.** The server never holds a key and never moves funds.
-- **No forced wallet.** A receipt is useful the moment it is filed.
-- **No document contents onchain or in the trust store.** Only the proof label/reference and hashes are stored.
-- **Contracts are unaudited.** Treat them as a starting point for a security review, not production infrastructure.
+- **No custody.** Remindify never holds a balance or a card; PayPal moves the money between the payer, the merchant account and the provider.
+- **No secrets in receipts.** Only the proof label, evidence text and hashes are stored; no card data and no PayPal credentials.
+- **Sandbox is the default.** Nothing in this preview claims live PayPal availability.
 
 ---
 
@@ -581,7 +488,7 @@ Mutating machine calls accept an `Idempotency-Key` header. A retry with the same
 | `POST` | `/api/v1/obligations/:id/complete` | `obligations:write` | File proof and advance the schedule. Idempotent. |
 | `GET` | `/api/v1/risk` | `risk:read` | Coverage, exposure, counts and top risks. |
 | `GET` | `/api/v1/agents` | `agents:read` | Roster with scopes and autonomy ceilings. |
-| `GET` | `/api/v1/trust` | `risk:read` | Receipts, escrows, networks and trust stats. |
+| `GET` | `/api/v1/trust` | `risk:read` | Rail, receipts, escrows and trust stats. |
 | `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. Idempotent. |
 
 App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/agents/:id/executor`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API and `/api/cron/*` schedulers.
@@ -630,7 +537,7 @@ npm run mcp
 }
 ```
 
-Tools: `list_obligations`, `get_obligation`, `create_obligation`, `complete_obligation`, `portfolio_risk`, `list_agents`, `list_trust`.
+Tools: `list_obligations`, `get_obligation`, `create_obligation`, `complete_obligation`, `portfolio_risk`, `list_agents`, `list_trust`, `list_escrows`, `get_proof_receipt`, `file_proof_receipt`.
 
 The default key is the seeded demo key. Issue a fresh one in **Agent access** and set `REMINDIFY_KEY` for anything real.
 
@@ -643,14 +550,12 @@ npm run dev              # API + Vite with proxy
 npm run build            # client + SSR prerender + sitemap/robots/llms
 npm start                # serve dist + API on :4178
 npm run mcp              # MCP stdio server
-npm test                 # parser, trust and contract regression tests (node:test)
+npm test                 # parser, trust, PayPal and workspace regression tests (node:test)
 npm run typecheck        # tsc --noEmit
 npm run check            # typecheck + production build
-npm run contracts:compile # compile reference contracts to contracts/artifacts/
-npm run contracts:deploy -- base-sepolia --dry-run
 ```
 
-Requires **Node 22.5+** for `node:sqlite` (tested on Node 24). No native modules. `viem` is server-side only; it is not shipped to the client bundle.
+Requires **Node 22.5+** for `node:sqlite` (tested on Node 24). No native modules.
 
 ---
 
@@ -680,23 +585,12 @@ This is a complete product prototype, not a hardened multi-tenant service. Befor
 - add Postgres row-level security and per-workspace connection limits as defence in depth (the application already scopes every query by workspace);
 - add a durable job runner for machine API writes (keys are hashed, scoped, expiring and rate-limited, mutating calls accept idempotency keys, connector retries persist in an outbox, and scheduled sweeps are replay-safe);
 - build shared workspaces and membership; paid plan changes are already gated on a confirmed email, but there is no sharing surface yet;
-- keep proof documents out of the database (only hashes are stored) or add encrypted file storage with per-file deletion before accepting uploads; activity retention is `RETENTION_DAYS` and account deletion purges the workspace;
-- replace the deterministic parser with a hybrid local + model pipeline for PDFs and images;
-- connect a payment provider (Stripe or similar) and tax handling to the existing plans and usage metering;
-- take the reference contracts through an audit, add upgrade/ops procedures, and test anchor/fund/release against a deployed contract on Base Sepolia before mainnet;
-- connect a real sanctions provider behind the `SANCTIONS_API_URL` seam (it screens the payer's connected wallet on escrow money movement, but external-wallet funding and provider payout addresses are out of scope);
+- move proof evidence to encrypted object storage with per-file deletion; today a receipt keeps the evidence text or media inline (plus its SHA-256 hash) so the auditor can read it, and activity retention is `RETENTION_DAYS` with account deletion purging the workspace;
+- add a per-workspace budget and retention policy for evidence and capture text sent to Gemini;
+- add plan billing on top of the existing usage metering (PayPal Orders is already wired for obligations, payouts and invoices);
 - confirm or replace the placeholder `liyusoftwaresolution@gmail.com` inbox.
 
 The design decisions that matter — autonomy ceilings, proof requirements, audit trail, human/agent parity — are already in the data model.
-
----
-
-## Funding and applications
-
-- [FUNDING.md](./FUNDING.md) — scored shortlist, exclusions, deadlines and recommended sequencing.
-- [APPLICATIONS.md](./APPLICATIONS.md) — working drafts for SXSW Pitch 2027, Base Ecosystem Fund and Celo Prezenti Frontier, plus a demo script and the missing-information checklist.
-
-These are working documents. Verify every deadline and requirement on the official program page before submitting.
 
 ---
 

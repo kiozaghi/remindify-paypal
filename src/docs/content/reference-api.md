@@ -142,7 +142,7 @@ curl -X POST "$REMINDIFY_URL/api/v1/obligations/ob_.../complete" \
   "ok": true,
   "obligation": { "...": "updated obligation" },
   "next_due": "2027-11-20T10:00:00.000Z",
-  "receipt": { "id": "rcpt_...", "status": "prepared", "proof_hash": "0x..." }
+  "receipt": { "id": "rcpt_...", "status": "filed", "proof_hash": "9f2c..." }
 }
 ```
 
@@ -179,7 +179,7 @@ curl "$REMINDIFY_URL/api/v1/trust" \
   -H "Authorization: Bearer $REMINDIFY_KEY"
 ```
 
-Returns `networks`, `receipts`, `escrows`, `stats` and `guardrails`. Network entries include chain id, explorer and whether a contract is configured.
+Returns `rail`, `receipts`, `escrows`, `stats` and `guardrails`. The rail entry reports PayPal mode, whether it is configured, the hold days and the platform fee percent. It also reports the auditor model, whether Gemini is configured and the confidence threshold.
 
 ## File a receipt from an agent
 
@@ -191,11 +191,40 @@ curl -X POST "$REMINDIFY_URL/api/v1/trust/receipts" \
   -d '{
     "obligation_id": "ob_domain",
     "proof": "Cloudflare order CF-88213",
-    "chain": "base"
+    "artifact": { "name": "registrar-confirmation.txt", "type": "text", "text": "Cloudflare order CF-88213 renewed to 2027-11-15 for USD 24.00" }
   }'
 ```
 
-`201` with `{ "receipt": { ... } }`. The receipt is `prepared`; signing and anchoring happen in the trust layer.
+`201` with `{ "receipt": { ... } }`. The receipt is `filed` and already carries its HMAC-SHA256 signature. Auditing and settlement happen in the trust layer.
+
+## Trust endpoints
+
+These are **session-cookie** routes. They are not part of `/api/v1` and a machine key cannot call them.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/trust` | Rail, receipts, escrows, stats and guardrails. |
+| `POST` | `/api/trust/receipts` | File a receipt: `{ obligation_id, proof, artifact? }`. |
+| `POST` | `/api/trust/receipts/:id/audit` | Run the proof auditor; an optional `{ artifact }` replaces the evidence first. |
+| `GET` | `/api/trust/receipts/:id/verify` | Return `{ status, valid, proof_hash, settlement }` for the receipt. |
+| `POST` | `/api/trust/escrows` | Open a draft: `{ obligation_id, provider_id, amount, payee_paypal_email }`. |
+| `POST` | `/api/trust/escrows/:id/hold` | Create a PayPal `intent=AUTHORIZE` order and return `approve_url`. |
+| `GET` | `/api/trust/escrows/paypal/return?token=` | PayPal return target; authorizes the hold and redirects to `/trust`. |
+| `POST` | `/api/trust/escrows/:id/release` | Audit if needed, capture the authorization and pay the provider `{ proof_receipt_id }`. |
+| `POST` | `/api/trust/escrows/:id/void` | Release an outstanding hold back to the payer. |
+
+An audit response:
+
+```json
+{
+  "ok": true,
+  "verified": true,
+  "audit": { "verified": true, "confidence": 0.91, "engine": "gemini:gemini-2.5-flash", "verdict": "The receipt matches the amount and reference.", "discrepancies": [] },
+  "receipt": { "id": "rcpt_...", "status": "verified" }
+}
+```
+
+A release returns the escrow with its fee split (`amount`, `platform_fee`, `net_payout`) and the receipt is marked `settled`. A rejected proof returns `422 proof_rejected` and leaves the hold in place. A payout that fails after capture returns `422 payout_failed` and parks the escrow in `captured_awaiting_payout`.
 
 ## Payments
 
@@ -241,7 +270,7 @@ curl "$REMINDIFY_URL/api/v1/agents" \
 
 - It cannot create, rotate or revoke keys. Those are human actions with a session cookie.
 - It cannot change agents, approvals or billing.
-- It cannot sign or anchor receipts; it can file them.
+- It cannot audit receipts, release escrows or send payouts; it can file receipts.
 - It does not bypass the plan allowance or the per-key rate limit.
 
 ## App endpoints

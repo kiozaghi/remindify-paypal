@@ -1,5 +1,7 @@
-// On-device capture parser. Turns letters, emails and messy notes into
-// structured recurring obligations. No network, no API key, deterministic.
+// Capture parser. Two engines, same output shape:
+//   - Gemini 2.5 Flash: AI-first extraction when GEMINI_API_KEY is set
+//   - deterministic: local rules, used in tests and whenever the model fails
+// The caller falls back to parseCapture() whenever parseCaptureAI() returns null.
 const DAY = 86400000;
 const MONTHS = {
   jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
@@ -181,12 +183,23 @@ function findAmount(text) {
   return null;
 }
 
+// A PayPal payee is the address the money can be sent to. Keep it only when
+// the surrounding sentence is actually about paying.
+const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+function findPayeeEmail(text) {
+  const mail = text.match(EMAIL_RE);
+  if (!mail || mail.index === undefined) return null;
+  const around = text.slice(Math.max(0, mail.index - 80), mail.index + mail[0].length + 80);
+  if (!/(paypal|invoice|bill|pay\b|payment|remit|settle)/i.test(around)) return null;
+  return mail[0].toLowerCase();
+}
+
 const KNOWN_PROVIDERS = [
   "Awash Insurance", "Commercial Bank of Ethiopia", "Ministry of Revenue", "Trade Bureau",
   "Zewditu Pharmacy", "Bethel Dental Clinic", "ICS Addis Ababa", "SGS Ethiopia",
   "Cloudflare", "Google", "Netflix", "Spotify", "iCloud", "Apple", "Ethiopian Airlines",
   "Dawit Auto", "Selam Properties", "Addis Vehicle Inspection", "Exopya Studio", "Ada Ceramics",
-  "Juniper",
+  "Juniper", "Apex Tax & Compliance LLP", "Delaware Division of Revenue",
 ];
 
 function findKnownProvider(text) {
@@ -420,6 +433,7 @@ export function parseCapture(text, now = Date.now()) {
     const recurrence = group.parts.map((p) => findRecurrence(p.text)).find(Boolean) || null;
     const amount = group.parts.map((p) => findAmount(p.text)).find(Boolean) || null;
     const provider = category === "people" ? "" : findProvider(itemText, group.header);
+    const payeeEmail = category === "people" ? null : findPayeeEmail(itemText);
 
     let due = strong[0]?.date || dates.sort((a, b) => a.date - b.date)[0]?.date || null;
     let dayOfMonth = null;
@@ -444,6 +458,7 @@ export function parseCapture(text, now = Date.now()) {
     if (recurrence) confidence += 0.09;
     if (amount) confidence += 0.06;
     if (provider) confidence += 0.05;
+    if (payeeEmail) confidence += 0.02;
     if (category !== "other") confidence += 0.04;
     confidence = Math.min(0.98, Math.round(confidence * 100) / 100);
 
@@ -469,7 +484,9 @@ export function parseCapture(text, now = Date.now()) {
         ? { unit: "year", interval: 1, label: "annual" }
         : null);
 
-    const channel = bulletDoc ? "notes" : /subject:|dear\b/i.test(text) ? "email" : "document";
+    const channel = payeeEmail
+      ? "paypal"
+      : bulletDoc ? "notes" : /subject:|dear\b/i.test(text) ? "email" : "document";
 
     items.push({
       id: `draft_${items.length + 1}`,
@@ -490,6 +507,7 @@ export function parseCapture(text, now = Date.now()) {
       proof_required: PROOF_BY_CATEGORY[category] || "Confirmation",
       consequence: CONSEQUENCE_BY_CATEGORY[category] || "It slips through the cracks.",
       notes,
+      payee_paypal_email: payeeEmail,
       source: "capture",
       channel,
       grace_days: 0,
@@ -510,7 +528,196 @@ export function parseCapture(text, now = Date.now()) {
       candidates: segments.length,
       parsed: items.length,
       model: "local-parser-v3",
+      engine: "deterministic",
       ms: 320 + Math.round(Math.random() * 380),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// AI-first extraction
+// ---------------------------------------------------------------------------
+
+const CATEGORIES = ["finance", "work", "home", "identity", "health", "people", "other"];
+const RECURRENCE_UNITS = ["day", "week", "month", "quarter", "year"];
+
+const CAPTURE_SCHEMA = {
+  type: "object",
+  properties: {
+    obligations: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          category: { type: "string", enum: CATEGORIES },
+          provider: { type: "string" },
+          amount: { type: "number" },
+          currency: { type: "string" },
+          due_date: { type: "string" },
+          recurrence_unit: { type: "string", enum: [...RECURRENCE_UNITS, ""] },
+          recurrence_interval: { type: "integer" },
+          severity: { type: "integer" },
+          confidence: { type: "number" },
+          proof_required: { type: "string" },
+          consequence: { type: "string" },
+          payee_paypal_email: { type: "string" },
+          notes: { type: "string" },
+        },
+        required: ["title", "category", "confidence", "proof_required"],
+      },
+    },
+  },
+  required: ["obligations"],
+};
+
+export function captureAIConfigured(env = process.env) {
+  return Boolean(env.GEMINI_API_KEY);
+}
+
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function draftDue(value, now, fallback = 14) {
+  const match = String(value || "").trim().match(ISO_DATE_RE);
+  if (match) {
+    const date = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3], 10, 0, 0));
+    if (!Number.isNaN(date.getTime())) return { due: date, dated: true };
+  }
+  const date = new Date(now);
+  date.setUTCHours(10, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + fallback);
+  return { due: date, dated: false };
+}
+
+function aiRecurrence(unit, interval) {
+  const normalized = String(unit || "").toLowerCase();
+  if (!RECURRENCE_UNITS.includes(normalized)) return null;
+  const step = Number(interval);
+  return {
+    unit: normalized,
+    interval: Number.isFinite(step) && step > 0 ? Math.min(12, Math.floor(step)) : 1,
+    label: normalized,
+  };
+}
+
+function aiItems(obligations, now) {
+  const items = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(obligations) ? obligations : []) {
+    const title = String(raw?.title || "").replace(/\s+/g, " ").trim().slice(0, 84);
+    if (title.length < 4) continue;
+    const key = title.toLowerCase().slice(0, 48);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const category = CATEGORIES.includes(raw?.category) ? raw.category : "other";
+    const { due, dated } = draftDue(raw?.due_date, now);
+    const recurrence = aiRecurrence(raw?.recurrence_unit, raw?.recurrence_interval);
+    const amount = Number(raw?.amount);
+    const email = String(raw?.payee_paypal_email || "").trim().toLowerCase();
+    const payeeEmail = EMAIL_RE.test(email) && email.length <= 254 ? email : null;
+    const severity = Number(raw?.severity);
+    let confidence = Number(raw?.confidence);
+    if (!Number.isFinite(confidence)) confidence = 0.7;
+    if (!dated) confidence -= 0.12;
+    confidence = Math.min(0.98, Math.max(0.35, Math.round(confidence * 100) / 100));
+
+    items.push({
+      id: `draft_${items.length + 1}`,
+      title,
+      category,
+      provider: String(raw?.provider || "").trim().slice(0, 80) || "Unassigned",
+      amount: Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : 0,
+      currency: "USD",
+      due_at: due.toISOString(),
+      recurrence,
+      severity: Number.isFinite(severity) ? Math.min(5, Math.max(1, Math.round(severity))) : 3,
+      confidence,
+      autonomy: category === "finance" || category === "work" ? "approve" : "prepare",
+      agent_id: AGENT_BY_CATEGORY[category] || null,
+      owner: "Solomon Tigabu",
+      owner_kind: "human",
+      backup: "Hanna Bekele",
+      proof_required: String(raw?.proof_required || "").slice(0, 160) || PROOF_BY_CATEGORY[category] || "Confirmation",
+      consequence: String(raw?.consequence || "").slice(0, 240) || CONSEQUENCE_BY_CATEGORY[category] || "It slips through the cracks.",
+      notes: String(raw?.notes || "").slice(0, 240),
+      payee_paypal_email: payeeEmail,
+      source: "capture",
+      channel: payeeEmail ? "paypal" : "document",
+      grace_days: 0,
+      checklist: ["Review the extracted details", "Assign an owner", "Confirm the deadline"],
+      evidence: { sentence: title, date: dated ? String(raw?.due_date || "") : null, recurrence: recurrence?.unit || null, amount: amount > 0 ? `$${amount.toFixed(2)}` : null },
+      needs_review: !dated,
+    });
+    if (items.length >= 12) break;
+  }
+  return items;
+}
+
+/**
+ * AI-first extraction. Returns null when no key is set or the model fails, so
+ * the caller can fall back to the deterministic parser without losing the
+ * capture. Never throws.
+ */
+export async function parseCaptureAI(text, now = Date.now(), { env = process.env } = {}) {
+  if (!captureAIConfigured(env)) return null;
+  const started = Date.now();
+  const model = String(env.AI_MODEL_ID || "gemini-2.5-flash").trim();
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          contents: [{
+            role: "user",
+            parts: [{
+              text: [
+                "You extract recurring business obligations from a document, email or note.",
+                "Return JSON only. One entry per obligation that carries a deadline or a recurrence.",
+                `Today is ${new Date(now).toISOString().slice(0, 10)}. Resolve relative dates against it.`,
+                "Rules:",
+                "- amount is the money at stake in USD; use 0 when the document states none.",
+                "- due_date is YYYY-MM-DD; use an empty string when no date is stated. Never invent one.",
+                "- payee_paypal_email only when the document gives an address to pay.",
+                "- confidence is 0-1 and reflects how certain the extraction is.",
+                "- severity is 1-5: 5 for a tax filing, licence or insurance lapse.",
+                "- proof_required is the artifact that proves completion, e.g. 'Stamped filing receipt'.",
+                "- Ignore greetings, signatures and marketing copy.",
+                "",
+                "Document:",
+                text.slice(0, 12_000),
+              ].join("\n"),
+            }],
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseSchema: CAPTURE_SCHEMA,
+          },
+        }),
+        signal: AbortSignal.timeout(Number(env.CAPTURE_TIMEOUT_MS) || 15_000),
+      }
+    );
+    if (!response.ok) return null;
+    const json = await response.json();
+    const raw = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const parsed = JSON.parse(raw);
+    const items = aiItems(parsed?.obligations, now);
+    if (!items.length) return null;
+    return {
+      items,
+      meta: {
+        candidates: Array.isArray(parsed?.obligations) ? parsed.obligations.length : items.length,
+        parsed: items.length,
+        model: `gemini:${model}`,
+        engine: "gemini",
+        ms: Date.now() - started,
+      },
+    };
+  } catch {
+    return null;
+  }
 }

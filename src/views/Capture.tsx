@@ -1,33 +1,33 @@
 import { useRef, useState } from "react";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useApp } from "../store";
 import { Icon } from "../components/Icon";
 import { CategoryTile, Field } from "../components/ui";
 import { CATEGORIES, recurrenceLabel, longDate } from "../lib/format";
+import { extractPdfText, MAX_PDF_PAGES } from "../lib/pdfText";
 import type { Draft } from "../types";
 
 const SAMPLES = [
   {
     key: "insurance",
-    label: "Insurance renewal letter",
+    label: "Policy renewal letter",
     icon: "shield",
     note: "Email · 1 renewal, 2 dates",
-    text: `Subject: Your motor insurance renewal — Awash Insurance
-Dear Solomon,
-Your comprehensive motor policy for vehicle 3-A12345 expires on November 28, 2026.
+    text: `Subject: Your professional indemnity renewal — Awash Insurance
+Dear Exopya Studio,
+Your policy PI-8842 for the studio's advisory work expires on November 28, 2026.
 The renewal premium is USD 486. Renew before November 24 to keep your 4% loyalty discount.
 Please confirm payment by bank transfer. A new certificate will be issued within 24 hours.`,
   },
   {
     key: "vehicle",
-    label: "Garage + inspection email",
-    icon: "car",
+    label: "Facilities + inspection email",
+    icon: "home",
     note: "Email · 2 dates, 1 cost",
-    text: `Dawit Auto — service reminder
-Your vehicle is due for its 10,000 km service in 3 weeks.
+    text: `Addis Facility & Power Ops — service reminder
+The studio generator is due for its quarterly service in 3 weeks.
 Slot held: Saturday 09:00. Cost estimate USD 140.
-Please confirm by October 30 so we can keep the bay.
-Annual roadworthiness inspection is also due in 2 months.`,
+Please confirm by October 30 so we can keep the crew.
+The annual electrical inspection is also due in 2 months.`,
   },
   {
     key: "work",
@@ -41,13 +41,26 @@ Annual roadworthiness inspection is also due in 2 months.`,
 - Payroll tax filing is monthly — due on the 25th.`,
   },
   {
-    key: "people",
-    label: "Family + relationship notes",
-    icon: "heart",
-    note: "Notes · the ones that matter",
-    text: `Mum's birthday is on 5 March. She mentioned the ceramic tea set from Ada Ceramics.
-Anniversary dinner — book a table at Juniper every year on 14 February.
-Call Grandma every week. Last call was 12 days ago.`,
+    key: "tax",
+    label: "Delaware withholding notice",
+    icon: "receipt",
+    note: "Notice · amount, date, PayPal payee",
+    text: `DELAWARE DIVISION OF REVENUE — Q4 WITHHOLDING NOTICE
+Entity: Exopya Studio LLC
+Prepared by Apex Tax & Compliance LLP
+Balance due: USD 180.00
+Payment is due by 7 December 2026. A late filing adds USD 120 in penalties.
+Pay by PayPal to sb-apex@business.example.com quoting reference DE-Q4-8841.
+A stamped filing receipt is issued once the payment clears.`,
+  },
+  {
+    key: "contractor",
+    label: "Contractor handoff notes",
+    icon: "users",
+    note: "Notes · deliverables and invoices",
+    text: `Kestrel SecOps pen-test report is due 21 November 2026. Final sign-off needs the W-9 on file.
+Addis Facility & Power Ops invoice for October (USD 120) is unpaid — collect before the 30th.
+Northwind retainer invoice goes out on the 5th, quoted PO NW-4417.`,
   },
 ];
 
@@ -66,37 +79,6 @@ const decodeRec = (value: string) => {
   const [unit, interval] = value.split(":");
   return { unit, interval: Number(interval) };
 };
-
-const MAX_PDF_PAGES = 30;
-
-async function extractPdfText(file: File) {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
-  const data = new Uint8Array(await file.arrayBuffer());
-  const loadingTask = pdfjs.getDocument({ data });
-  const document = await loadingTask.promise;
-  const pages = document.numPages;
-  const readablePages = Math.min(pages, MAX_PDF_PAGES);
-  const parts: string[] = [];
-  try {
-    for (let pageNumber = 1; pageNumber <= readablePages; pageNumber += 1) {
-      const page = await document.getPage(pageNumber);
-      const content = await page.getTextContent();
-      parts.push(
-        content.items
-          .map((item) => ("str" in item ? item.str : ""))
-          .join(" "),
-      );
-      page.cleanup();
-    }
-  } finally {
-    await loadingTask.destroy();
-  }
-  return {
-    pages,
-    text: parts.join("\n\n").replace(/[ \t]+/g, " ").trim(),
-  };
-}
 
 function DraftCard({
   draft, onChange, onRemove, agents,
@@ -191,6 +173,13 @@ function DraftCard({
             {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{["Low", "Minor", "Normal", "High", "Critical"][n - 1]}</option>)}
           </select>
         </Field>
+        <Field label="Payee PayPal">
+          <input
+            value={draft.payee_paypal_email || ""}
+            onChange={(e) => onChange(draft.id, { payee_paypal_email: e.target.value.trim() || null })}
+            placeholder="billing@provider.com"
+          />
+        </Field>
       </div>
 
       <div className="draft-foot">
@@ -198,6 +187,9 @@ function DraftCard({
         <span><Icon name="clock" size={12} /> {longDate(draft.due_at)}</span>
         <span><Icon name="user" size={12} /> {draft.owner}</span>
         <span className="draft-proof"><Icon name="receipt" size={12} /> Proof: {draft.proof_required}</span>
+        {draft.payee_paypal_email && (
+          <span className="draft-payee"><Icon name="wallet" size={12} /> Escrow-ready payee</span>
+        )}
       </div>
     </article>
   );
@@ -258,7 +250,7 @@ export default function Capture() {
     if (!isPdf) {
       const content = await file.text();
       setText(content);
-      toast("Document loaded", "Ready to structure without an AI key.", "default");
+      toast("Document loaded", "Ready to structure.", "default");
       return;
     }
 
@@ -297,8 +289,8 @@ export default function Capture() {
         <div className="parser-badge">
           <span className="parser-badge-icon"><Icon name="shield" size={16} /></span>
           <div>
-            <strong>Deterministic parser</strong>
-            <em>No AI key · no third-party model</em>
+            <strong>AI-first extraction</strong>
+            <em>Gemini 2.5 Flash · local fallback</em>
           </div>
         </div>
       </header>
@@ -311,7 +303,7 @@ export default function Capture() {
               <span><Icon name="mail" size={13} /> Forward an email</span>
               <span><Icon name="phone" size={13} /> Voice note</span>
             </div>
-            <span className="composer-secure"><Icon name="lock" size={11} /> no third-party AI</span>
+            <span className="composer-secure"><Icon name="lock" size={11} /> not stored · structured on capture</span>
           </div>
 
           <textarea

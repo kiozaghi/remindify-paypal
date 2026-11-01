@@ -25,8 +25,6 @@ const METHODS: { value: SellerPayoutAccount["method"]; label: string }[] = [
   { value: "none", label: "Not connected" },
   { value: "paypal", label: "PayPal" },
   { value: "bank", label: "Bank account" },
-  { value: "wallet", label: "Wallet" },
-  { value: "usdc", label: "USDC" },
 ];
 
 function dueText(booking: SellerBooking) {

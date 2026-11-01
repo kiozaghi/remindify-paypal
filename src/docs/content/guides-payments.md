@@ -1,14 +1,14 @@
 # Payments: PayPal and escrow
 
-Money can move against an obligation in two ways, and they are deliberately separate. A **PayPal payment** settles an obligation in USD through the payer's own PayPal account and touches no chain. A **USDC escrow** holds funds on Base or Celo and releases only against a proof receipt. Both attach to the same obligation and leave the same audit trail.
+Money can move against an obligation in two ways, and they are deliberately separate. A **PayPal payment** settles an obligation in USD through the payer's own PayPal account. A **PayPal escrow hold** authorizes the amount up front and captures it only when proof is verified. Both attach to the same obligation and leave the same audit trail.
 
-| Rail | Asset | Started by | Chain |
+| Rail | Asset | Started by | Moves money |
 | --- | --- | --- | --- |
-| PayPal Orders | USD | A signed-in human, from the obligation | None |
-| PayPal Payouts | USD | A signed-in human, from the seller desk | None |
-| USDC escrow | USDC on Base or Celo | A signed-in human with a wallet | Base or Celo |
+| PayPal Orders | USD | A signed-in human, from the obligation | On capture |
+| PayPal Payouts | USD | A signed-in human, from the seller desk | On payout confirmation |
+| PayPal escrow hold | USD | A signed-in human, from the Trust page | On release, after verified proof |
 
-Every route on this page is a **session-cookie** route. A machine key cannot start a payment, capture one or send a payout. An agent that needs to move money has to do it through its execution connector, under the ceiling you gave it.
+Every route on this page is a **session-cookie** route. A machine key cannot start a payment, capture one, place a hold or send a payout. An agent that needs to move money has to do it through its execution connector, under the ceiling you gave it.
 
 ## Paying an obligation with PayPal
 
@@ -27,6 +27,20 @@ curl -X POST "$REMINDIFY_URL/api/payments/paypal/orders" \
 Limits are deliberate: USD only, at most $10,000 per payment. A non-USD obligation returns `currency_unsupported`, and an amount of zero returns `nothing_to_pay`. Starting a new order supersedes any earlier uncaptured order for the same obligation, so a double click cannot leave two payable orders behind.
 
 Capture is idempotent. Replaying the same `order_id` returns `200` with `already_captured: true` instead of charging again.
+
+## Escrow as an authorization hold
+
+Escrow does not move money when it opens. The payer approves a hold for up to 29 days (`HOLD_DAYS=29`), and the capture happens only on release, after the proof auditor has verified a receipt for the same obligation.
+
+1. `POST /api/trust/escrows` with `{ obligation_id, provider_id, amount, payee_paypal_email }`. The escrow starts as `draft` and records the fee split. A missing payee email returns `payee_required`.
+2. `POST /api/trust/escrows/:id/hold` creates a PayPal Orders v2 order with `intent=AUTHORIZE` and returns an `approve_url`. The escrow becomes `hold_pending`.
+3. The payer approves in PayPal, which returns to `GET /api/trust/escrows/paypal/return?token=<order>`. The server authorizes the order and records the authorization id and expiry. The escrow becomes `authorized`; nothing has moved yet.
+4. `POST /api/trust/escrows/:id/release` with `{ "proof_receipt_id": "rcpt_..." }`. If the receipt is not already verified, the auditor runs first. On a verified receipt the server captures the authorization (`POST /v2/payments/authorizations/{id}/capture`) and sends a PayPal Payout to the payee email.
+5. `POST /api/trust/escrows/:id/void` releases an outstanding hold back to the payer. An escrow that was already captured cannot be voided; retry the payout instead.
+
+The platform fee is deducted from the captured amount at release. With the default `PAYPAL_PLATFORM_FEE_PERCENT=10`, a $120 escrow captures $120, keeps $12 and pays the provider $108. The provider receives the net; there is no token and no custody.
+
+If the capture succeeds but the payout fails, the escrow is parked as `captured_awaiting_payout` and the release returns `payout_failed`. It is not reported as settled, and the payout can be retried. A proof the auditor rejects returns `proof_rejected` and leaves the hold in place.
 
 ## Sending a seller payout
 
@@ -63,16 +77,18 @@ Delivery is at-least-once, so handlers update by order id or batch id rather tha
 }
 ```
 
-A payment row is one of `created`, `captured`, `failed` or `superseded`. `state.payments` inside `GET /api/state` carries the same rows for the signed-in app.
+A payment row is one of `created`, `captured`, `failed` or `superseded`. `state.payments` inside `GET /api/state` carries the same rows for the signed-in app. Escrow holds and releases are on the Trust page and in `GET /api/trust`.
 
 ## When to use which
 
-- **PayPal** when the payee wants fiat and nothing needs to be verifiable by a third party beyond Remindify's own event log.
-- **USDC escrow** when the release condition itself has to be checkable — an outsider can verify the receipt signature and the anchor transaction. See [Proof and escrow](/docs/concepts/proof-and-escrow) and [Wallets and signing](/docs/guides/wallets).
+- **PayPal Orders** when the obligation should settle now and the proof is filed alongside the capture.
+- **PayPal escrow** when the release condition has to be checked first: the payer authorizes a hold, the auditor verifies the receipt, and only then is the provider paid. See [Proof and escrow](/docs/concepts/proof-and-escrow).
+- **PayPal Payouts** when a seller has cleared earnings and asks to be paid out.
 
 ## What this does not do
 
-- No card checkout, subscriptions or stored payment methods. PayPal is the only connected payment provider.
+- No card checkout, subscriptions or stored payment methods. PayPal is the only payment provider.
 - No refunds or disputes from inside Remindify. A failed or reversed capture is recorded; resolving it is a manual process.
 - No multi-currency. Amounts are USD.
 - No machine-key access. Payments are human actions, on purpose.
+- No token. Settlement starts and ends inside PayPal.

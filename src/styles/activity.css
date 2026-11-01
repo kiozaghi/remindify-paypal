@@ -155,3 +155,14 @@
 .security-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .security-foot span { font-family: var(--mono); font-size: 7px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); }
 .security-foot strong { font-size: 9px; font-weight: 500; text-align: right; }
+
+.apimatic-badge {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 12px;
+  padding: 5px 10px 5px 8px; border-radius: 20px;
+  border: 1px solid rgba(209, 240, 106, 0.28);
+  background: rgba(209, 240, 106, 0.08);
+  font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--lime); text-decoration: none;
+}
+.apimatic-badge svg { color: var(--lime); }
+.apimatic-badge:hover { background: rgba(209, 240, 106, 0.16); border-color: rgba(209, 240, 106, 0.5); }

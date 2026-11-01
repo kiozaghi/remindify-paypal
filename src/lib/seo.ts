@@ -28,28 +28,28 @@ export const PAGE_META: Record<Route, PageMeta> = {
     label: "Home",
     title: "Remindify — the register for everything that comes back",
     description:
-      "One calm register for both kinds of weight: the people you love and the money you can't lose. Renewals, filings, school terms and birthdays — with agents and humans who actually do the work, community calendar packs, and proof when it matters.",
+      "The governance, risk and proof-gated escrow layer for PayPal agentic commerce. Vendor renewals, compliance filings, contractor deliverables and invoice collections — with spending ceilings, human sign-off, and proof before money moves.",
     index: true,
   },
   pricing: {
     label: "Pricing",
     title: "Pricing — Remindify",
     description:
-      "Start free while Remindify is in preview. Personal, Studio and Operator plans for recurring obligations, agent passports, proof receipts and optional USDC escrow.",
+      "Start free while Remindify is in preview. Solo, Studio and Operator plans for recurring obligations, agent passports, proof receipts and PayPal escrow.",
     index: true,
   },
   security: {
     label: "Security & trust",
     title: "Security & trust — Remindify",
     description:
-      "How Remindify handles accounts, proof receipts, EIP-712 signatures, optional Base and Celo anchoring, and non-custodial USDC escrow.",
+      "How Remindify handles accounts, HMAC-signed proof receipts, the AI proof auditor and PayPal authorization-hold escrow.",
     index: true,
   },
   about: {
     label: "About",
     title: "About — Remindify",
     description:
-      "Why we built Remindify: the people side and the money side of the same life, carried by one person. A calm register built in Addis Ababa, for everywhere.",
+      "Why we built Remindify: the unanswered email, the unsigned invoice and the filing nobody owned all landed on one operator. A governed register for recurring business work, built in Addis Ababa, for everywhere.",
     index: true,
   },
   privacy: {
@@ -63,7 +63,7 @@ export const PAGE_META: Record<Route, PageMeta> = {
     label: "Terms",
     title: "Terms — Remindify",
     description:
-      "The rules for using the Remindify preview, including accounts, content, wallets and onchain transactions.",
+      "The rules for using the Remindify preview, including accounts, content and PayPal payments.",
     index: true,
   },
   docs: {
@@ -82,7 +82,7 @@ export const PAGE_META: Record<Route, PageMeta> = {
   signup: {
     label: "Create account",
     title: "Create your register — Remindify",
-    description: "Create a Remindify account with email, Google or a wallet.",
+    description: "Create a Remindify account with email or Google.",
     index: false,
   },
   today: { label: "Today", title: "Today — Remindify", description: APP_DESCRIPTION, index: false },
@@ -119,7 +119,7 @@ export function structuredData(page: Route, origin = SITE_ORIGIN, slug?: string)
       logo: `${base}/icon-512.png`,
       email: "liyusoftwaresolution@gmail.com",
       description:
-        "Remindify is the calm register for both sides of a life: the people you love and the money you can't lose.",
+        "Remindify is the calm register for both sides of the operation: the vendors who do the work and the money you can't lose.",
       foundingLocation: { "@type": "Place", name: "Addis Ababa, Ethiopia" },
     },
     {
@@ -129,7 +129,7 @@ export function structuredData(page: Route, origin = SITE_ORIGIN, slug?: string)
       name: "Remindify",
       alternateName: "Remindify OS",
       description:
-        "The register for everything that comes back — people and money, owners and agents, community packs and proof.",
+        "The register for everything that comes back — vendor renewals, filings, contractor handoffs and invoices, with owners, agents, packs and proof.",
       inLanguage: "en",
       publisher: { "@id": organizationId },
     },
@@ -141,18 +141,18 @@ export function structuredData(page: Route, origin = SITE_ORIGIN, slug?: string)
       operatingSystem: "Web",
       url: base,
       description:
-        "A register for both sides of a life — people and money — with owners, backups, risk scoring, agent passports, proof receipts, community packs and optional USDC escrow.",
+        "A register for both sides of the operation — vendors and compliance — with owners, backups, risk scoring, agent passports, proof receipts, community packs and PayPal escrow.",
       featureList: [
-        "Recurring obligation register for people and money",
-        "Life and money lenses on one register",
-        "Community calendar packs",
+        "Recurring obligation register for vendors, filings and invoices",
+        "Duty and money lenses on one register",
+        "Community packs for vendor, contractor and compliance work",
         "Human and agent owners with scopes",
         "Do it yourself, delegate to your agent, or hire the community",
         "Risk scoring and approvals",
-        "Deterministic capture from text and text-based PDFs",
-        "EIP-712 proof receipts",
-        "Optional Base and Celo anchoring",
-        "Non-custodial USDC escrow",
+        "AI-first capture with a deterministic fallback",
+        "HMAC-SHA256 proof receipts",
+        "Multimodal AI proof auditor with a confidence threshold",
+        "PayPal authorization-hold escrow",
         "Machine API and MCP access",
       ],
       offers: PLANS.map((plan) => ({

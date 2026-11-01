@@ -42,7 +42,6 @@ db.exec(`
     password_salt TEXT,
     google_sub TEXT UNIQUE,
     avatar_url TEXT,
-    wallet_address TEXT UNIQUE,
     email_verified_at TEXT,
     created_at TEXT NOT NULL,
     last_login_at TEXT,
@@ -156,6 +155,7 @@ export function loadAll() {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
     receipts: [], escrows: [], outbox: [],
     seller_profile: [], bookings: [], seller_receipts: [], earnings: [], payouts: [], payments: [],
+    invoices: [],
   };
   for (const row of rows) {
     const item = JSON.parse(row.data);
@@ -209,7 +209,7 @@ export function findKeyBySecret(secret) {
 
 const USER_COLUMNS = [
   "id", "email", "name", "password_hash", "password_salt", "google_sub",
-  "avatar_url", "wallet_address", "email_verified_at", "created_at", "last_login_at", "workspace_id",
+  "avatar_url", "email_verified_at", "created_at", "last_login_at", "workspace_id",
 ].join(", ");
 
 export function getUser(id) {
@@ -224,15 +224,11 @@ export function findUserByGoogleSub(sub) {
   return db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE google_sub = ?`).get(String(sub)) || null;
 }
 
-export function findUserByWallet(address) {
-  return db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE lower(wallet_address) = lower(?)`).get(String(address)) || null;
-}
-
 export function createUser(user) {
   const workspaceId = user.workspace_id || `ws_${randomBytes(8).toString("hex")}`;
   db.prepare(`
-    INSERT INTO users (id, email, name, password_hash, password_salt, google_sub, avatar_url, wallet_address, created_at, last_login_at, workspace_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, email, name, password_hash, password_salt, google_sub, avatar_url, created_at, last_login_at, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     user.id,
     user.email || null,
@@ -241,7 +237,6 @@ export function createUser(user) {
     user.password_salt || null,
     user.google_sub || null,
     user.avatar_url || null,
-    user.wallet_address || null,
     user.created_at,
     user.last_login_at || null,
     workspaceId,
@@ -388,7 +383,7 @@ export function seedDatabase(force = false) {
   }
   for (const kind of [
     "obligations", "agents", "approvals", "runs", "providers", "events", "keys", "receipts", "escrows",
-    "seller_profile", "bookings", "seller_receipts", "earnings", "payouts", "payments",
+    "seller_profile", "bookings", "seller_receipts", "earnings", "payouts", "payments", "invoices",
   ]) {
     insertMany(kind, seed[kind] || [], workspaceId);
   }

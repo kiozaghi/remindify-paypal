@@ -7,6 +7,7 @@ Single-file HTML, 15 slides at 1600×900 (16:9). No build step, no dependencies 
 - `deck.html` — the source. Edit copy directly in the markup.
 - `remindify-deck.pdf` — rendered export (15 pages, one slide per page). Re-render after every edit.
 - `speaker-notes.md` — per-slide script, timings, Q&A prep, delivery notes.
+- `demo-script.md` — the 3:00 product-video shot list, pre-flight staging and fallbacks.
 
 ## Preview one slide
 
@@ -31,6 +32,6 @@ node -e "const b=require('fs').readFileSync('deck/remindify-deck.pdf','latin1');
 ## Rules of the deck
 
 - Every number is real and checkable. No mainnet, audit or user claims.
-- Contracts are Base **Sepolia**; say so on the slide and out loud.
-- Pricing matches the live site: Personal $0, Studio $18/mo, Operator $48/mo, 15% marketplace take.
+- PayPal runs in the **sandbox**; say so on the slide and out loud.
+- Pricing matches the live site: Solo $0, Studio $18/mo, Operator $48/mo, 10% application fee on captured escrow.
 - Keep the light/dark rhythm: light for product and market, dark for trust, agents and the ask.

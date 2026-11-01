@@ -25,10 +25,12 @@ export function newExecutorSecret() {
   return `rfy_exec_${randomBytes(24).toString("hex")}`;
 }
 
-// Seeded agents point at the app's own sandbox endpoint. Relative targets are
-// resolved against this deployment so the same seed works locally and on
-// Vercel without knowing the host in advance.
-export const DEMO_EXECUTOR_PATH = "/api/demo/executor";
+// Seeded agents point at the app's own internal execution router. Relative
+// targets are resolved against this deployment so the same seed works locally
+// and on Vercel without knowing the host in advance.
+export const DEMO_EXECUTOR_PATH = "/api/internal/agent-executor";
+// Workspaces seeded before the rename still carry the old path.
+export const LEGACY_EXECUTOR_PATH = "/api/demo/executor";
 
 function deploymentOrigin() {
   const configured = process.env.PUBLIC_ORIGIN

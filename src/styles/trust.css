@@ -261,9 +261,6 @@
   background: var(--bone-2);
   color: var(--muted);
 }
-.receipt-icon.status-prepared { background: var(--amber-soft); color: #8f5e0c; }
-.receipt-icon.status-signed { background: var(--blue-soft); color: #2852b8; }
-.receipt-icon.status-anchored { background: var(--teal-soft); color: #086b52; }
 .receipt-main { flex: 1; min-width: 0; }
 .receipt-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .receipt-title strong { font-size: 11.5px; letter-spacing: -0.01em; }
@@ -324,9 +321,7 @@
   background: var(--bone-2);
   color: var(--muted);
 }
-.trust-status.prepared, .trust-status.committed { background: var(--amber-soft); color: #8f5e0c; }
-.trust-status.signed, .trust-status.funded { background: var(--blue-soft); color: #2852b8; }
-.trust-status.anchored, .trust-status.released { background: var(--teal-soft); color: #086b52; }
+.trust-status.released { background: var(--teal-soft); color: #086b52; }
 .trust-status.draft { background: var(--bone-2); color: var(--muted); }
 .trust-status.captured, .trust-status.paid { background: var(--teal-soft); color: #086b52; }
 .trust-status.processing, .trust-status.created { background: var(--amber-soft); color: #8f5e0c; }
@@ -365,8 +360,7 @@
   color: var(--muted);
 }
 .escrow-icon.status-draft { background: var(--bone-2); color: var(--muted); }
-.escrow-icon.status-committed { background: var(--amber-soft); color: #8f5e0c; }
-.escrow-icon.status-funded { background: var(--blue-soft); color: #2852b8; }
+.escrow-icon.status-committed { background: var(--amber-soft); color: #8f5e0c; }.escrow-icon.status-funded { background: var(--blue-soft); color: #2852b8; }
 .escrow-icon.status-released { background: var(--teal-soft); color: #086b52; }
 .escrow-main { flex: 1; min-width: 0; }
 .escrow-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -527,10 +521,6 @@
   font-size: 7.5px;
   line-height: 1.5;
 }
-.trust-anchor-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
-.trust-anchor-head strong { display: block; font-size: 12px; }
-.trust-anchor-head p { margin-top: 3px; font-size: 9.5px; line-height: 1.45; color: var(--muted); }
-.trust-anchor-actions { display: flex; gap: 7px; margin-bottom: 11px; flex-wrap: wrap; }
 .trust-release-proof {
   display: flex;
   align-items: center;
@@ -568,4 +558,36 @@
   .receipt-actions, .escrow-actions { width: 100%; padding-left: 40px; }
   .trust-form-row, .trust-sign-summary { grid-template-columns: 1fr; }
   .trust-filter-row { align-items: flex-start; flex-direction: column; gap: 6px; }
+}
+
+/* Proof-auditor statuses */
+.receipt-icon.status-filed, .trust-status.filed { background: var(--amber-soft); color: #8f5e0c; }
+.receipt-icon.status-verified, .trust-status.verified { background: var(--blue-soft); color: #2852b8; }
+.receipt-icon.status-rejected, .trust-status.rejected { background: var(--coral-soft); color: #b23a22; }
+.receipt-icon.status-settled, .trust-status.settled { background: var(--teal-soft); color: #086b52; }
+.escrow-icon.status-hold_pending, .trust-status.hold_pending { background: var(--amber-soft); color: #8f5e0c; }
+.escrow-icon.status-authorized, .trust-status.authorized { background: var(--blue-soft); color: #2852b8; }
+.escrow-icon.status-captured_awaiting_payout, .trust-status.captured_awaiting_payout { background: var(--coral-soft); color: #b23a22; }
+.escrow-icon.status-voided, .trust-status.voided { background: var(--bone-2); color: var(--muted); }
+.escrow-track span.draft { width: 12%; }
+.escrow-track span.hold_pending { width: 34%; background: var(--amber); }
+.escrow-track span.authorized { width: 58%; background: var(--blue); }
+.escrow-track span.captured_awaiting_payout { width: 78%; background: var(--coral); }
+.escrow-track span.released { width: 100%; background: var(--teal); }
+.escrow-track span.voided { width: 100%; background: var(--bone-3, var(--bone-2)); }
+
+.proof-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.proof-upload span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

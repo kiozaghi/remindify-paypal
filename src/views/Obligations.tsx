@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "../components/Icon";
+import AgentStudioGrid from "../components/AgentStudioGrid";
 import { Monogram, CategoryTile, RiskMeter, RiskPill, EmptyState } from "../components/ui";
 import {
   CATEGORIES, AUTONOMY, LENSES, lensOf, money, dueLabel, recurrenceLabel, dateShort, BANDS,
@@ -16,6 +17,7 @@ export default function Obligations() {
   const [lens, setLens] = useState<LensFilter>("all");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"risk" | "due" | "title">("risk");
+  const [view, setView] = useState<"register" | "studio">("register");
 
   if (!state) return null;
 
@@ -73,7 +75,7 @@ export default function Obligations() {
         <div>
           <span className="eyebrow">The register</span>
           <h1>Obligations</h1>
-          <p>Everything that comes back — the people you love and the money you can’t lose. One owner, one backup, one proof trail.</p>
+          <p>Everything that comes back — vendor renewals, filings, contractor handoffs, invoices. One owner, one backup, one proof trail.</p>
         </div>
         <div className="view-head-actions">
           <button className="btn btn-ghost" onClick={() => setOverlays((o) => ({ ...o, templates: true }))}>
@@ -135,6 +137,14 @@ export default function Obligations() {
             </button>
           ))}
         </div>
+        <div className="view-switch" role="group" aria-label="Register view">
+          <button className={view === "register" ? "on" : ""} onClick={() => setView("register")}>
+            Register
+          </button>
+          <button className={view === "studio" ? "on" : ""} onClick={() => setView("studio")}>
+            Agent Studio <span>AG Grid</span>
+          </button>
+        </div>
         <label className="sort-select">
           <Icon name="filter" size={14} />
           <select value={sort} onChange={(e) => setSort(e.target.value as any)}>
@@ -150,7 +160,7 @@ export default function Obligations() {
           Everything <span>{live.length}</span>
         </button>
         <button className={`lens-chip life ${lens === "life" ? "on" : ""}`} onClick={() => chooseLens("life")}>
-          <Icon name="heart" size={13} /> {LENSES.life.label} <span>{lensCounts.life}</span>
+          <Icon name="shield" size={13} /> {LENSES.life.label} <span>{lensCounts.life}</span>
         </button>
         <button className={`lens-chip money ${lens === "money" ? "on" : ""}`} onClick={() => chooseLens("money")}>
           <Icon name="wallet" size={13} /> {LENSES.money.label} <span>{lensCounts.money}</span>
@@ -175,6 +185,16 @@ export default function Obligations() {
         ))}
       </div>
 
+      {view === "studio" ? (
+        <AgentStudioGrid
+          obligations={list}
+          agents={state.agents}
+          escrows={state.escrows}
+          nowMs={nowMs}
+          onOpen={openObligation}
+          onAutonomy={(id, autonomy) => actions.patchObligation(id, { autonomy })}
+        />
+      ) : (
       <div className="table-card">
         <div className="table-head">
           <span>Obligation</span>
@@ -273,6 +293,7 @@ export default function Obligations() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

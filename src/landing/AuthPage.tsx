@@ -9,7 +9,7 @@ import type { Navigate } from "./Chrome";
 import { SectionTag } from "./Chrome";
 
 const NOTICES: Record<string, string> = {
-  google_not_configured: "Google sign-in isn’t available on this build yet. Use email or a wallet instead.",
+  google_not_configured: "Google sign-in isn’t available on this build yet. Use email and password instead.",
   google_state: "That Google sign-in link expired. Please try again.",
   google_failed: "Google sign-in didn’t complete. Try again, or continue with email.",
   region_blocked: "Remindify isn’t available in your region.",
@@ -40,13 +40,13 @@ export default function AuthPage({
   verifyToken?: string | null;
   onNavigate: Navigate;
 }) {
-  const { config, user, login, signup, startGoogle, connectWallet, refresh } = useAuth();
+  const { config, user, login, signup, startGoogle, refresh } = useAuth();
   const [tab, setTab] = useState(mode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [busy, setBusy] = useState<"email" | "google" | "wallet" | "reset" | "verify" | null>(null);
+  const [busy, setBusy] = useState<"email" | "google" | "reset" | "verify" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [forgot, setForgot] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
@@ -150,18 +150,6 @@ export default function AuthPage({
     startGoogle();
   };
 
-  const useWallet = async () => {
-    setError(null);
-    setBusy("wallet");
-    try {
-      await connectWallet();
-      onNavigate(nextRoute(next));
-    } catch (err: any) {
-      setError(err?.message || "Wallet sign-in didn’t complete.");
-    } finally {
-      setBusy(null);
-    }
-  };
 
   return (
     <div className="landing auth-page">
@@ -203,12 +191,12 @@ export default function AuthPage({
             </div>
             <div className="auth-preview-item">
               <span className="auth-check" />
-              <div><strong>Mum’s birthday</strong><em>Backup: Mira</em></div>
+              <div><strong>Kestrel pen-test</strong><em>Vendor · $350 held</em></div>
               <span className="auth-due">6d</span>
             </div>
             <div className="auth-preview-foot">
-              <span><Icon name="shield" size={13} /> Offchain by default</span>
-              <span><Icon name="wallet" size={13} /> Wallet optional</span>
+              <span><Icon name="shield" size={13} /> Proof before money</span>
+              <span><Icon name="send" size={13} /> PayPal only</span>
             </div>
           </div>
 
@@ -216,7 +204,7 @@ export default function AuthPage({
             “The point isn’t to do more.<br /><em>It’s to carry less.”</em>
           </blockquote>
           <div className="auth-aside-foot">
-            <span>No token</span><i /><span>No custody</span><i /><span>Export always</span>
+            <span>PayPal only</span><i /><span>No custody</span><i /><span>Export always</span>
           </div>
         </aside>
 
@@ -396,7 +384,7 @@ export default function AuthPage({
                   <h2>{tab === "signup" ? "Start with one thing." : "Pick up where you left off."}</h2>
                   <p>
                     {tab === "signup"
-                      ? "No card during preview. No token. Use email, Google or a wallet."
+                      ? "No card during preview. Use email or Google."
                       : "Your obligations, agents and proof trail are exactly where you left them."}
                   </p>
                 </div>
@@ -411,13 +399,9 @@ export default function AuthPage({
                 </div>
 
                 <div className="auth-options">
-                  <button className="auth-option" onClick={useGoogle} disabled={busy !== null}>
+                  <button className="auth-option" style={{ gridColumn: "1 / -1" }} onClick={useGoogle} disabled={busy !== null}>
                     {busy === "google" ? <span className="spinner dark" /> : <GoogleGlyph />}
                     Continue with Google
-                  </button>
-                  <button className="auth-option" onClick={useWallet} disabled={busy !== null}>
-                    {busy === "wallet" ? <span className="spinner dark" /> : <Icon name="wallet" size={17} />}
-                    Continue with wallet
                   </button>
                 </div>
 
@@ -495,7 +479,7 @@ export default function AuthPage({
 
                 <div className="auth-panel-foot">
                   <span><i className="dot dot-teal" /> Preview build</span>
-                  <span>Email, Google and wallet are optional identities on the same account model.</span>
+                  <span>Email and Google are the only ways in.</span>
                 </div>
               </>
             )}

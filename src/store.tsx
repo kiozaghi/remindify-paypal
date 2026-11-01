@@ -16,6 +16,7 @@ type Overlays = {
   newObligation: boolean;
   templates: boolean;
   deleteAccount: boolean;
+  escrowFor: string | null;
 };
 
 type Ctx = {
@@ -234,45 +235,64 @@ function makeActions(
     createReceipt: (payload: any) =>
       run(async () => {
         const res = await api.createReceipt(payload);
-        toast("Proof receipt filed", "The EIP-712 payload is ready to sign or anchor.", "success");
+        toast("Proof receipt filed", "Signed by Remindify. Run the auditor to verify the evidence.", "success");
         return res;
       }),
-    signReceipt: (id: string, signature: string, signer: string) =>
+    auditReceipt: (id: string, artifact?: any) =>
       run(async () => {
-        const res = await api.signReceipt(id, signature, signer);
-        toast("Receipt signed", "The signature is verified against the EIP-712 digest.", "success");
-        return res;
-      }),
-    anchorReceipt: (id: string, tx_hash: string) =>
-      run(async () => {
-        const res = await api.anchorReceipt(id, tx_hash);
-        toast("Receipt anchored", `${res?.receipt?.network_label || "Chain"} now holds the proof hash.`, "success");
+        const res = await api.auditReceipt(id, artifact);
+        if (res?.verified) {
+          const pct = Math.round((res.audit?.confidence || 0) * 100);
+          toast("Proof verified", `${pct}% confidence · the hold can be captured.`, "success");
+        } else {
+          toast("Proof rejected", res?.audit?.discrepancies?.[0] || "The artifact doesn't match this obligation.", "warn");
+        }
         return res;
       }),
     createEscrow: (payload: any) =>
       run(async () => {
         const res = await api.createEscrow(payload);
-        toast("Escrow intent opened", "Commit it offchain or fund it when a contract is configured.", "success");
+        toast("Escrow opened", "Place the PayPal hold to reserve the payer's funds.", "success");
         return res;
       }),
-    commitEscrow: (id: string) =>
+    holdEscrow: (id: string) =>
       run(async () => {
-        const res = await api.commitEscrow(id);
-        toast("Escrow committed", "Release now requires a signed proof receipt.", "default");
+        const res = await api.holdEscrow(id);
+        toast("Hold requested", "Approve it on PayPal. The escrow flips to authorized when you return.", "default");
         return res;
       }),
-    fundEscrow: (id: string, tx_hash: string) =>
+    voidEscrow: (id: string) =>
       run(async () => {
-        const res = await api.fundEscrow(id, tx_hash);
-        toast("Escrow funded", "USDC funding recorded onchain.", "success");
+        const res = await api.voidEscrow(id);
+        toast("Hold released", "The payer's funds are back in their PayPal balance.", "default");
         return res;
       }),
-    releaseEscrow: (id: string, proof_receipt_id?: string | null, tx_hash?: string) =>
-      run(async () => {
-        const res = await api.releaseEscrow(id, proof_receipt_id, tx_hash);
-        toast("Escrow released", "A signed receipt satisfied the release condition.", "success");
+    releaseEscrow: async (id: string, payload: any = {}) => {
+      try {
+        const res = await api.releaseEscrow(id, payload);
+        if (res?.state) setState(res.state);
+        const net = res?.escrow?.net_payout;
+        toast(
+          "Escrow settled",
+          typeof net === "number"
+            ? `$${net.toFixed(2)} paid to ${res.escrow.payee_paypal_email} · fee $${Number(res.escrow.platform_fee).toFixed(2)}`
+            : "The hold was captured and the provider was paid.",
+          "success"
+        );
         return res;
-      }),
+      } catch (error: any) {
+        if (error.payload?.state) setState(error.payload.state);
+        if (error.code === "proof_rejected") {
+          const pct = Math.round((error.payload?.audit?.confidence || 0) * 100);
+          toast("Proof rejected", `${pct}% confidence · ${error.message}`, "warn");
+        } else if (error.code === "payout_failed") {
+          toast("Captured, payout failed", error.message, "warn");
+        } else {
+          toast("Escrow didn't settle", error.message, "warn");
+        }
+        return error.payload ?? null;
+      }
+    },
     payWithPaypal: (id: string) =>
       run(async () => {
         const res = await api.paypalOrder(id);
@@ -285,6 +305,43 @@ function makeActions(
         window.location.assign(res.approve_url);
         return res;
       }),
+    sendInvoice: async (obligationId: string, payerEmail?: string) => {
+      try {
+        const res = await api.sendInvoice({
+          obligation_id: obligationId,
+          payer_paypal_email: payerEmail,
+        });
+        if (res?.state) setState(res.state);
+        toast(
+          "Invoice sent",
+          `$${Number(res.invoice.amount).toFixed(2)} billed to ${res.invoice.payer_paypal_email} · ${res.invoice.paypal_invoice_id}`,
+          "success"
+        );
+        return res;
+      } catch (error: any) {
+        if (error.payload?.state) setState(error.payload.state);
+        if (error.code === "payer_required") {
+          toast("Payer email needed", "Add the client's PayPal email to the obligation first.", "warn");
+        } else if (error.code === "paypal_not_configured") {
+          toast("PayPal isn't connected", "Add PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET, then try again.", "warn");
+        } else {
+          toast("Invoice not sent", error.message, "warn");
+        }
+        return error.payload ?? null;
+      }
+    },
+    remindInvoice: async (invoiceId: string) => {
+      try {
+        const res = await api.remindInvoice(invoiceId);
+        if (res?.state) setState(res.state);
+        toast("Reminder sent", `PayPal will nudge ${res.invoice.payer_paypal_email}.`, "default");
+        return res;
+      } catch (error: any) {
+        if (error.payload?.state) setState(error.payload.state);
+        toast("Reminder not sent", error.message, "warn");
+        return error.payload ?? null;
+      }
+    },
     capturePaypal: (orderId: string) =>
       run(async () => {
         const res = await api.paypalCapture(orderId);
@@ -374,6 +431,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     newObligation: false,
     templates: false,
     deleteAccount: false,
+    escrowFor: null,
   });
   const toastId = useRef(0);
 

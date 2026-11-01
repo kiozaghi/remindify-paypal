@@ -1,82 +1,138 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../store";
 import { api } from "../lib/api";
 import { Icon } from "../components/Icon";
 import { EmptyState, Field, Modal, Pill, Segmented } from "../components/ui";
 import { moneyExact, timeAgo } from "../lib/format";
-import type { Escrow, ProofReceipt, TrustNetwork } from "../types";
+import { extractPdfText } from "../lib/pdfText";
+import type { Escrow, Obligation, ProofReceipt } from "../types";
 
-const shortAddr = (value?: string | null) =>
-  value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "";
+const shortHash = (value?: string | null, head = 10, tail = 6) =>
+  value ? `${value.slice(0, head)}…${value.slice(-tail)}` : "";
 
-const shortHash = (value?: string | null) =>
-  value ? `${value.slice(0, 10)}…${value.slice(-6)}` : "";
+const receiptStatusLabel: Record<string, string> = {
+  filed: "Filed",
+  verified: "Verified",
+  rejected: "Rejected",
+  settled: "Settled",
+};
 
-const shortContract = (value?: string | null) =>
-  value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "—";
-
-const roleLabel = (role: string) =>
-  role === "primary" ? "Primary" : role === "grant-pilot" ? "Grant pilot" : "Testnet";
-
-const statusLabel: Record<string, string> = {
-  prepared: "Prepared",
-  signed: "Signed",
-  anchored: "Anchored",
+const escrowStatusLabel: Record<string, string> = {
   draft: "Draft",
-  committed: "Committed",
-  funded: "Funded",
+  hold_pending: "Hold pending",
+  authorized: "Authorized",
+  captured_awaiting_payout: "Captured · payout failed",
   released: "Released",
+  voided: "Voided",
 };
 
-const statusTone: Record<string, string> = {
-  prepared: "amber",
-  signed: "blue",
-  anchored: "teal",
-  draft: "ink",
-  committed: "amber",
-  funded: "blue",
-  released: "teal",
-};
+const receiptIcon = (status: string) =>
+  status === "settled"
+    ? "checkCircle"
+    : status === "verified"
+      ? "shield"
+      : status === "rejected"
+        ? "x"
+        : "receipt";
 
 type ReceiptDraft = {
   obligation_id: string;
-  chain: string;
   proof: string;
-  note: string;
+  evidence: string;
+  data?: string;
+  mime?: string;
+};
+
+const MAX_INLINE_CHARS = 850_000;
+
+const toBase64 = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+};
+
+// Screenshots go to the auditor as images, so shrink them until the request
+// fits inside the server's body limit instead of rejecting the upload.
+const encodeImage = async (file: File) => {
+  if (file.size > 12_000_000) return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1400 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    let url = canvas.toDataURL("image/jpeg", 0.82);
+    if (url.length > MAX_INLINE_CHARS) url = canvas.toDataURL("image/jpeg", 0.6);
+    if (url.length > MAX_INLINE_CHARS) return null;
+    return { data: url.split(",")[1] || "", mime: "image/jpeg" };
+  } catch {
+    return null;
+  }
 };
 
 type EscrowDraft = {
   obligation_id: string;
   provider_id: string;
+  payee: string;
   amount: string;
-  chain: string;
   note: string;
-  acknowledged: boolean;
 };
 
 export default function Trust() {
-  const { state, actions, toast, nowMs } = useApp();
+  const { state, actions, toast, nowMs, refresh, overlays, setOverlays } = useApp();
   const [receiptFilter, setReceiptFilter] = useState("all");
   const [receiptModal, setReceiptModal] = useState(false);
   const [escrowModal, setEscrowModal] = useState(false);
-  const [signing, setSigning] = useState<ProofReceipt | null>(null);
-  const [anchoring, setAnchoring] = useState<ProofReceipt | null>(null);
+  const [auditing, setAuditing] = useState<ProofReceipt | null>(null);
+  const [inspecting, setInspecting] = useState<ProofReceipt | null>(null);
   const [releasing, setReleasing] = useState<Escrow | null>(null);
+  const [voiding, setVoiding] = useState<Escrow | null>(null);
   const [busy, setBusy] = useState("");
-  const [sentTx, setSentTx] = useState("");
+  const [auditText, setAuditText] = useState("");
+  const [releaseArtifact, setReleaseArtifact] = useState("");
+  const [releaseReceiptId, setReleaseReceiptId] = useState("");
+  const [signatureCheck, setSignatureCheck] = useState<"" | "valid" | "invalid">("");
+  const [readingProof, setReadingProof] = useState(false);
+  const proofFileRef = useRef<HTMLInputElement>(null);
 
-  const receipts = state?.receipts || [];
-  const escrows = state?.escrows || [];
-  const networks = state?.trust?.networks || [];
-  const payments = useMemo(
-    () => [...(state?.payments || [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    [state?.payments]
-  );
+  const rail = state?.trust?.rail;
   const stats = state?.trust?.stats;
   const guardrails = state?.trust?.guardrails;
+  const feePercent = rail?.fee_percent ?? 10;
 
+  const receipts = useMemo(
+    () =>
+      [...(state?.receipts || [])].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    [state?.receipts]
+  );
+  const escrows = useMemo(
+    () =>
+      [...(state?.escrows || [])].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    [state?.escrows]
+  );
+  const payments = useMemo(
+    () =>
+      [...(state?.payments || [])].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    [state?.payments]
+  );
   const obligations = useMemo(
-    () => [...(state?.obligations || [])].sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime()),
+    () =>
+      [...(state?.obligations || [])].sort(
+        (a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime()
+      ),
     [state?.obligations]
   );
   const escrowCandidates = useMemo(
@@ -94,30 +150,34 @@ export default function Trust() {
     [receipts, receiptFilter]
   );
 
-  const latestSignedByObligation = useMemo(() => {
-    const map: Record<string, ProofReceipt> = {};
-    for (const receipt of receipts) {
-      if (!["signed", "anchored"].includes(receipt.status)) continue;
-      if (!map[receipt.obligation_id]) map[receipt.obligation_id] = receipt;
-    }
-    return map;
-  }, [receipts]);
-
   const [receiptDraft, setReceiptDraft] = useState<ReceiptDraft>({
     obligation_id: "",
-    chain: "base",
     proof: "",
-    note: "",
+    evidence: "",
   });
 
   const [escrowDraft, setEscrowDraft] = useState<EscrowDraft>({
     obligation_id: "",
     provider_id: "",
+    payee: "",
     amount: "",
-    chain: "base",
     note: "",
-    acknowledged: false,
   });
+
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("escrow");
+    if (!result) return;
+    if (result === "authorized") {
+      toast("Hold authorized", "The payer approved. Release once a verified proof is on file.", "success");
+    } else if (result === "cancelled") {
+      toast("Hold cancelled", "Nothing was reserved.", "default");
+    } else {
+      toast("Hold didn't complete", result.replace(/_/g, " "), "warn");
+    }
+    window.history.replaceState({}, "", "/trust");
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const copy = async (value: string, label: string) => {
     try {
@@ -128,13 +188,18 @@ export default function Trust() {
     }
   };
 
+  const splitOf = (amount: number, percent: number) => {
+    const cents = Math.round(Number(amount || 0) * 100);
+    const fee = Math.round((cents * percent) / 100);
+    return { gross: cents / 100, fee: fee / 100, net: (cents - fee) / 100 };
+  };
+
   const openReceiptModal = () => {
     const first = obligations.find((o) => o.last_proof) || obligations[0];
     setReceiptDraft({
       obligation_id: first?.id || "",
-      chain: "base",
       proof: first?.last_proof || first?.proof_required || "",
-      note: "",
+      evidence: "",
     });
     setReceiptModal(true);
   };
@@ -148,28 +213,39 @@ export default function Trust() {
     }));
   };
 
-  const openEscrowModal = () => {
-    const first = escrowCandidates[0];
-    const provider = state?.providers.find((p) => p.id === first?.marketplace?.provider_id);
+  const providerFor = (ob: Obligation | undefined) =>
+    state?.providers.find((p) => p.id === ob?.marketplace?.provider_id)
+    || state?.providers.find((p) => p.name.toLowerCase() === String(ob?.provider || "").toLowerCase());
+
+  const openEscrowModal = (obligationId?: string) => {
+    const first = (obligationId && obligations.find((o) => o.id === obligationId)) || escrowCandidates[0];
+    const provider = providerFor(first);
     setEscrowDraft({
       obligation_id: first?.id || "",
       provider_id: provider?.id || "",
-      amount: String(provider?.price || first?.amount || ""),
-      chain: "base",
+      payee: provider?.paypal_email || first?.payee_paypal_email || first?.marketplace?.payee_paypal_email || "",
+      amount: String(first?.amount || provider?.price || ""),
       note: "",
-      acknowledged: false,
     });
     setEscrowModal(true);
   };
 
+  useEffect(() => {
+    if (!overlays.escrowFor) return;
+    openEscrowModal(overlays.escrowFor);
+    setOverlays((o) => ({ ...o, escrowFor: null }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlays.escrowFor]);
+
   const selectEscrowObligation = (id: string) => {
     const ob = obligations.find((o) => o.id === id);
-    const provider = state?.providers.find((p) => p.id === ob?.marketplace?.provider_id);
+    const provider = providerFor(ob);
     setEscrowDraft((draft) => ({
       ...draft,
       obligation_id: id,
       provider_id: provider?.id || draft.provider_id,
-      amount: String(provider?.price || ob?.amount || draft.amount || ""),
+      payee: provider?.paypal_email || ob?.payee_paypal_email || ob?.marketplace?.payee_paypal_email || draft.payee,
+      amount: String(ob?.amount || provider?.price || draft.amount || ""),
     }));
   };
 
@@ -178,182 +254,276 @@ export default function Trust() {
     setEscrowDraft((draft) => ({
       ...draft,
       provider_id: id,
+      payee: provider?.paypal_email || draft.payee,
       amount: provider ? String(provider.price) : draft.amount,
     }));
   };
 
-  const selectedReceiptNetwork = networks.find((n) => n.key === receiptDraft.chain);
-  const selectedEscrowNetwork = networks.find((n) => n.key === escrowDraft.chain);
-  const isCeloEscrow = escrowDraft.chain.startsWith("celo");
+  const readProofFile = async (file: File) => {
+    setReadingProof(true);
+    try {
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const isImage = file.type.startsWith("image/");
+
+      if (!isPdf && !isImage) {
+        const text = await file.text();
+        if (!text.trim()) {
+          toast("Nothing readable in that file", "The file is empty.", "warn");
+          return;
+        }
+        setReceiptDraft((draft) => ({ ...draft, proof: file.name, evidence: text, data: undefined, mime: undefined }));
+        toast("Proof attached", `${file.name} was read on this device.`, "success");
+        return;
+      }
+
+      if (isPdf) {
+        let text = "";
+        try {
+          text = (await extractPdfText(file)).text;
+        } catch {
+          text = "";
+        }
+        if (text.trim()) {
+          setReceiptDraft((draft) => ({ ...draft, proof: file.name, evidence: text, data: undefined, mime: undefined }));
+          toast("Proof attached", `${file.name} was read on this device.`, "success");
+          return;
+        }
+      }
+
+      // A photo or a scan has no text layer: hand the file itself to the auditor.
+      const encoded = isPdf
+        ? file.size <= 650_000
+          ? { data: toBase64(await file.arrayBuffer()), mime: "application/pdf" }
+          : null
+        : await encodeImage(file);
+      if (!encoded) {
+        toast(
+          "That file is too large to audit",
+          isPdf ? "Use a PDF under 650 KB." : "Use a PNG or JPEG under 12 MB.",
+          "warn"
+        );
+        return;
+      }
+      setReceiptDraft((draft) => ({ ...draft, proof: file.name, evidence: "", data: encoded.data, mime: encoded.mime }));
+      toast("Proof attached", `${file.name} goes to the AI auditor as a document.`, "success");
+    } catch {
+      toast("Could not read that file", "Try a PNG or JPEG screenshot, or paste the evidence.", "warn");
+    } finally {
+      setReadingProof(false);
+    }
+  };
 
   const submitReceipt = async () => {
     if (!receiptDraft.obligation_id) return;
     setBusy("receipt");
+    const evidence = receiptDraft.evidence.trim();
+    const artifact =
+      evidence || receiptDraft.data
+        ? {
+            name: receiptDraft.proof || "proof note",
+            type: receiptDraft.data ? receiptDraft.mime || "application/octet-stream" : "text",
+            text: evidence,
+            ...(receiptDraft.data ? { data: receiptDraft.data, mime: receiptDraft.mime } : {}),
+          }
+        : undefined;
     const result = await actions.createReceipt({
       obligation_id: receiptDraft.obligation_id,
-      chain: receiptDraft.chain,
       proof: receiptDraft.proof,
-      note: receiptDraft.note,
+      artifact,
+      note: evidence,
     });
     setBusy("");
     if (result) {
       setReceiptModal(false);
       const receipt = (result as any).receipt as ProofReceipt | undefined;
-      if (receipt) setSigning(receipt);
+      if (receipt) {
+        setAuditText(evidence);
+        setAuditing(receipt);
+      }
     }
   };
 
   const submitEscrow = async () => {
-    if (!escrowDraft.obligation_id || !escrowDraft.acknowledged) return;
+    if (!escrowDraft.obligation_id || !escrowDraft.payee.trim()) return;
     setBusy("escrow");
     const result = await actions.createEscrow({
       obligation_id: escrowDraft.obligation_id,
       provider_id: escrowDraft.provider_id || undefined,
+      payee_paypal_email: escrowDraft.payee.trim(),
       amount: Number(escrowDraft.amount || 0),
-      chain: escrowDraft.chain,
       note: escrowDraft.note,
-      jurisdiction_ack: true,
     });
     setBusy("");
     if (result) setEscrowModal(false);
   };
 
-  const signWithWallet = async (receipt: ProofReceipt) => {
-    const ethereum = (window as any).ethereum;
-    if (!ethereum) {
-      toast("No EVM wallet detected", "Install a wallet, or copy the EIP-712 payload into your signer.", "warn");
-      return;
-    }
-    setBusy("sign");
-    try {
-      const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-      const from = accounts?.[0];
-      if (!from) throw new Error("No wallet account available.");
-      const signature = await ethereum.request({
-        method: "eth_signTypedData_v4",
-        params: [from, JSON.stringify(receipt.wallet_payload)],
-      });
-      const result = await actions.signReceipt(receipt.id, signature, from);
-      if (result) {
-        setSigning(null);
-      }
-    } catch (error: any) {
-      toast("Wallet didn't sign", error?.message || "The signature was cancelled.", "warn");
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const anchorWithWallet = async (receipt: ProofReceipt) => {
-    const ethereum = (window as any).ethereum;
-    if (!ethereum) {
-      toast("No EVM wallet detected", "Install a wallet, or paste a transaction hash from another signer.", "warn");
-      return;
-    }
-    setBusy("anchor");
-    try {
-      const info: any = await api.receiptCalldata(receipt.id);
-      if (!info?.to) throw new Error(info?.hint || "Attestation contract is not configured.");
-      const chainHex = `0x${receipt.chain_id.toString(16)}`;
-      try {
-        await ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
-      } catch {
-        /* wallet may already be on the right chain */
-      }
-      const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-      const from = accounts?.[0];
-      if (!from) throw new Error("No wallet account available.");
-      const txHash = await ethereum.request({
-        method: "eth_sendTransaction",
-        params: [{ from, to: info.to, data: info.data, value: "0x0" }],
-      });
-      setSentTx(txHash);
-      toast("Anchor transaction sent", "Waiting for the receipt. Verify once it confirms.", "agent");
-      await new Promise((resolve) => setTimeout(resolve, 2400));
-      const result = await actions.anchorReceipt(receipt.id, txHash);
-      if (result) setAnchoring(null);
-    } catch (error: any) {
-      toast("Couldn't anchor", error?.message || "The transaction was cancelled.", "warn");
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const verifyAnchor = async (receipt: ProofReceipt) => {
-    if (!sentTx.trim()) return;
-    setBusy("verify");
-    const result = await actions.anchorReceipt(receipt.id, sentTx.trim());
+  const submitAudit = async () => {
+    if (!auditing) return;
+    setBusy("audit");
+    const evidence = auditText.trim();
+    const result = await actions.auditReceipt(
+      auditing.id,
+      evidence ? { name: "evidence", type: "text", text: evidence } : undefined
+    );
     setBusy("");
-    if (result) setAnchoring(null);
+    if (result) {
+      setSignatureCheck("");
+      setInspecting((result as any).receipt || auditing);
+      setAuditing(null);
+    }
   };
 
-  const release = async (escrow: Escrow) => {
-    const receipt = latestSignedByObligation[escrow.obligation_id];
-    if (!receipt) {
-      toast("Proof required", "Sign a proof receipt for this obligation before releasing escrow.", "warn");
-      return;
-    }
+  const openRelease = (escrow: Escrow) => {
+    const latest = receipts.find((r) => r.obligation_id === escrow.obligation_id);
+    setReleaseReceiptId(latest?.id || "");
+    setReleaseArtifact("");
+    setReleasing(escrow);
+  };
+
+  const submitRelease = async () => {
+    if (!releasing) return;
     setBusy("release");
-    const result = await actions.releaseEscrow(escrow.id, receipt.id);
+    const evidence = releaseArtifact.trim();
+    const result = await actions.releaseEscrow(
+      releasing.id,
+      evidence
+        ? { artifact: { name: "release evidence", type: "text", text: evidence } }
+        : { proof_receipt_id: releaseReceiptId || undefined }
+    );
     setBusy("");
-    if (result) setReleasing(null);
+    if (result?.ok) setReleasing(null);
+  };
+
+  const submitVoid = async () => {
+    if (!voiding) return;
+    setBusy("void");
+    const result = await actions.voidEscrow(voiding.id);
+    setBusy("");
+    if (result) setVoiding(null);
+  };
+
+  const inspectReceipt = (receipt: ProofReceipt) => {
+    setSignatureCheck("");
+    setInspecting(receipt);
+  };
+
+  const checkSignature = async (receipt: ProofReceipt) => {
+    setBusy("verify");
+    try {
+      const res = await api.verifyReceipt(receipt.id);
+      setSignatureCheck(res.valid ? "valid" : "invalid");
+      toast(
+        res.valid ? "Signature valid" : "Signature mismatch",
+        res.valid
+          ? "The stored hash matches the HMAC Remindify signed."
+          : "The stored hash no longer matches its signature.",
+        res.valid ? "success" : "warn"
+      );
+    } catch (error: any) {
+      toast("Couldn't verify", error.message, "warn");
+    } finally {
+      setBusy("");
+    }
   };
 
   const copyEnv = () => {
     copy(
       [
-        "# Base mainnet",
-        "BASE_RPC_URL=https://mainnet.base.org",
-        "BASE_ATTESTATION_CONTRACT=",
-        "BASE_ESCROW_CONTRACT=",
+        "# PayPal (sandbox by default)",
+        "PAYPAL_CLIENT_ID=",
+        "PAYPAL_CLIENT_SECRET=",
+        "PAYPAL_ENV=sandbox",
+        "PAYPAL_PLATFORM_FEE_PERCENT=10",
         "",
-        "# Base Sepolia",
-        "BASE_SEPOLIA_RPC_URL=https://sepolia.base.org",
-        "BASE_SEPOLIA_ATTESTATION_CONTRACT=",
-        "BASE_SEPOLIA_ESCROW_CONTRACT=",
+        "# Proof auditor",
+        "GEMINI_API_KEY=",
+        "AI_MODEL_ID=gemini-2.5-flash",
+        "AUDIT_MIN_CONFIDENCE=0.8",
         "",
-        "# Celo mainnet",
-        "CELO_RPC_URL=https://forno.celo.org",
-        "CELO_ATTESTATION_CONTRACT=",
-        "CELO_ESCROW_CONTRACT=",
+        "# Public origin for PayPal return URLs",
+        "PUBLIC_ORIGIN=",
       ].join("\n"),
-      "Contract environment template"
+      "Environment template"
     );
   };
 
   if (!state) return null;
 
+  const draftSplit = splitOf(Number(escrowDraft.amount || 0), feePercent);
+
   return (
     <div className="trust-view">
       <section className="trust-hero">
         <div className="trust-hero-copy">
-          <span className="eyebrow light">Base first · Celo pilot · no token</span>
-          <h2>Proof that survives <em>the handoff.</em></h2>
+          <span className="eyebrow light">PayPal rail · sandbox-first · no token</span>
+          <h2>Proof before <em>the money moves.</em></h2>
           <p>
-            Every completion files an offchain receipt. Sign it when a provider needs to verify
-            without trusting Remindify. Anchor it only when a third party needs public finality.
+            Every completion files a receipt signed by Remindify. An AI auditor checks the evidence
+            against the obligation. Only a verified proof lets PayPal capture the hold and pay the
+            provider.
           </p>
           <div className="trust-hero-meta">
-            <span><Icon name="fingerprint" size={13} /> EIP-712 signed</span>
-            <span><Icon name="wallet" size={13} /> Wallet-optional</span>
-            <span><Icon name="shield" size={13} /> Hashed proof</span>
-            <span><Icon name="lock" size={13} /> Ethiopia offchain</span>
+            <span><Icon name="fingerprint" size={13} /> HMAC-signed receipts</span>
+            <span><Icon name="sparkle" size={13} /> AI proof auditor</span>
+            <span><Icon name="lock" size={13} /> No custody</span>
+            <span><Icon name="shield" size={13} /> PayPal holds the funds</span>
           </div>
         </div>
         <div className="trust-hero-stat">
-          <strong>{stats?.anchored ?? 0}</strong>
-          <span>anchored receipts</span>
-          <em>{stats?.signed ?? 0} signed · {stats?.prepared ?? 0} prepared</em>
+          <strong>{stats?.settled ?? 0}</strong>
+          <span>settled receipts</span>
+          <em>
+            {stats?.verified ?? 0} verified · {stats?.filed ?? 0} filed · {stats?.rejected ?? 0} rejected
+          </em>
           <div className="trust-hero-money">
-            {moneyExact(stats?.escrow_value || 0)} <span>open escrow</span>
+            {moneyExact(stats?.fees_collected || 0)} <span>platform fees</span>
           </div>
         </div>
       </section>
 
       <div className="trust-network-grid">
-        {networks.map((network) => (
-          <NetworkCard key={network.key} network={network} />
-        ))}
+        <RailCard
+          tone="blue"
+          label="PayPal"
+          role="Money rail"
+          pill={rail?.configured ? rail.mode : "not configured"}
+          tone2={rail?.configured ? "teal" : "amber"}
+          description="Authorization holds reserve the payer's funds without moving them. Capture and payouts settle inside PayPal."
+          facts={[
+            ["Mode", rail?.mode || "sandbox"],
+            ["Hold window", `${rail?.hold_days ?? 29} days`],
+            ["Platform fee", `${feePercent}%`],
+          ]}
+          guard="No card numbers touch Remindify."
+        />
+        <RailCard
+          tone="violet"
+          label="Gemini auditor"
+          role="Settlement gate"
+          pill={rail?.auditor_configured ? "live" : "deterministic"}
+          tone2={rail?.auditor_configured ? "teal" : "ink"}
+          description="Reads the artifact and scores it against the obligation amount, reference and date before any capture."
+          facts={[
+            ["Model", rail?.auditor || "gemini-2.5-flash"],
+            ["Threshold", `${rail?.threshold ?? 80}%`],
+            ["Fallback", "Offline rules"],
+          ]}
+          guard="A rejected artifact leaves the hold in place."
+        />
+        <RailCard
+          tone="teal"
+          label="Provider payout"
+          role="Settlement"
+          pill="net of fee"
+          tone2="ink"
+          description="On a verified proof the hold is captured, the fee is deducted and the balance goes to the provider's PayPal email."
+          facts={[
+            ["Split", `${100 - feePercent} / ${feePercent}`],
+            ["Recipient", "PayPal email"],
+            ["Trigger", "Verified proof"],
+          ]}
+          guard="Each payout keeps its PayPal batch id."
+        />
       </div>
 
       <div className="trust-layout">
@@ -364,7 +534,8 @@ export default function Trust() {
                 <span className="eyebrow">Proof receipts</span>
                 <h3>One hash per handoff</h3>
                 <p className="trust-panel-sub">
-                  The proof stays offchain. The receipt binds it to the obligation, the agent and the chain.
+                  The artifact stays with the receipt, hashed and signed by Remindify. The auditor
+                  reads it before PayPal moves a cent.
                 </p>
               </div>
               <button className="btn btn-sm btn-ink" onClick={openReceiptModal}>
@@ -378,13 +549,14 @@ export default function Trust() {
                 value={receiptFilter}
                 onChange={setReceiptFilter}
                 options={[
-                  { value: "all", label: `All ${receipts.length}` },
-                  { value: "prepared", label: `Prepared ${stats?.prepared ?? 0}` },
-                  { value: "signed", label: `Signed ${stats?.signed ?? 0}` },
-                  { value: "anchored", label: `Anchored ${stats?.anchored ?? 0}` },
+                  { value: "all", label: `All ${stats?.receipts ?? receipts.length}` },
+                  { value: "filed", label: `Filed ${stats?.filed ?? 0}` },
+                  { value: "verified", label: `Verified ${stats?.verified ?? 0}` },
+                  { value: "rejected", label: `Rejected ${stats?.rejected ?? 0}` },
+                  { value: "settled", label: `Settled ${stats?.settled ?? 0}` },
                 ]}
               />
-              <span className="trust-filter-note">Wallet only appears at signing or anchoring.</span>
+              <span className="trust-filter-note">The auditor runs before money moves.</span>
             </div>
 
             {filteredReceipts.length ? (
@@ -392,52 +564,55 @@ export default function Trust() {
                 {filteredReceipts.map((receipt) => (
                   <article className="receipt-row" key={receipt.id}>
                     <span className={`receipt-icon status-${receipt.status}`}>
-                      <Icon name={receipt.status === "anchored" ? "shield" : "receipt"} size={16} />
+                      <Icon name={receiptIcon(receipt.status)} size={16} />
                     </span>
                     <div className="receipt-main">
                       <div className="receipt-title">
                         <strong>{receipt.obligation_title}</strong>
                         {receipt.demo && <Pill tone="amber">sample</Pill>}
-                        <span className={`trust-status ${receipt.status}`}>{statusLabel[receipt.status]}</span>
+                        <span className={`trust-status ${receipt.status}`}>
+                          {receiptStatusLabel[receipt.status]}
+                        </span>
                       </div>
                       <div className="receipt-meta">
-                        <span>{receipt.network_label}</span>
-                        <i />
                         <span>{receipt.proof_label}</span>
                         <i />
+                        <span>{receipt.actor || receipt.agent_name || "Owner"}</span>
+                        <i />
                         <span>{timeAgo(receipt.created_at, nowMs)}</span>
+                        {receipt.audit && (
+                          <>
+                            <i />
+                            <span>{Math.round((receipt.audit.confidence || 0) * 100)}% · {receipt.audit.engine}</span>
+                          </>
+                        )}
                       </div>
                       <div className="receipt-hash">
-                        <code title={receipt.digest}>{receipt.short_hash}</code>
-                        {receipt.signer && <span>signed by {shortAddr(receipt.signer)}</span>}
-                        {receipt.tx_hash && (
-                          <a href={receipt.explorer_url || "#"} target="_blank" rel="noreferrer">
-                            tx {shortHash(receipt.tx_hash)} <Icon name="external" size={10} />
-                          </a>
-                        )}
-                        {!receipt.signer && <span>not signed</span>}
+                        <code title={receipt.proof_hash}>{receipt.short_hash}</code>
+                        <span>
+                          {receipt.signature ? `signature ${receipt.short_signature}` : "unsigned"}
+                        </span>
                       </div>
                     </div>
                     <div className="receipt-actions">
-                      {receipt.status === "prepared" && (
-                        <button className="btn btn-xs btn-ink" onClick={() => setSigning(receipt)}>
-                          Sign
+                      {(receipt.status === "filed" || receipt.status === "rejected") && (
+                        <button
+                          className="btn btn-xs btn-ink"
+                          onClick={() => {
+                            setAuditText(receipt.artifact?.text || "");
+                            setAuditing(receipt);
+                          }}
+                        >
+                          Audit
                         </button>
                       )}
-                      {receipt.status === "signed" && (
-                        <button className="btn btn-xs btn-ink" onClick={() => { setSentTx(""); setAnchoring(receipt); }}>
-                          Anchor
-                        </button>
-                      )}
-                      {receipt.status === "anchored" && receipt.explorer_url && (
-                        <a className="btn btn-xs btn-ghost" href={receipt.explorer_url} target="_blank" rel="noreferrer">
-                          Explorer <Icon name="external" size={12} />
-                        </a>
-                      )}
+                      <button className="btn btn-xs btn-ghost" onClick={() => inspectReceipt(receipt)}>
+                        Inspect
+                      </button>
                       <button
                         className="tiny-icon"
-                        title="Copy EIP-712 digest"
-                        onClick={() => copy(receipt.digest, "EIP-712 digest")}
+                        title="Copy proof hash"
+                        onClick={() => copy(receipt.proof_hash, "Proof hash")}
                       >
                         <Icon name="copy" size={13} />
                       </button>
@@ -452,7 +627,7 @@ export default function Trust() {
                 detail={
                   receipts.length
                     ? "Switch the filter, or file a new receipt from any obligation."
-                    : "Complete an obligation, or file a receipt from an existing proof. The receipt is offchain until someone signs or anchors it."
+                    : "File a receipt from an obligation, paste the evidence, and let the auditor verify it."
                 }
                 action={<button className="btn btn-sm btn-ink" onClick={openReceiptModal}><Icon name="plus" size={14} /> File a receipt</button>}
               />
@@ -462,16 +637,16 @@ export default function Trust() {
           <section className="panel trust-panel">
             <div className="panel-head">
               <div>
-                <span className="eyebrow">Fiat rail</span>
+                <span className="eyebrow">Money rail</span>
                 <h3>PayPal ledger</h3>
                 <p className="trust-panel-sub">
                   Every order, capture and payout this workspace has sent, with the PayPal reference that proves it.
                   {" "}
-                  {state.paypal.mode === "sandbox" ? "Sandbox credentials — no real money moves." : "Live credentials."}
+                  {rail?.mode === "sandbox" ? "Sandbox credentials — no real money moves." : "Live credentials."}
                 </p>
               </div>
-              <Pill tone={state.paypal.configured ? "teal" : "amber"}>
-                {state.paypal.configured ? state.paypal.mode : "not configured"}
+              <Pill tone={rail?.configured ? "teal" : "amber"}>
+                {rail?.configured ? rail.mode : "not configured"}
               </Pill>
             </div>
 
@@ -535,7 +710,7 @@ export default function Trust() {
             )}
             <div className="trust-inline-note">
               <Icon name="info" size={12} />
-              PayPal moves the fiat. Proof still files to the vault, and the Base rail stays separate.
+              PayPal moves the money. Remindify never holds a balance or a card.
             </div>
           </section>
 
@@ -543,12 +718,13 @@ export default function Trust() {
             <div className="panel-head">
               <div>
                 <span className="eyebrow">Escrow</span>
-                <h3>Release only on proof</h3>
+                <h3>Capture only on verified proof</h3>
                 <p className="trust-panel-sub">
-                  Commit a USDC amount against the job. The release needs a signed or anchored receipt.
+                  The payer approves a {rail?.hold_days ?? 29}-day hold. A verified proof captures it
+                  and pays the provider {100 - feePercent}% — Remindify keeps {feePercent}%.
                 </p>
               </div>
-              <button className="btn btn-sm btn-ghost" onClick={openEscrowModal}>
+              <button className="btn btn-sm btn-ghost" onClick={() => openEscrowModal()}>
                 <Icon name="plus" size={14} /> New escrow
               </button>
             </div>
@@ -558,47 +734,69 @@ export default function Trust() {
                 {escrows.map((escrow) => (
                   <article className="escrow-row" key={escrow.id}>
                     <span className={`escrow-icon status-${escrow.status}`}>
-                      <Icon name="lock" size={16} />
+                      <Icon name={escrow.status === "released" ? "checkCircle" : escrow.status === "voided" ? "x" : "lock"} size={16} />
                     </span>
                     <div className="escrow-main">
                       <div className="escrow-title">
                         <strong>{escrow.obligation_title}</strong>
-                        <span className={`trust-status ${escrow.status}`}>{statusLabel[escrow.status]}</span>
-                        <span className="escrow-chain">{escrow.network_label}</span>
+                        <span className={`trust-status ${escrow.status}`}>{escrowStatusLabel[escrow.status]}</span>
+                        <span className="escrow-chain">{escrow.payee_paypal_email}</span>
                       </div>
                       <div className="escrow-meta">
-                        <span>{escrow.provider_name}</span>
+                        <span>{escrow.provider_name || "Unassigned provider"}</span>
                         <i />
-                        <span>{moneyExact(escrow.amount)} USDC</span>
+                        <span>{moneyExact(escrow.amount)} held</span>
                         <i />
-                        <span>{escrow.mode === "onchain" ? "onchain" : escrow.mode === "offchain" ? "offchain" : "contract-ready"}</span>
+                        <span>fee {moneyExact(escrow.platform_fee)} · net {moneyExact(escrow.net_payout)}</span>
                       </div>
                       {escrow.note && <em>{escrow.note}</em>}
+                      {escrow.failure_reason && <em>{escrow.failure_code}: {escrow.failure_reason}</em>}
                       <div className="escrow-track"><span className={escrow.status} /></div>
                       {escrow.status === "released" && escrow.released_at && (
                         <div className="escrow-release-note">
                           <Icon name="checkCircle" size={11} />
-                          Released on {shortHash(escrow.proof_receipt_id || "")} · {timeAgo(escrow.released_at, nowMs)}
-                          {escrow.release_url && (
-                            <a href={escrow.release_url} target="_blank" rel="noreferrer">tx <Icon name="external" size={10} /></a>
-                          )}
+                          Paid {moneyExact(escrow.net_payout)} · capture {shortHash(escrow.capture_id, 8, 4)} · batch {shortHash(escrow.payout_batch_id, 8, 4)} · {timeAgo(escrow.released_at, nowMs)}
+                        </div>
+                      )}
+                      {escrow.status === "hold_pending" && (
+                        <div className="escrow-release-note">
+                          <Icon name="clock" size={11} />
+                          Waiting for the payer to approve order {shortHash(escrow.paypal_order_id, 8, 4)}.
+                        </div>
+                      )}
+                      {escrow.status === "authorized" && escrow.hold_expires_in_days !== null && (
+                        <div className="escrow-release-note">
+                          <Icon name="clock" size={11} />
+                          Hold authorized · expires in {escrow.hold_expires_in_days} day{escrow.hold_expires_in_days === 1 ? "" : "s"}.
                         </div>
                       )}
                     </div>
                     <div className="escrow-actions">
                       {escrow.status === "draft" && (
-                        <button className="btn btn-xs btn-ink" onClick={() => actions.commitEscrow(escrow.id)}>
-                          Commit
+                        <button
+                          className="btn btn-xs btn-ink"
+                          onClick={() => actions.holdEscrow(escrow.id)}
+                        >
+                          Place hold
                         </button>
                       )}
-                      {(escrow.status === "committed" || escrow.status === "funded") && (
-                        <button className="btn btn-xs btn-ink" onClick={() => setReleasing(escrow)}>
-                          Release
+                      {escrow.status === "hold_pending" && escrow.approve_url && (
+                        <a className="btn btn-xs btn-ink" href={escrow.approve_url} target="_blank" rel="noreferrer">
+                          Approve <Icon name="external" size={11} />
+                        </a>
+                      )}
+                      {(escrow.status === "authorized" || escrow.status === "captured_awaiting_payout") && (
+                        <button className="btn btn-xs btn-ink" onClick={() => openRelease(escrow)}>
+                          {escrow.status === "authorized" ? "Release" : "Retry payout"}
                         </button>
                       )}
-                      {escrow.status === "released" && (
-                        <Pill tone="teal">released</Pill>
+                      {(escrow.status === "draft" || escrow.status === "hold_pending" || escrow.status === "authorized") && (
+                        <button className="btn btn-xs btn-ghost" onClick={() => setVoiding(escrow)}>
+                          Void
+                        </button>
                       )}
+                      {escrow.status === "released" && <Pill tone="teal">released</Pill>}
+                      {escrow.status === "voided" && <Pill tone="ink">voided</Pill>}
                     </div>
                   </article>
                 ))}
@@ -606,14 +804,14 @@ export default function Trust() {
             ) : (
               <EmptyState
                 icon="lock"
-                title="No escrow intents yet"
-                detail="Open an intent from a booked job. Commit records the obligation offchain; funding and release can be anchored when a contract is configured."
-                action={<button className="btn btn-sm btn-ghost" onClick={openEscrowModal}><Icon name="plus" size={14} /> Open an escrow intent</button>}
+                title="No escrows yet"
+                detail="Open an escrow against an obligation, place the PayPal hold, and release it once the auditor verifies the proof."
+                action={<button className="btn btn-sm btn-ghost" onClick={() => openEscrowModal()}><Icon name="plus" size={14} /> Open an escrow</button>}
               />
             )}
             <div className="trust-inline-note">
               <Icon name="info" size={12} />
-              No custody. The server never holds a key. {guardrails?.note}
+              {guardrails?.note || "A hold is captured only after the proof auditor verifies the artifact."}
             </div>
           </section>
         </div>
@@ -621,12 +819,12 @@ export default function Trust() {
         <aside className="trust-side">
           <section className="panel trust-side-panel">
             <span className="eyebrow">The path</span>
-            <h3>Offchain by default. Onchain by exception.</h3>
+            <h3>Proof gates the capture.</h3>
             <div className="trust-steps">
-              <Step index="01" title="File" detail="Completion writes a hash-bound receipt. No wallet." />
-              <Step index="02" title="Sign" detail="The owner or agent signs EIP-712 typed data." />
-              <Step index="03" title="Anchor" detail="Only if a third party needs public finality." />
-              <Step index="04" title="Release" detail="Escrow releases on a signed or anchored receipt." />
+              <Step index="01" title="File" detail="Completion files a receipt bound to the obligation and the evidence hash." />
+              <Step index="02" title="Hold" detail="PayPal reserves the payer's funds for 29 days. Nothing moves yet." />
+              <Step index="03" title="Audit" detail="Gemini scores the artifact against amount, reference and date." />
+              <Step index="04" title="Settle" detail="A verified proof captures the hold and pays the provider net of fee." />
             </div>
           </section>
 
@@ -634,37 +832,43 @@ export default function Trust() {
             <span className="eyebrow">Guardrails</span>
             <h3>What this deliberately is not</h3>
             <ul className="trust-guard-list">
-              <li><Icon name="x" size={12} /><span><strong>No token.</strong> USDC is the only asset that moves.</span></li>
-              <li><Icon name="x" size={12} /><span><strong>No custody.</strong> The server never holds a private key.</span></li>
-              <li><Icon name="x" size={12} /><span><strong>No forced wallet.</strong> Receipts work without one.</span></li>
-              <li><Icon name="lock" size={12} /><span><strong>Ethiopia stays offchain.</strong> No wallets or USDC payments until the NBE authorises virtual-asset activity.</span></li>
+              <li><Icon name="x" size={12} /><span><strong>No token.</strong> Money moves in USD through PayPal.</span></li>
+              <li><Icon name="check" size={12} /><span><strong>No custody.</strong> Remindify never holds a balance or a card.</span></li>
+              <li><Icon name="check" size={12} /><span><strong>No proof, no money.</strong> A rejected artifact leaves the hold untouched.</span></li>
+              <li><Icon name="eye" size={12} /><span><strong>No black box.</strong> Every verdict keeps its confidence and discrepancies.</span></li>
             </ul>
           </section>
 
           <section className="panel trust-side-panel">
             <span className="eyebrow">Configuration</span>
-            <h3>Bring a contract when you're ready.</h3>
+            <h3>Two credentials, one gate.</h3>
             <p className="trust-side-copy">
-              Preview mode files, signs and verifies receipts today. Set a contract address to enable
-              onchain anchoring and USDC funding.
+              PayPal moves the funds. Gemini reads the evidence. Without a Gemini key the auditor
+              falls back to deterministic scoring so the demo still runs.
             </p>
             <div className="trust-env-list">
-              {networks.filter((n) => n.role !== "testnet").map((network) => (
-                <div className="trust-env" key={network.key}>
-                  <div>
-                    <strong>{network.label}</strong>
-                    <span>{network.status === "configured" ? "configured" : "preview"}</span>
-                  </div>
-                  <code>{network.env.attestation}</code>
-                  <code>{network.env.escrow}</code>
+              <div className="trust-env">
+                <div>
+                  <strong>PayPal</strong>
+                  <span>{rail?.configured ? rail.mode : "not configured"}</span>
                 </div>
-              ))}
+                <code>PAYPAL_CLIENT_ID</code>
+                <code>PAYPAL_PLATFORM_FEE_PERCENT={feePercent}</code>
+              </div>
+              <div className="trust-env">
+                <div>
+                  <strong>Auditor</strong>
+                  <span>{rail?.auditor_configured ? "keyed" : "fallback"}</span>
+                </div>
+                <code>GEMINI_API_KEY</code>
+                <code>AI_MODEL_ID={rail?.auditor || "gemini-2.5-flash"}</code>
+              </div>
             </div>
             <button className="btn btn-sm btn-ghost trust-copy-env" onClick={copyEnv}>
               <Icon name="copy" size={13} /> Copy env template
             </button>
             <p className="trust-side-foot">
-              Reference contracts live in <code>contracts/</code>. Unaudited; deploy to a testnet first.
+              Payouts settle to the provider's PayPal email after capture.
             </p>
           </section>
         </aside>
@@ -673,7 +877,8 @@ export default function Trust() {
       {receiptModal && (
         <Modal
           title="File a proof receipt"
-          eyebrow="Offchain first"
+          eyebrow="Signed by Remindify"
+          width={600}
           onClose={() => setReceiptModal(false)}
           footer={
             <>
@@ -692,179 +897,220 @@ export default function Trust() {
                 ))}
               </select>
             </Field>
-            <div className="trust-form-row">
-              <Field label="Anchor chain" hint="Optional">
-                <select value={receiptDraft.chain} onChange={(e) => setReceiptDraft({ ...receiptDraft, chain: e.target.value })}>
-                  {networks.map((network) => (
-                    <option key={network.key} value={network.key}>{network.label} · {roleLabel(network.role)}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Proof label" hint="What's on file">
-                <input
-                  value={receiptDraft.proof}
-                  onChange={(e) => setReceiptDraft({ ...receiptDraft, proof: e.target.value })}
-                  placeholder="receipt.pdf, confirmation ID, or a short description"
-                />
-              </Field>
-            </div>
-            <Field label="Note" hint="Never stored raw">
-              <textarea
-                rows={3}
-                value={receiptDraft.note}
-                onChange={(e) => setReceiptDraft({ ...receiptDraft, note: e.target.value })}
-                placeholder="Optional context for the signer. The proof label is hashed with the obligation id and nonce; file contents are never uploaded."
+            <Field label="Proof label" hint="What's on file">
+              <input
+                value={receiptDraft.proof}
+                onChange={(e) => setReceiptDraft({ ...receiptDraft, proof: e.target.value })}
+                placeholder="receipt.pdf, confirmation ID, or a short description"
               />
             </Field>
+            <Field label="Evidence" hint="Attach the receipt, a screenshot of the confirmation, or paste the text the auditor should read">
+              <div className="proof-upload">
+                <button
+                  className="btn btn-xs btn-ghost"
+                  type="button"
+                  onClick={() => proofFileRef.current?.click()}
+                  disabled={readingProof}
+                >
+                  <Icon name="file" size={12} /> {readingProof ? "Reading…" : "Attach PDF, image or text"}
+                </button>
+                <span>
+                  {receiptDraft.proof || "No document attached"}
+                  {receiptDraft.data ? ` · sent as ${receiptDraft.mime}` : ""}
+                </span>
+              </div>
+              <textarea
+                rows={5}
+                value={receiptDraft.evidence}
+                onChange={(e) => setReceiptDraft({ ...receiptDraft, evidence: e.target.value })}
+                placeholder={"Paid $180.00 to Exopya Studio on 2026-10-28.\nConfirmation: 7XK2-91AB\nRenewal for the studio domain."}
+              />
+            </Field>
+            <input
+              ref={proofFileRef}
+              type="file"
+              hidden
+              accept=".pdf,text/plain,.txt,.md,image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) readProofFile(file);
+                e.target.value = "";
+              }}
+            />
             <div className="trust-preview-box">
               <Icon name="fingerprint" size={16} />
               <div>
                 <strong>What gets stored</strong>
-                <span>Obligation id, proof label, proof hash, evidence hash, chain id, nonce and issued-at. No file contents.</span>
+                <span>The obligation id, a SHA-256 hash of the evidence, the actor and the completion time — all signed with an HMAC. The evidence text or document stays with the receipt so the auditor can judge it.</span>
               </div>
             </div>
-            {selectedReceiptNetwork && (
-              <p className="trust-form-note">
-                {selectedReceiptNetwork.attestation_contract
-                  ? `Anchoring is configured on ${selectedReceiptNetwork.label}.`
-                  : `${selectedReceiptNetwork.label} is in preview: the receipt can be signed and verified, but not anchored until ${selectedReceiptNetwork.env.attestation} is set.`}
-              </p>
+          </div>
+        </Modal>
+      )}
+
+      {auditing && (
+        <Modal
+          title="Run the proof auditor"
+          eyebrow={`${auditing.obligation_title} · threshold ${rail?.threshold ?? 80}%`}
+          width={600}
+          onClose={() => setAuditing(null)}
+          footer={
+            <>
+              <button className="btn btn-sm btn-ghost" onClick={() => setAuditing(null)}>Cancel</button>
+              <button className="btn btn-sm btn-ink" onClick={submitAudit} disabled={busy === "audit"}>
+                <Icon name="sparkle" size={13} /> {busy === "audit" ? "Auditing…" : "Audit evidence"}
+              </button>
+            </>
+          }
+        >
+          <div className="trust-form">
+            <div className="trust-sign-summary">
+              <div>
+                <span>Obligation</span>
+                <strong>{auditing.obligation_title}</strong>
+              </div>
+              <div>
+                <span>Expected amount</span>
+                <strong>{moneyExact(auditing.obligation_amount || 0)}</strong>
+              </div>
+              <div>
+                <span>Proof</span>
+                <strong>{auditing.proof_label}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong className="capitalize">{receiptStatusLabel[auditing.status]}</strong>
+              </div>
+            </div>
+            <Field label="Evidence to audit" hint="Leave blank to audit the filed artifact, or paste text to replace it">
+              <textarea
+                rows={6}
+                value={auditText}
+                onChange={(e) => setAuditText(e.target.value)}
+                placeholder="The confirmation, invoice or note the provider submitted."
+              />
+            </Field>
+            <div className="trust-preview-box">
+              <Icon name="sparkle" size={16} />
+              <div>
+                <strong>{rail?.auditor_configured ? `${rail?.auditor} reads the evidence` : "Deterministic fallback"}</strong>
+                <span>
+                  {rail?.auditor_configured
+                    ? "The model checks the amount, reference, date and scope, then returns a confidence score and any discrepancies."
+                    : "No Gemini key is set, so offline rules score the amount, reference, date and keywords."}
+                </span>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {inspecting && (
+        <Modal
+          title="Receipt detail"
+          eyebrow={`${receiptStatusLabel[inspecting.status]} · ${inspecting.short_hash}`}
+          width={620}
+          onClose={() => setInspecting(null)}
+          footer={
+            <>
+              <button className="btn btn-sm btn-ghost" onClick={() => copy(inspecting.proof_hash, "Proof hash")}>
+                <Icon name="copy" size={13} /> Copy hash
+              </button>
+              <button
+                className="btn btn-sm btn-ink"
+                onClick={() => checkSignature(inspecting)}
+                disabled={busy === "verify"}
+              >
+                <Icon name="shield" size={13} /> {busy === "verify" ? "Checking…" : "Verify signature"}
+              </button>
+            </>
+          }
+        >
+          <div className="trust-form">
+            <div className="trust-sign-summary">
+              <div>
+                <span>Obligation</span>
+                <strong>{inspecting.obligation_title}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong className="capitalize">{receiptStatusLabel[inspecting.status]}</strong>
+              </div>
+              <div>
+                <span>Actor</span>
+                <strong>{inspecting.actor || inspecting.agent_name || "Owner"}</strong>
+              </div>
+              <div>
+                <span>Filed</span>
+                <strong>{timeAgo(inspecting.created_at, nowMs)}</strong>
+              </div>
+            </div>
+
+            {inspecting.audit ? (
+              <div className={`trust-preview-box ${inspecting.audit.verified ? "" : "trust-preview-warn"}`}>
+                <Icon name={inspecting.audit.verified ? "checkCircle" : "x"} size={16} />
+                <div>
+                  <strong>
+                    {inspecting.audit.verified ? "Verified" : "Rejected"} · {Math.round((inspecting.audit.confidence || 0) * 100)}% confidence · {inspecting.audit.engine}
+                  </strong>
+                  <span>{inspecting.audit.matching_verdict || "No verdict text."}</span>
+                  {!!inspecting.audit.discrepancies?.length && (
+                    <span>{inspecting.audit.discrepancies.join(" · ")}</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="trust-preview-box trust-preview-warn">
+                <Icon name="alert" size={16} />
+                <div>
+                  <strong>Not audited yet</strong>
+                  <span>Run the auditor before this receipt can settle an escrow.</span>
+                </div>
+              </div>
+            )}
+
+            {inspecting.settlement && (
+              <div className="trust-release-proof">
+                <span className="receipt-icon status-settled"><Icon name="checkCircle" size={18} /></span>
+                <div>
+                  <strong>{moneyExact(inspecting.settlement.net)} paid to {inspecting.settlement.recipient}</strong>
+                  <span>
+                    gross {moneyExact(inspecting.settlement.gross)} · fee {moneyExact(inspecting.settlement.fee)} · batch {shortHash(inspecting.settlement.payout_batch_id, 8, 4)}
+                  </span>
+                </div>
+                <Pill tone="teal">settled</Pill>
+              </div>
+            )}
+
+            <div className="trust-digest">
+              <span>Proof hash</span>
+              <code>{inspecting.proof_hash}</code>
+              <button className="tiny-icon" onClick={() => copy(inspecting.proof_hash, "Proof hash")}><Icon name="copy" size={13} /></button>
+            </div>
+            <div className="trust-digest">
+              <span>Signature</span>
+              <code>{inspecting.signature || "none"}</code>
+              {signatureCheck !== "" && (
+                <Pill tone={signatureCheck === "valid" ? "teal" : "coral"}>
+                  {signatureCheck === "valid" ? "valid" : "mismatch"}
+                </Pill>
+              )}
+            </div>
+
+            {inspecting.artifact?.text && (
+              <details className="trust-raw">
+                <summary>View the evidence the auditor read</summary>
+                <pre>{inspecting.artifact.text}</pre>
+              </details>
             )}
           </div>
         </Modal>
       )}
 
-      {signing && (
-        <Modal
-          title="Sign the receipt"
-          eyebrow={`${signing.network_label} · EIP-712`}
-          width={620}
-          onClose={() => setSigning(null)}
-          footer={
-            <>
-              <button className="btn btn-sm btn-ghost" onClick={() => copy(JSON.stringify(signing.wallet_payload, null, 2), "EIP-712 payload")}>
-                <Icon name="copy" size={13} /> Copy payload
-              </button>
-              <button
-                className="btn btn-sm btn-ink"
-                onClick={() => signWithWallet(signing)}
-                disabled={busy === "sign"}
-              >
-                <Icon name="fingerprint" size={14} /> {busy === "sign" ? "Waiting for wallet…" : "Sign with wallet"}
-              </button>
-            </>
-          }
-        >
-          <div className="trust-sign-summary">
-            <div>
-              <span>Obligation</span>
-              <strong>{signing.obligation_title}</strong>
-            </div>
-            <div>
-              <span>Proof</span>
-              <strong>{signing.proof_label}</strong>
-            </div>
-            <div>
-              <span>Chain</span>
-              <strong>{signing.network_label} · {signing.chain_id}</strong>
-            </div>
-            <div>
-              <span>Status</span>
-              <strong className="capitalize">{signing.status}</strong>
-            </div>
-          </div>
-          <div className="trust-digest">
-            <span>EIP-712 digest</span>
-            <code>{signing.digest}</code>
-            <button className="tiny-icon" onClick={() => copy(signing.digest, "EIP-712 digest")}><Icon name="copy" size={13} /></button>
-          </div>
-          <div className="trust-preview-box">
-            <Icon name="info" size={16} />
-            <div>
-              <strong>Wallet-optional by design</strong>
-              <span>Signing proves the signer approved this exact obligation and proof hash. The receipt already exists offchain; nothing moves and no gas is spent until you anchor.</span>
-            </div>
-          </div>
-          <details className="trust-raw">
-            <summary>View the typed data</summary>
-            <pre>{JSON.stringify(signing.wallet_payload, null, 2)}</pre>
-          </details>
-        </Modal>
-      )}
-
-      {anchoring && (
-        <Modal
-          title="Anchor the receipt"
-          eyebrow={`${anchoring.network_label} · ${shortHash(anchoring.digest)}`}
-          width={620}
-          onClose={() => setAnchoring(null)}
-          footer={
-            <>
-              <button className="btn btn-sm btn-ghost" onClick={() => setAnchoring(null)}>Close</button>
-              <button
-                className="btn btn-sm btn-ink"
-                onClick={() => verifyAnchor(anchoring)}
-                disabled={busy === "verify" || !sentTx.trim()}
-              >
-                {busy === "verify" ? "Verifying…" : "Verify transaction"}
-              </button>
-            </>
-          }
-        >
-          <div className="trust-anchor-head">
-            <span className={`receipt-icon status-${anchoring.status}`}><Icon name="shield" size={18} /></span>
-            <div>
-              <strong>{anchoring.contract ? "Attestation contract configured" : "Preview mode"}</strong>
-              <p>
-                {anchoring.contract
-                  ? `The receipt will be written to ${shortContract(anchoring.contract)} on ${anchoring.network_label}.`
-                  : `No attestation contract is configured for ${anchoring.network_label}. You can still copy the calldata for a later deployment.`}
-              </p>
-            </div>
-          </div>
-
-          {anchoring.contract ? (
-            <>
-              <div className="trust-anchor-actions">
-                <button className="btn btn-sm btn-ink" onClick={() => anchorWithWallet(anchoring)} disabled={busy === "anchor"}>
-                  <Icon name="wallet" size={14} /> {busy === "anchor" ? "Waiting for wallet…" : "Send anchor transaction"}
-                </button>
-                <button className="btn btn-sm btn-ghost" onClick={() => copy(anchoring.contract || "", "Contract address")}>
-                  <Icon name="copy" size={13} /> Copy contract
-                </button>
-              </div>
-              <Field label="Transaction hash" hint="Paste a hash if you sent it elsewhere">
-                <input value={sentTx} onChange={(e) => setSentTx(e.target.value)} placeholder="0x…" />
-              </Field>
-            </>
-          ) : (
-            <div className="trust-preview-box trust-preview-warn">
-              <Icon name="info" size={16} />
-              <div>
-                <strong>Set the contract address when deployed</strong>
-                <span>{networks.find((n) => n.key === anchoring.chain)?.env.attestation || "BASE_ATTESTATION_CONTRACT"}</span>
-              </div>
-            </div>
-          )}
-
-          <div className="trust-preview-box">
-            <Icon name="fingerprint" size={16} />
-            <div>
-              <strong>What anchoring adds</strong>
-              <span>Public finality for the proof hash. The onchain event includes the signer, proof hash and issued-at; the raw proof remains offchain.</span>
-            </div>
-          </div>
-          <details className="trust-raw">
-            <summary>View calldata input</summary>
-            <pre>{JSON.stringify(anchoring.wallet_payload, null, 2)}</pre>
-          </details>
-        </Modal>
-      )}
-
       {escrowModal && (
         <Modal
-          title="Open an escrow intent"
-          eyebrow="USDC · release on proof"
+          title="Open an escrow"
+          eyebrow="PayPal hold · release on verified proof"
           width={600}
           onClose={() => setEscrowModal(false)}
           footer={
@@ -873,9 +1119,9 @@ export default function Trust() {
               <button
                 className="btn btn-sm btn-ink"
                 onClick={submitEscrow}
-                disabled={busy === "escrow" || !escrowDraft.obligation_id || !escrowDraft.acknowledged}
+                disabled={busy === "escrow" || !escrowDraft.obligation_id || !escrowDraft.payee.trim()}
               >
-                {busy === "escrow" ? "Opening…" : "Open intent"}
+                {busy === "escrow" ? "Opening…" : "Open escrow"}
               </button>
             </>
           }
@@ -899,25 +1145,25 @@ export default function Trust() {
                   ))}
                 </select>
               </Field>
-              <Field label="Amount" hint="USDC">
+              <Field label="Amount" hint="USD">
                 <input
                   type="number"
                   min="1"
-                  step="1"
+                  step="0.01"
                   value={escrowDraft.amount}
                   onChange={(e) => setEscrowDraft({ ...escrowDraft, amount: e.target.value })}
-                  placeholder="120"
+                  placeholder="180"
                 />
               </Field>
             </div>
-            <Field label="Chain" hint="Base first; Celo is the grant pilot">
-              <select value={escrowDraft.chain} onChange={(e) => setEscrowDraft({ ...escrowDraft, chain: e.target.value, acknowledged: false })}>
-                {networks.map((network) => (
-                  <option key={network.key} value={network.key}>{network.label} · {roleLabel(network.role)}</option>
-                ))}
-              </select>
+            <Field label="Provider PayPal email" hint="Where the payout lands">
+              <input
+                value={escrowDraft.payee}
+                onChange={(e) => setEscrowDraft({ ...escrowDraft, payee: e.target.value })}
+                placeholder="provider@business.example.com"
+              />
             </Field>
-            <Field label="Note" hint="Visible in the intent">
+            <Field label="Note" hint="Visible in the escrow">
               <textarea
                 rows={2}
                 value={escrowDraft.note}
@@ -925,27 +1171,29 @@ export default function Trust() {
                 placeholder="Scope, milestone or release condition."
               />
             </Field>
-            <label className="trust-check guardrail-check">
-              <input
-                type="checkbox"
-                checked={escrowDraft.acknowledged}
-                onChange={(e) => setEscrowDraft({ ...escrowDraft, acknowledged: e.target.checked })}
-              />
-              <span>
-                {isCeloEscrow
-                  ? "This counterparty is outside Ethiopia and the NBE restriction. I understand Ethiopian obligations stay offchain."
-                  : "I confirm this payment is outside Ethiopia's virtual-asset restrictions. Ethiopian obligations stay offchain until the NBE authorises virtual-asset activity."}
-              </span>
-            </label>
+            <div className="trust-sign-summary">
+              <div>
+                <span>Payer approves</span>
+                <strong>{moneyExact(draftSplit.gross)}</strong>
+              </div>
+              <div>
+                <span>Remindify fee ({feePercent}%)</span>
+                <strong>{moneyExact(draftSplit.fee)}</strong>
+              </div>
+              <div>
+                <span>Provider receives</span>
+                <strong>{moneyExact(draftSplit.net)}</strong>
+              </div>
+              <div>
+                <span>Hold window</span>
+                <strong>{rail?.hold_days ?? 29} days</strong>
+              </div>
+            </div>
             <div className="trust-preview-box">
               <Icon name="lock" size={16} />
               <div>
-                <strong>{selectedEscrowNetwork?.escrow_contract ? "Contract configured" : "Offchain commitment"}</strong>
-                <span>
-                  {selectedEscrowNetwork?.escrow_contract
-                    ? "Funding can be recorded against the configured escrow contract."
-                    : "No escrow contract is configured. Commit records the intent; no funds move."}
-                </span>
+                <strong>Nothing moves until a verified proof</strong>
+                <span>The payer approves the hold on PayPal. Remindify captures it only after the auditor verifies the evidence, then pays the provider's email.</span>
               </div>
             </div>
           </div>
@@ -954,83 +1202,161 @@ export default function Trust() {
 
       {releasing && (
         <Modal
-          title="Release escrow on proof"
-          eyebrow={`${releasing.provider_name} · ${moneyExact(releasing.amount)} USDC`}
-          width={560}
+          title={releasing.status === "captured_awaiting_payout" ? "Retry the payout" : "Release escrow on proof"}
+          eyebrow={`${releasing.provider_name || "Provider"} · ${moneyExact(releasing.amount)} held`}
+          width={580}
           onClose={() => setReleasing(null)}
           footer={
             <>
               <button className="btn btn-sm btn-ghost" onClick={() => setReleasing(null)}>Cancel</button>
               <button
                 className="btn btn-sm btn-ink"
-                onClick={() => release(releasing)}
-                disabled={busy === "release" || !latestSignedByObligation[releasing.obligation_id]}
+                onClick={submitRelease}
+                disabled={busy === "release" || (!releaseReceiptId && !releaseArtifact.trim())}
               >
-                {busy === "release" ? "Releasing…" : "Release on proof"}
+                {busy === "release"
+                  ? "Releasing…"
+                  : releasing.status === "captured_awaiting_payout"
+                    ? "Retry payout"
+                    : "Capture and pay"}
               </button>
             </>
           }
         >
-          {latestSignedByObligation[releasing.obligation_id] ? (
+          <div className="trust-form">
+            <div className="trust-sign-summary">
+              <div>
+                <span>Captured</span>
+                <strong>{moneyExact(releasing.amount)}</strong>
+              </div>
+              <div>
+                <span>Fee</span>
+                <strong>{moneyExact(releasing.platform_fee)}</strong>
+              </div>
+              <div>
+                <span>Provider receives</span>
+                <strong>{moneyExact(releasing.net_payout)}</strong>
+              </div>
+              <div>
+                <span>PayPal email</span>
+                <strong>{releasing.payee_paypal_email}</strong>
+              </div>
+            </div>
+
+            {releasing.status === "authorized" && (
+              <>
+                <Field label="Proof receipt" hint="The latest receipt for this obligation">
+                  <select value={releaseReceiptId} onChange={(e) => setReleaseReceiptId(e.target.value)}>
+                    {receipts.filter((r) => r.obligation_id === releasing.obligation_id).length ? (
+                      receipts
+                        .filter((r) => r.obligation_id === releasing.obligation_id)
+                        .map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {receiptStatusLabel[r.status]} · {r.proof_label} · {timeAgo(r.created_at, nowMs)}
+                          </option>
+                        ))
+                    ) : (
+                      <option value="">No receipt on file — paste evidence below</option>
+                    )}
+                  </select>
+                </Field>
+                <Field label="Or paste new evidence" hint="Files a receipt and audits it in one step">
+                  <textarea
+                    rows={4}
+                    value={releaseArtifact}
+                    onChange={(e) => setReleaseArtifact(e.target.value)}
+                    placeholder="Paid $180.00 to Exopya Studio on 2026-10-28. Confirmation: 7XK2-91AB."
+                  />
+                </Field>
+              </>
+            )}
+
+            <div className="trust-preview-box trust-preview-warn">
+              <Icon name="shield" size={16} />
+              <div>
+                <strong>If the receipt isn't verified, the auditor runs now</strong>
+                <span>A rejected artifact leaves the payer's hold untouched. Only a verified proof captures the money.</span>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {voiding && (
+        <Modal
+          title="Void the hold?"
+          eyebrow={`${voiding.provider_name || "Provider"} · ${moneyExact(voiding.amount)}`}
+          width={520}
+          onClose={() => setVoiding(null)}
+          footer={
             <>
-              <div className="trust-release-proof">
-                <span className="receipt-icon status-signed"><Icon name="receipt" size={18} /></span>
-                <div>
-                  <strong>{latestSignedByObligation[releasing.obligation_id].obligation_title}</strong>
-                  <span>{latestSignedByObligation[releasing.obligation_id].network_label} · {latestSignedByObligation[releasing.obligation_id].short_hash}</span>
-                </div>
-                <Pill tone="blue">signed</Pill>
-              </div>
-              <div className="trust-preview-box">
-                <Icon name="checkCircle" size={16} />
-                <div>
-                  <strong>The release condition is satisfied</strong>
-                  <span>Remindify will mark the intent released and write an audit event. No custody, no automatic transfer.</span>
-                </div>
-              </div>
+              <button className="btn btn-sm btn-ghost" onClick={() => setVoiding(null)}>Keep the hold</button>
+              <button className="btn btn-sm btn-ink" onClick={submitVoid} disabled={busy === "void"}>
+                {busy === "void" ? "Voiding…" : "Void hold"}
+              </button>
             </>
-          ) : (
-            <EmptyState
-              icon="receipt"
-              title="Proof first"
-              detail="This obligation has no signed receipt yet. Open the receipt list, sign one, then come back to release."
-              action={<button className="btn btn-sm btn-ghost" onClick={() => setReleasing(null)}>Back to receipts</button>}
-            />
-          )}
+          }
+        >
+          <div className="trust-form">
+            <div className="trust-preview-box trust-preview-warn">
+              <Icon name="alert" size={16} />
+              <div>
+                <strong>{moneyExact(voiding.amount)} goes back to the payer</strong>
+                <span>
+                  {voiding.authorization_id
+                    ? "PayPal releases the authorization immediately. The provider is not paid."
+                    : "The escrow closes before any money was reserved."}
+                </span>
+              </div>
+            </div>
+          </div>
         </Modal>
       )}
     </div>
   );
 }
 
-function NetworkCard({ network }: { network: TrustNetwork }) {
+function RailCard({
+  tone,
+  label,
+  role,
+  pill,
+  tone2,
+  description,
+  facts,
+  guard,
+}: {
+  tone: "blue" | "violet" | "amber" | "teal";
+  label: string;
+  role: string;
+  pill: string;
+  tone2: "teal" | "amber" | "ink" | "blue";
+  description: string;
+  facts: [string, string][];
+  guard: string;
+}) {
   return (
-    <article className={`trust-network tone-${network.tone}`}>
+    <article className={`trust-network tone-${tone}`}>
       <div className="trust-network-top">
         <div>
-          <strong>{network.label}</strong>
-          <span>{roleLabel(network.role)}</span>
+          <strong>{label}</strong>
+          <span>{role}</span>
         </div>
-        <Pill tone={network.status === "configured" ? "teal" : "ink"}>
-          {network.status === "configured" ? "Configured" : "Preview"}
-        </Pill>
+        <Pill tone={tone2}>{pill}</Pill>
       </div>
-      <p>{network.description}</p>
+      <p>{description}</p>
       <div className="trust-network-facts">
-        <div><span>Chain</span><strong>{network.chain_id}</strong></div>
-        <div><span>USDC</span><strong>{shortContract(network.usdc)}</strong></div>
-        <div><span>Attest</span><strong>{shortContract(network.attestation_contract)}</strong></div>
-        <div><span>Escrow</span><strong>{shortContract(network.escrow_contract)}</strong></div>
+        {facts.map(([key, value]) => (
+          <div key={key}>
+            <span>{key}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
       </div>
-      {network.guardrail && (
-        <div className="trust-network-guard">
-          <Icon name="lock" size={12} />
-          {network.guardrail}
-        </div>
-      )}
-      <a className="trust-network-link" href={network.explorer} target="_blank" rel="noreferrer">
-        Explorer <Icon name="external" size={11} />
-      </a>
+      <div className="trust-network-guard">
+        <Icon name="lock" size={12} />
+        {guard}
+      </div>
     </article>
   );
 }

@@ -14,8 +14,6 @@ Some add fields such as `scope`, `plan`, `limit` or `retry_after`. The HTTP stat
 | --- | --- | --- | --- |
 | `401` | `unauthorized` | No session cookie or a machine key on an app route. | Sign in, or use `/api/v1/*` with a bearer key. |
 | `401` | `invalid_credentials` | Wrong email or password. | Retry; reset the password if needed. |
-| `401` | `challenge_expired` | Wallet challenge missing, consumed or older than ten minutes. | Request a new challenge. |
-| `401` | `invalid_signature` | Wallet signature did not verify. | Sign the exact challenge message with the same address. |
 | `401` | `key_expired` | Machine key past `expires_at`. | Rotate the key and deploy the new secret. |
 | `403` | `missing_scope` | Key lacks the scope for this endpoint. | Issue a key with the scope, or use a different key. |
 | `403` | `email_unverified` | A paid plan change needs a confirmed address. | Confirm the email, then retry. |
@@ -44,23 +42,21 @@ Some add fields such as `scope`, `plan`, `limit` or `retry_after`. The HTTP stat
 
 | Status | Code | Cause | Fix |
 | --- | --- | --- | --- |
-| `404` | `receipt_not_found` | Unknown receipt id. | Read `/api/v1/trust` for current ids. |
+| `404` | `receipt_not_found` | Unknown receipt id. | Read `/api/trust` for current ids. |
+| `404` | `escrow_not_found` | Unknown escrow id. | Read `/api/trust` for current ids. |
 | `422` | `obligation_not_found` | Escrow or receipt references an unknown obligation. | Check the id in the same workspace. |
 | `422` | `amount_required` | Escrow amount is zero or not a number. | Send a positive `amount`. |
-| `422` | `jurisdiction_ack_required` | Escrow created without the acknowledgement. | Send `"jurisdiction_ack": true` after reading the boundary. |
-| `422` | `escrow_contract_not_configured` | Onchain funding without an escrow contract. | Use `/commit` for an offchain intent, or configure the contract. |
-| `422` | `escrow_contract_changed` | Contract changed after the intent was opened. | Open a new escrow. |
-| `422` | `receipt_lookup_failed` | RPC could not read the transaction. | Check the hash, chain and RPC. |
-| `422` | `transaction_not_found` | No transaction for that hash. | Wait for confirmation and retry. |
-| `422` | `transaction_reverted` | The funding transaction failed. | Send a successful transaction. |
-| `422` | `wrong_contract` | Transaction did not target the escrow contract. | Fund the contract recorded on the escrow. |
-| `422` | `proof_required` | Release without a signed or anchored receipt. | Sign a receipt for the obligation first. |
-| `422` | `proof_wrong_obligation` | Receipt belongs to a different obligation. | File and sign a receipt for this obligation. |
-| `422` | `proof_not_signed` | Receipt is still `prepared`. | Sign or anchor it. |
-| `422` | `signature_invalid` | Recovered address does not match `signer`. | Sign the exact typed data with that address. |
-| `422` | `escrow_not_draft` | Commit on an already committed escrow. | Open a new intent. |
-| `422` | `escrow_not_releasable` | Release on a draft or released escrow. | Commit or fund it first. |
-| `422` | `escrow_already_funded` / `escrow_already_released` | Duplicate state transition. | Read the escrow instead. |
+| `422` | `payee_required` | Escrow opened without a PayPal email for the provider. | Add `payee_paypal_email` or set it on the provider profile. |
+| `422` | `paypal_not_configured` | A hold or release without PayPal credentials. | Set `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`. |
+| `422` | `escrow_not_releasable` | Release on a draft, voided or already released escrow. | Place the PayPal hold first, then release. |
+| `422` | `escrow_already_held` | A second hold on an authorized escrow. | Read the escrow; reuse the existing authorization. |
+| `422` | `escrow_already_released` | Void or release on a released escrow. | Read the escrow instead. |
+| `422` | `escrow_voided` | Release on a voided escrow. | Open a new escrow. |
+| `422` | `proof_required` | Release without any receipt for the obligation. | File proof for this obligation first. |
+| `422` | `proof_wrong_obligation` | Receipt belongs to a different obligation. | File a receipt for this obligation. |
+| `422` | `proof_rejected` | The auditor rejected the evidence. | Fix the evidence, re-audit, then release. The hold is untouched. |
+| `422` | `payout_failed` | Capture succeeded but PayPal refused the payout. | Retry the payout; the escrow stays `captured_awaiting_payout`. |
+| `451` | `region_blocked` | Escrow movement from a blocked country. | Only the operator can change `BLOCKED_COUNTRIES`. |
 
 ## Payments
 
@@ -75,7 +71,7 @@ Payment routes are session-cookie routes; a machine key gets `401 unauthorized` 
 | `409` | `paypal_email_required` | A seller payout without a PayPal email on the profile. | Set one under Seller desk → Payout account. |
 | `422` | `nothing_to_pay` | The obligation has no amount. | Set an `amount` above zero. |
 | `422` | `currency_unsupported` | Obligation currency is not USD. | PayPal settles USD only here. |
-| `422` | `amount_too_large` | Above $10,000 per payment. | Split the obligation or use escrow. |
+| `422` | `amount_too_large` | Above $10,000 per payment. | Split the obligation into smaller payments. |
 | `422` | `amount_mismatch` / `currency_mismatch` | PayPal returned a different total than the stored row. | Do not retry blindly; the payment is marked failed. |
 | `502` | `paypal_unreachable` | Network failure or timeout to PayPal. | Retry; the order is idempotent on capture. |
 | `503` | `paypal_not_configured` | Missing `PAYPAL_CLIENT_ID` or `PAYPAL_CLIENT_SECRET`. | Configure the rail or hide the pay control. |
@@ -109,4 +105,4 @@ Include:
 - the key prefix (the first 13 characters), never the secret,
 - the run id for connector issues.
 
-Do not include the signing secret, session cookie, machine key or wallet seed phrase.
+Do not include the signing secret, session cookie, machine key or PayPal credentials.

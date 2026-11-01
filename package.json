@@ -9,7 +9,7 @@
     "type": "git",
     "url": "https://github.com/kiozaghi/remindify-paypal"
   },
-  "homepage": "https://remindify-xi.vercel.app",
+  "homepage": "https://remindify-paypal.vercel.app",
   "engines": {
     "node": ">=22"
   },
@@ -19,13 +19,6 @@
     "start": "node server/index.mjs",
     "preview": "npm run build && npm start",
     "mcp": "node mcp/server.mjs",
-    "contracts:compile": "node contracts/compile.mjs",
-    "contracts:deploy": "node contracts/deploy.mjs",
-    "chain:rehearse": "node scripts/rehearse-chain.mjs",
-    "db:check": "node scripts/db-check.mjs",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "node scripts/db-migrate.mjs",
-    "db:setup": "node scripts/db-check.mjs && node scripts/db-migrate.mjs",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && npm run build",
     "test": "node --test test/*.test.mjs",
@@ -34,29 +27,22 @@
     "seo": "node scripts/seo.mjs"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
+    "@paypal/paypal-server-sdk": "^2.5.0",
+    "ag-grid-community": "^36.2.0",
+    "ag-grid-react": "^36.2.0",
     "dotenv": "^18.0.9",
-    "drizzle-orm": "^0.45.4",
     "marked": "^18.1.2",
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "viem": "^2.57.7"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.11",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "drizzle-kit": "^0.31.11",
-    "solc": "^0.8.24",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
-  },
-  "overrides": {
-    "solc": {
-      "tmp": "^0.2.5"
-    }
   }
 }

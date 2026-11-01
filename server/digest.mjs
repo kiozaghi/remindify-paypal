@@ -11,7 +11,7 @@ import { emailConfigured, sendEmail } from "./email.mjs";
 import { daysUntil, riskFor, virtualNow } from "./engine.mjs";
 import { runWithWorkspace } from "./workspace.mjs";
 
-const DEFAULT_ORIGIN = "https://remindify-xi.vercel.app";
+const DEFAULT_ORIGIN = "https://remindify-paypal.vercel.app";
 const HORIZON_DAYS = 7;
 const MAX_RECIPIENTS = 10;
 const MAX_LINES = 15;

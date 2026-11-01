@@ -50,7 +50,7 @@ test("the built-in executor closes a run and a missed deadline escalates to the 
     assert.ok(stack, "the seeded infrastructure agent is present");
     assert.equal(stack.executor_configured, true, "the seeded agent has a sandbox executor");
     assert.equal(stack.executor_secret, undefined, "the signing secret never leaves the server");
-    assert.equal(stack.executor_url, "/api/demo/executor");
+    assert.equal(stack.executor_url, "/api/internal/agent-executor");
 
     const due = new Date(Date.now() + 2 * 86400000).toISOString();
     const automatic = await call("POST", "/api/obligations", {

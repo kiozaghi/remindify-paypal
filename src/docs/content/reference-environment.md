@@ -1,6 +1,6 @@
 # Environment variables
 
-Copy `.env.example` to `.env` for local runs. Everything here is optional except where noted; the app boots without it and degrades to a local-only, offchain configuration.
+Copy `.env.example` to `.env` for local runs. Everything here is optional except where noted; the app boots without it and degrades to a local-only configuration.
 
 Never commit a real `.env`. On Vercel, set variables in Project Settings → Environment Variables and redeploy; build-time values are read by `scripts/seo.mjs`.
 
@@ -34,10 +34,10 @@ Use exactly one Postgres URL. The server picks the first one it finds in that or
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PUBLIC_ORIGIN` | `http://localhost:4178` | Canonical origin for OAuth redirects, wallet sign-in messages, canonicals and sitemap |
+| `PUBLIC_ORIGIN` | `http://localhost:4178` | Canonical origin for OAuth redirects, PayPal return URLs, canonicals and sitemap |
 | `COOKIE_SECURE` | inferred from `x-forwarded-proto` | Force `Secure` cookies on or off |
 
-Set `PUBLIC_ORIGIN` to the real HTTPS URL before going live. A wrong origin breaks Google OAuth redirect matching, produces mismatched wallet sign-in messages and writes the wrong canonical URLs into the build.
+Set `PUBLIC_ORIGIN` to the real HTTPS URL before going live. A wrong origin breaks Google OAuth redirect matching, sends PayPal returns to the wrong host and writes the wrong canonical URLs into the build.
 
 ## Search and AI discovery
 
@@ -50,7 +50,7 @@ These are read by `scripts/seo.mjs`, not at runtime, so they only apply to prere
 
 ## Google OAuth
 
-Optional. Without it, email/password and wallet sign-in still work.
+Optional. Without it, email and password sign-in still works.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -81,9 +81,14 @@ Optional. Without credentials every payment route fails closed with `503 paypal_
 | `PAYPAL_ENV` | `sandbox` | `sandbox` or `live`; picks the API base and the checkout host |
 | `PAYPAL_CLIENT_ID` | — | REST app client id |
 | `PAYPAL_CLIENT_SECRET` | — | REST app secret |
+| `PAYPAL_PLATFORM_FEE_PERCENT` | `10` | Platform fee deducted from the captured escrow amount at release; the provider receives the net |
 | `PAYPAL_WEBHOOK_ID` | — | Webhook id used to verify signatures at `/api/paypal/webhook`; without it events are acknowledged but not applied |
+| `PAYPAL_ALLOW_WEBHOOK_SIMULATOR` | `false` | Accept Developer Dashboard simulator transmissions (tagged `sandbox_simulator`); never enable in production |
+| `PAYPAL_SDK` | `on` | `on` uses the APIMatic server SDK for orders and authorize/capture; `off` forces REST |
 | `PAYPAL_BASE_URL` | derived from `PAYPAL_ENV` | Override the API base; tests only |
 | `PAYPAL_TIMEOUT_MS` | `15000` | Per-request timeout for PayPal calls |
+
+`sandbox` points at the PayPal sandbox APIs and checkout host. It is the default and the only mode this preview is exercised in. `live` uses the production APIs and moves real money; use separate credentials. Never mix sandbox and live credentials.
 
 `npm run dev` copies only the `PAYPAL_*` lines from `.env.local` into the server process. The rest of that file is left alone, so a pulled production `.env.local` does not point local runs at the cloud database. Subscribe the webhook to `PAYMENT.CAPTURE.*` and `PAYMENT.PAYOUTS-ITEM.*` events.
 
@@ -162,25 +167,19 @@ Configure both on a schedule (Vercel Cron or any external scheduler). `sweep` wa
 
 ## Trust layer
 
-Preview mode works without any chain configuration. Add these only after contracts are deployed and verified. Every network has the same three variables: an RPC URL and the attestation and escrow contract addresses.
+Proof receipts work without any configuration: the server signs them with a receipt secret it generates and stores in workspace metadata. Set these to control the auditor and to keep the signing secret stable across deployments.
 
-| Network | Variables |
-| --- | --- |
-| Base | `BASE_RPC_URL`, `BASE_ATTESTATION_CONTRACT`, `BASE_ESCROW_CONTRACT` |
-| Base Sepolia | `BASE_SEPOLIA_RPC_URL`, `BASE_SEPOLIA_ATTESTATION_CONTRACT`, `BASE_SEPOLIA_ESCROW_CONTRACT` |
-| Celo | `CELO_RPC_URL`, `CELO_ATTESTATION_CONTRACT`, `CELO_ESCROW_CONTRACT` |
-| Celo Sepolia | `CELO_SEPOLIA_RPC_URL`, `CELO_SEPOLIA_ATTESTATION_CONTRACT`, `CELO_SEPOLIA_ESCROW_CONTRACT` |
-
-Defaults when a variable is unset:
-
-| Network | Chain ID | Default RPC |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| Base | 8453 | `https://mainnet.base.org` |
-| Base Sepolia | 84532 | `https://sepolia.base.org` |
-| Celo | 42220 | `https://forno.celo.org` |
-| Celo Sepolia | 11142220 | `https://forno.celo-sepolia.celo-testnet.org` |
+| `TRUST_RECEIPT_SECRET` | generated per workspace | HMAC-SHA256 key for receipt signatures; set the same value on every instance that shares a database |
+| `GEMINI_API_KEY` | — | Enables AI capture and the Gemini proof auditor; without it both fall back to deterministic server-side rules |
+| `AI_MODEL_ID` | `gemini-2.5-flash` | Gemini model used for capture extraction and structured proof scoring |
+| `AUDIT_MIN_CONFIDENCE` | `0.8` | Minimum confidence for an auditor verdict to count as verified |
+| `CAPTURE_TIMEOUT_MS` | `15000` | A capture call slower than this falls back to the deterministic parser |
 
-Proof signing is offchain and works without any of these. Anchoring and escrow funding require the contract addresses; without them those routes report the network as unavailable.
+The auditor runs when a receipt is audited directly or when a release finds a receipt that is not yet `verified`. Without `GEMINI_API_KEY`, or when the Gemini call fails, the deterministic engine still checks the obligation amount, a confirmation or reference number, a date and the proof requirement. A provider failure is labelled `deterministic_fallback` so the receipt shows which engine decided. Capture uses the same key and falls back to the deterministic parser when the model is unavailable.
+
+Escrow holds, capture and payouts use the PayPal variables above. Without `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, a hold or release fails closed with `paypal_not_configured`; receipts and the auditor keep working.
 
 ## Minimal configurations
 
@@ -191,13 +190,16 @@ npm install
 npm run dev
 ```
 
-**Local with a stable origin for OAuth or wallets:**
+**Local with a stable origin for OAuth and PayPal returns:**
 
 ```bash
 PUBLIC_ORIGIN=http://localhost:4178
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_REDIRECT_URI=http://localhost:4178/api/auth/google/callback
+PAYPAL_ENV=sandbox
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
 ```
 
 **Serverless production:**
@@ -213,11 +215,16 @@ BLOCKED_COUNTRIES=KP,IR,SY,CU
 PAYPAL_ENV=sandbox
 PAYPAL_CLIENT_ID=...
 PAYPAL_CLIENT_SECRET=...
+PAYPAL_PLATFORM_FEE_PERCENT=10
 PAYPAL_WEBHOOK_ID=...
+GEMINI_API_KEY=...
+AI_MODEL_ID=gemini-2.5-flash
+AUDIT_MIN_CONFIDENCE=0.8
+TRUST_RECEIPT_SECRET=...
 ```
 
 Then schedule `/api/cron/outbox` and `/api/cron/sweep`. Without a scheduler, executions still happen inline and retries queue but do not drain on their own.
 
 ## Checking configuration
 
-`GET /api/trust` reports the active networks and whether contracts are configured. `GET /api/billing` reports the current plan and usage. Never expose secret values in a health endpoint, a log line or an error message.
+`GET /api/trust` reports the active rail (PayPal mode, configured flag, hold days and fee percent) and the auditor (model, configured flag and threshold). `GET /api/billing` reports the current plan and usage. Never expose secret values in a health endpoint, a log line or an error message.

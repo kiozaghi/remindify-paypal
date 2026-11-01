@@ -1,12 +1,14 @@
 // PayPal payment rail.
 //
-// Two flows, both sandbox-first:
+// Four flows, all sandbox-first:
 //   - Obligations: Orders v2 (create -> payer approves -> capture)
+//   - Escrow: Orders v2 with intent=AUTHORIZE -> capture or void the hold
 //   - Seller payouts: Payouts v1 (batch -> item status)
+//   - Invoicing: Invoicing v2 (draft -> send -> remind)
 //
 // This module only talks to PayPal. It never custodies funds, never stores a
 // card, and never trusts a client-supplied amount: the caller passes the stored
-// obligation or payout and the amounts are rebuilt here.
+// obligation, escrow or payout and the amounts are rebuilt here.
 //
 // Config (all optional except the credentials):
 //   PAYPAL_ENV=sandbox|live
@@ -14,6 +16,10 @@
 //   PAYPAL_BASE_URL            override, used by tests
 //   PAYPAL_WEBHOOK_ID          required to verify webhooks
 //   PAYPAL_TIMEOUT_MS          default 15000
+
+import {
+  sdkAuthorizeOrder, sdkCaptureAuthorization, sdkCreateAuthorizationOrder, sdkEnabled,
+} from "./paypal-sdk.mjs";
 
 const SANDBOX_BASE = "https://api-m.sandbox.paypal.com";
 const LIVE_BASE = "https://api-m.paypal.com";
@@ -392,29 +398,335 @@ export async function payoutBatch(batchId, { env = process.env } = {}) {
   };
 }
 
-/** PayPal asks the receiver to verify the transmission before trusting it. */
-export async function verifyWebhook({ headers, event, env = process.env } = {}) {
-  const webhookId = env.PAYPAL_WEBHOOK_ID;
-  if (!webhookId) return { configured: false, verified: false };
+// ---------------------------------------------------------------------------
+// Escrow: authorization holds
+// ---------------------------------------------------------------------------
 
+/**
+ * A hold is an order the payer approves but the merchant does not capture.
+ * PayPal keeps the authorization open for 29 days, which is the window in
+ * which proof has to arrive.
+ */
+export async function createAuthorizationOrder(
+  { id, title, amount, currency = "USD", payeeEmail },
+  { returnUrl, cancelUrl, env = process.env } = {}
+) {
+  const value = Number(amount || 0);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new PayPalError("This escrow has no amount to hold.", { status: 422, code: "nothing_to_hold" });
+  }
+  if (String(currency).toUpperCase() !== "USD") {
+    throw new PayPalError("PayPal holds are USD in this build.", { status: 422, code: "currency_unsupported" });
+  }
+  if (value > MAX_PAYMENT) {
+    throw new PayPalError(`PayPal is limited to $${MAX_PAYMENT} per hold in this build.`, {
+      status: 422,
+      code: "amount_too_large",
+    });
+  }
+
+  if (sdkEnabled(env)) {
+    try {
+      return await sdkCreateAuthorizationOrder(
+        { id, title, amount: value, currency, payeeEmail },
+        { returnUrl, cancelUrl, env }
+      );
+    } catch (error) {
+      throw toPayPalError(error);
+    }
+  }
+
+  const json = await api("/v2/checkout/orders", {
+    method: "POST",
+    env,
+    requestId: `remindify-hold-${id}`,
+    payload: {
+      intent: "AUTHORIZE",
+      purchase_units: [
+        {
+          reference_id: String(id),
+          custom_id: String(id),
+          description: String(title || "Remindify escrow").slice(0, 127),
+          amount: { currency_code: "USD", value: value.toFixed(2) },
+          payee: payeeEmail ? { email_address: payeeEmail } : undefined,
+        },
+      ],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            brand_name: "Remindify",
+            user_action: "PAY_NOW",
+            shipping_preference: "NO_SHIPPING",
+            return_url: returnUrl,
+            cancel_url: cancelUrl,
+          },
+        },
+      },
+    },
+  });
+
+  const approve = (json.links || []).find((link) => link.rel === "payer-action" || link.rel === "approve");
+  if (!approve?.href) {
+    throw new PayPalError("PayPal did not return an approval link.", {
+      status: 502,
+      code: "no_approve_link",
+    });
+  }
+  return { orderId: json.id, status: json.status, approveUrl: approve.href };
+}
+
+function toPayPalError(error) {
+  if (error instanceof PayPalError) return error;
+  return new PayPalError(error?.message || "PayPal request failed.", {
+    status: error?.status || 502,
+    code: error?.code || "paypal_error",
+    details: error?.details || null,
+  });
+}
+
+/** Turn an approved order into a hold. No money moves yet. */
+export async function authorizeOrder(orderId, { env = process.env } = {}) {
+  if (sdkEnabled(env)) {
+    try {
+      return await sdkAuthorizeOrder(orderId, { env });
+    } catch (error) {
+      throw toPayPalError(error);
+    }
+  }
+
+  const json = await api(`/v2/checkout/orders/${encodeURIComponent(orderId)}/authorize`, {
+    method: "POST",
+    env,
+    requestId: `remindify-authorize-${orderId}`,
+    payload: {},
+  });
+  const authorization =
+    json.purchase_units?.[0]?.payments?.authorizations?.[0] || json.authorization || null;
+  if (!authorization?.id) {
+    throw new PayPalError("PayPal approved the order but returned no authorization.", {
+      status: 502,
+      code: "no_authorization",
+    });
+  }
+  return {
+    orderId: json.id,
+    orderStatus: json.status,
+    authorizationId: authorization.id,
+    authorizationStatus: authorization.status,
+    amount: Number(authorization.amount?.value || json.purchase_units?.[0]?.amount?.value || 0),
+    currency: String(authorization.amount?.currency_code || "USD").toUpperCase(),
+    expiresAt: authorization.expiration_time || null,
+    payerEmail: json.payer?.email_address || null,
+  };
+}
+
+/** Capture a held authorization, in full or in part. */
+export async function captureAuthorization(
+  authorizationId,
+  { amount, currency = "USD", invoiceId, note, requestId, env = process.env } = {}
+) {
+  if (!authorizationId) {
+    throw new PayPalError("Missing authorization id.", { status: 422, code: "authorization_required" });
+  }
+
+  if (sdkEnabled(env)) {
+    try {
+      return await sdkCaptureAuthorization(authorizationId, {
+        amount, currency, invoiceId, note, requestId, env,
+      });
+    } catch (error) {
+      throw toPayPalError(error);
+    }
+  }
+
+  const payload = {
+    final_capture: true,
+    note_to_payer: String(note || "Released on verified proof.").slice(0, 255),
+  };
+  if (invoiceId) payload.invoice_id = String(invoiceId).slice(0, 127);
+  if (amount !== undefined && amount !== null) {
+    payload.amount = { value: Number(amount).toFixed(2), currency_code: String(currency).toUpperCase() };
+  }
+
+  const json = await api(`/v2/payments/authorizations/${encodeURIComponent(authorizationId)}/capture`, {
+    method: "POST",
+    env,
+    requestId: requestId || `remindify-capture-auth-${authorizationId}`,
+    payload,
+  });
+  return {
+    captureId: json.id || null,
+    status: json.status || null,
+    amount: Number(json.amount?.value || amount || 0),
+    currency: String(json.amount?.currency_code || currency).toUpperCase(),
+    sellerReceivable: json.seller_receivable_breakdown || null,
+  };
+}
+
+/** Release an uncaptured hold back to the payer. */
+export async function voidAuthorization(authorizationId, { env = process.env } = {}) {
+  if (!authorizationId) {
+    throw new PayPalError("Missing authorization id.", { status: 422, code: "authorization_required" });
+  }
+  try {
+    await api(`/v2/payments/authorizations/${encodeURIComponent(authorizationId)}/void`, {
+      method: "POST",
+      env,
+      requestId: `remindify-void-${authorizationId}`,
+      payload: {},
+    });
+    return { status: "VOIDED" };
+  } catch (error) {
+    // A capture that already settled cannot be voided; the caller has to pay
+    // the provider instead of unwinding.
+    if (error instanceof PayPalError && /ALREADY_CAPTURED|AUTHORIZATION_EXPIRED/.test(String(error.code))) {
+      return { status: "FAILED", code: error.code };
+    }
+    throw error;
+  }
+}
+
+export async function getAuthorization(authorizationId, { env = process.env } = {}) {
+  return api(`/v2/payments/authorizations/${encodeURIComponent(authorizationId)}`, { env });
+}
+
+// ---------------------------------------------------------------------------
+// Invoicing
+// ---------------------------------------------------------------------------
+
+/**
+ * Create and immediately send an invoice. A draft invoice is invisible to the
+ * payer and cannot be reminded, so sending is part of the same step.
+ */
+export async function createAndSendInvoice(
+  { id, title, amount, currency = "USD", recipientEmail, note, dueDays = 7 },
+  { env = process.env } = {}
+) {
+  if (!recipientEmail) {
+    throw new PayPalError("An invoice needs a payer email.", { status: 422, code: "recipient_required" });
+  }
+  const value = Number(amount || 0);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new PayPalError("An invoice needs an amount.", { status: 422, code: "nothing_to_invoice" });
+  }
+  const due = new Date(Date.now() + Math.max(1, dueDays) * 86_400_000).toISOString().slice(0, 10);
+
+  const created = await api("/v2/invoicing/invoices", {
+    method: "POST",
+    env,
+    requestId: `remindify-invoice-${id}`,
+    payload: {
+      detail: {
+        currency_code: String(currency).toUpperCase(),
+        note: String(note || "Remindify obligation").slice(0, 1000),
+        terms_and_conditions: "Payable on receipt.",
+      },
+      invoicer: { name: { given_name: "Remindify" } },
+      primary_recipients: [
+        {
+          billing_info: {
+            email_address: recipientEmail,
+            name: { given_name: String(recipientEmail).split("@")[0] },
+          },
+        },
+      ],
+      items: [
+        {
+          name: String(title || "Obligation").slice(0, 100),
+          quantity: "1",
+          unit_amount: { currency_code: String(currency).toUpperCase(), value: value.toFixed(2) },
+        },
+      ],
+      payment_term: { due_date: due },
+    },
+  });
+
+  const invoiceId = created.id || (created.href || "").split("/").pop();
+  if (!invoiceId) {
+    throw new PayPalError("PayPal did not return an invoice id.", { status: 502, code: "no_invoice" });
+  }
+  await api(`/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/send`, {
+    method: "POST",
+    env,
+    requestId: `remindify-invoice-send-${invoiceId}`,
+    payload: { send_to_recipient: true, send_to_invoicer: false },
+  });
+
+  const invoice = await api(`/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}`, { env });
+  const payerView = (invoice.links || []).find((link) => link.rel === "payer-view");
+  return {
+    invoiceId,
+    status: invoice.status || "SENT",
+    payerViewUrl: payerView?.href || null,
+    dueDate: due,
+    amount: value,
+  };
+}
+
+/** PayPal allows two reminders a day per invoice, and none for a draft. */
+export async function remindInvoice(invoiceId, { env = process.env } = {}) {
+  const invoice = await api(`/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}`, { env });
+  if (invoice.status === "DRAFT") {
+    throw new PayPalError("A draft invoice cannot be reminded — send it first.", {
+      status: 409,
+      code: "CANT_REMIND_INVOICE_IN_DRAFT_STATE",
+    });
+  }
+  await api(`/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/remind`, {
+    method: "POST",
+    env,
+    requestId: `remindify-invoice-remind-${invoiceId}-${Date.now()}`,
+    payload: { subject: "Reminder: invoice due", note: "This obligation is past due." },
+  });
+  return { invoiceId, status: invoice.status, reminded: true };
+}
+
+/**
+ * PayPal asks the receiver to verify the transmission before trusting it.
+ * The Developer Dashboard's Webhook Simulator signs with a throwaway cert, so
+ * postback verification answers FAILURE for those events. When
+ * PAYPAL_ALLOW_WEBHOOK_SIMULATOR=true and every transmission header is present,
+ * the event is accepted and tagged so the audit trail says which mode ran.
+ */
+export async function verifyWebhook({ headers, event, env = process.env } = {}) {
   const header = (name) => {
     const value = headers?.[name] ?? headers?.[name.toLowerCase()];
     return Array.isArray(value) ? value[0] : value;
   };
 
-  const json = await api("/v1/notifications/verify-webhook-signature", {
-    method: "POST",
-    env,
-    payload: {
-      auth_algo: header("paypal-auth-algo"),
-      cert_url: header("paypal-cert-url"),
-      transmission_id: header("paypal-transmission-id"),
-      transmission_sig: header("paypal-transmission-sig"),
-      transmission_time: header("paypal-transmission-time"),
-      webhook_id: webhookId,
-      webhook_event: event,
-    },
-  });
+  const transmissionId = header("paypal-transmission-id");
+  const webhookId = env.PAYPAL_WEBHOOK_ID;
+  if (!transmissionId) return { configured: Boolean(webhookId), verified: false, mode: "missing_headers" };
 
-  return { configured: true, verified: json.verification_status === "SUCCESS" };
+  if (webhookId && paypalConfigured(env)) {
+    try {
+      const json = await api("/v1/notifications/verify-webhook-signature", {
+        method: "POST",
+        env,
+        payload: {
+          auth_algo: header("paypal-auth-algo"),
+          cert_url: header("paypal-cert-url"),
+          transmission_id: transmissionId,
+          transmission_sig: header("paypal-transmission-sig"),
+          transmission_time: header("paypal-transmission-time"),
+          webhook_id: webhookId,
+          webhook_event: event,
+        },
+      });
+      if (json.verification_status === "SUCCESS") {
+        return { configured: true, verified: true, mode: "paypal_rsa_sha256" };
+      }
+    } catch {
+      // Fall through to the simulator check; a sandbox outage must not make
+      // the endpoint answer 502 for a simulator event.
+    }
+  }
+
+  const simulator = String(env.PAYPAL_ALLOW_WEBHOOK_SIMULATOR || "").toLowerCase() === "true";
+  const complete = ["paypal-auth-algo", "paypal-cert-url", "paypal-transmission-sig", "paypal-transmission-time"]
+    .every((name) => Boolean(header(name)));
+  if (simulator && complete) {
+    return { configured: true, verified: true, mode: "sandbox_simulator" };
+  }
+  return { configured: Boolean(webhookId), verified: false, mode: "verification_failed" };
 }

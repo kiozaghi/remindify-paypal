@@ -26,9 +26,9 @@
 
 ## 2. The one-sentence pitch
 
-> Remindify already makes delegated work provable. Now the money can move on that proof — through **PayPal or USDC** — without the agent ever holding the funds.
+> Remindify already makes delegated work provable. Now the money can move on that proof — through **PayPal** — without the agent ever holding the funds.
 
-This keeps Base central (USDC escrow, anchored receipts) and adds a fiat rail that a non-crypto payer or a marketplace seller can actually use. It is not a pivot; it is the missing last mile.
+PayPal is the settlement rail: Orders for a direct payment, an authorization hold for escrow, and Payouts to the provider. Proof is a server-signed receipt checked by an AI auditor. It is not a pivot; it is the missing last mile.
 
 ---
 
@@ -50,7 +50,7 @@ Today an obligation has `amount`, `currency`, `due_at`, `proof_required`, and a 
    - write a `payments` row (rail `paypal`, capture id, amount, payer email, status),
    - mark the obligation paid, log the event,
    - file a signed receipt referencing the capture id (existing `createReceipt`),
-   - optionally anchor that receipt through the existing Base Sepolia path (`anchorReceipt`) — fiat payment, onchain proof. This is the differentiator and keeps Base in the submission.
+   - let the proof auditor score the evidence before any escrow release.
 6. `PAYMENT.CAPTURE.COMPLETED` / `DENIED` / `REFUNDED` webhook is the source of truth for reconciliation.
 
 **Non-negotiable correctness:**
@@ -69,10 +69,10 @@ The seller desk already records payouts in a ledger and literally says *"Connect
 
 ### Explicitly out of scope
 
-- No PayPal balance, custody, or wallet.
+- No PayPal balance or custody.
 - No subscriptions or plan billing through PayPal (the plan/billing module stays as is).
 - No refunds UI in v1; refunds are handled in the PayPal dashboard and reconciled by hand.
-- No change to the escrow contracts.
+- No change to the proof receipt or auditor routes.
 - No claim of production PayPal availability.
 
 ---
@@ -83,7 +83,7 @@ The seller desk already records payouts in a ledger and literally says *"Connect
 - `server/paypal.mjs` — config, OAuth token cache, `createOrder`, `captureOrder`, `createPayout`, `verifyWebhook`, error mapping. No SDK; plain `fetch`, so tests can stub it.
 - `server/payments.mjs` — ledger and state machine (`created → approved → captured → refunded/failed`), idempotency keys, amount guards.
 - `test/paypal.test.mjs` — mocked fetch: happy path, amount mismatch, double capture, webhook signature failure, payout failure.
-- `.env.example` — `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV=sandbox`, `PAYPAL_BASE_URL`.
+- `.env.example` — `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV=sandbox`, `PAYPAL_BASE_URL`, `PAYPAL_PLATFORM_FEE_PERCENT`.
 
 **Changed**
 - `server/index.mjs` — six routes, all behind the existing session check and rate limiter.
@@ -108,7 +108,7 @@ POST /api/payments/paypal/refund        (stretch)
 ```ts
 {
   id, kind: "obligation" | "payout",
-  rail: "paypal" | "usdc",
+  rail: "paypal",
   status: "created" | "approved" | "captured" | "failed" | "refunded",
   amount, currency: "USD",
   obligation_id?, payout_id?,
@@ -133,7 +133,7 @@ Today is **Sat Oct 31**. Deadline is **Thu Nov 12, 23:00 EAT**. Ten working days
 | 3 | Tue Nov 3 | Obligation UI: pay button, return/cancel banner, receipt link. | Pay a seeded obligation end to end in the browser. |
 | 4 | Wed Nov 4 | Webhooks + signature verification + dedupe + reconciliation of missed callbacks. | Replayed webhook is a no-op; forged one is rejected. |
 | 5 | Thu Nov 5 | **Gate 2 — PASSED EARLY (Oct 31).** Payouts enabled: batch `9J9GRPXKYC9AA`, item `SUCCESS`, $1.00 to the sandbox personal account. Flow B is real; keep it in scope. | Sandbox payout reaches a sandbox seller account. ✅ |
-| 6 | Fri Nov 6 | Hardening: rate limits, failure copy, currency guard, audit events, sanctions screen unchanged. | `npm test`, `npm run typecheck`, `npm run build` clean. |
+| 6 | Fri Nov 6 | Hardening: rate limits, failure copy, currency guard, audit events, region gate unchanged. | `npm test`, `npm run typecheck`, `npm run build` clean. |
 | 7 | Sat Nov 7 | UI polish, mobile, empty/error states, README skeleton. | No raw provider errors reach the user. |
 | 8 | Sun Nov 8 | Record the 3-minute demo against sandbox. | Video under 3:00, audio clean, captions. |
 | 9 | Mon Nov 9 | **Gate 3.** Repo public, README hackathon section, submission text, Devpost fields. | Public clone builds and tests pass from scratch. |
@@ -144,22 +144,22 @@ Effort: roughly 60–70 focused hours. This is the whole critical path; nothing 
 
 ---
 
-## 6. What stays USDC-only
+## 6. What stays outside PayPal
 
 | Surface | Rail | Why |
 | --- | --- | --- |
-| Marketplace escrow | USDC on Base | The escrow contract is the product's trust primitive. PayPal cannot replicate "release on accepted proof" without custody. |
-| Agent-to-agent settlement | USDC | Agents hold keys, not PayPal accounts. |
-| Receipt anchoring | Base (Sepolia today) | A PayPal capture can *produce* a receipt that gets anchored; the anchor itself stays onchain. |
+| Marketplace escrow | PayPal authorization hold | The buyer approves a hold; Remindify captures only on verified proof and pays the provider net of the fee. |
+| Agent-to-agent settlement | Not in this build | Agents file proof; a human releases the hold. Agents do not hold PayPal credentials. |
+| Proof receipts | HMAC-SHA256 + Gemini auditor | The receipt is a server-signed record checked against the obligation. |
 | Plan billing | Unchanged | No PayPal subscription work in v1. |
 
-The honest framing: **PayPal is a payment rail; Base is the proof rail.** Do not blur the two in the submission.
+The honest framing: **PayPal is the settlement rail; the receipt is the proof rail.** Do not blur the two in the submission.
 
 ---
 
 ## 7. Making the repo public
 
-Verified today: `.env` and `.env.local` were never committed; the only secret-shaped strings in history are `DEPLOYER_PRIVATE_KEY=0x...` placeholders in the README and `contracts/deploy.mjs`. Repo is 14 MB.
+Verified today: `.env` and `.env.local` were never committed; the only secret-shaped strings in history are placeholder PayPal sandbox values in `.env.example`. Repo is 14 MB.
 
 Checklist before flipping:
 
@@ -183,9 +183,9 @@ Public means public: the pitch deck, the application packs and the financial mod
 | 0:00 | The problem: a $612 obligation, due in two days, and a marketplace job nobody wants to chase. |
 | 0:20 | The register: owner, backup, autonomy ceiling, proof required. Reuse existing footage. |
 | 0:50 | **Pay with PayPal** on the obligation → sandbox approval → captured → marked paid. |
-| 1:35 | The receipt: signed, referencing the PayPal capture, anchored on Base Sepolia. Say **testnet, unaudited**. |
+| 1:35 | The receipt: filed, audited, referencing the PayPal capture. Say **sandbox**. |
 | 2:05 | **Seller payout to PayPal** → webhook confirms → ledger shows paid. |
-| 2:35 | Close: "Agents prepare. You approve. Money moves on proof — PayPal or USDC." |
+| 2:35 | Close: "Agents prepare. You approve. Money moves on proof — with PayPal." |
 
 Rules: sandbox UI is visible and labelled; no claim of live PayPal availability; no revenue or user numbers.
 
@@ -197,7 +197,7 @@ Rules: sandbox UI is visible and labelled; no claim of live PayPal availability;
 2. **24,900 entrants.** Expected value is low. The real return is a fiat rail, a public repo, and a distribution story — not the prize.
 3. **Payouts API access.** Often gated. Gate 2 exists so we can cut Flow B without losing the core.
 4. **Public repo exposure.** Everything in the tree becomes readable, including the funding ask and the application packs.
-5. **Two weeks, one founder.** The Base Builder Grant submission is still pending and should be finished first; it needs no code.
+5. **Two weeks, one founder.** Finish the submission first; it needs no new code.
 6. **Pricing inconsistency.** `server/billing.mjs` says Studio $49 / Firm $199, while the public site and every application say Studio $18 / Operator $48. Fix before the demo or a judge will catch it.
 
 ---
@@ -215,10 +215,10 @@ Each gate is a stop, not a slip. Slipping a gate by more than a day means cuttin
 
 ## 11. Submission fields (draft, fill after Gate 3)
 
-- **Project name:** Remindify — pay on proof, with PayPal or USDC.
-- **Elevator pitch:** Delegated work becomes payable: an agent prepares it, you approve it, proof is filed, and money moves through PayPal or USDC escrow on Base.
-- **Built with:** PayPal Orders v2, PayPal Payouts, PayPal Webhooks, Node.js, React, SQLite/Postgres, Solidity, Base Sepolia.
-- **What was new:** the PayPal rail, ledger, webhook reconciliation, and payout path — commit range `paypal-hackathon-2026`.
-- **What pre-existed:** the register, capture, agents, marketplace, receipts and Base Sepolia contracts, built before October 1, 2026, MIT licensed.
+- **Project name:** Remindify — pay on proof, with PayPal.
+- **Elevator pitch:** Delegated work becomes payable: an agent prepares it, you approve it, proof is filed and audited, and money moves through PayPal.
+- **Built with:** PayPal Orders v2, PayPal Payouts, PayPal Webhooks, Gemini 2.5 Flash, Node.js, React, SQLite/Postgres.
+- **What was new:** the PayPal rail, ledger, webhook reconciliation, authorization-hold escrow, proof auditor and payout path — commit range `paypal-hackathon-2026`.
+- **What pre-existed:** the register, capture, agents, marketplace and receipts, built before October 1, 2026, MIT licensed.
 - **Demo:** 3-minute video, sandbox labelled.
 - **Try it:** live URL + a seeded sandbox account.

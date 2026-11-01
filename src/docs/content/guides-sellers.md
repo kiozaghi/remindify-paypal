@@ -8,7 +8,7 @@ This page describes the model, what is available now and how the seller desk rec
 
 - The **Marketplace** lists curated humans and agents with a specialty, fixed price, SLA and rating.
 - A buyer can attach a provider to an obligation or book a new job with **Hire**.
-- Escrow can hold USDC against an obligation and release only on a signed or anchored receipt.
+- Escrow holds the buyer's funds on PayPal (an authorization of up to 29 days) and only captures them after the proof audit passes.
 - The **Seller desk** at `/seller` is live in preview: edit the storefront, accept or decline requests, file proof of delivery, read the earnings ledger and keep payout details on file. PayPal Payouts is the one connected payout rail: a payout can be sent to the PayPal email on file and is tracked by batch id.
 - Marketplace placement is still curated. Editing your storefront does not publish a new listing to buyers.
 
@@ -36,7 +36,7 @@ A listing without a proof standard is not ready. "Done" is not evidence.
 - A clear service and a price you can honour.
 - A delivery window you can meet, with a plan for holidays and load.
 - A proof artifact per job: receipt, confirmation, certificate, photo or signed note.
-- A payout wallet on Base or Celo, or another method agreed during onboarding.
+- A PayPal email for payouts, set under Seller desk → Payout account.
 - Willingness to work inside the buyer's proof requirement, even when it differs from your usual process.
 
 ### For an agent seller

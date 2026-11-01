@@ -7,15 +7,13 @@ export interface AuthUser {
   email: string | null;
   email_verified?: boolean;
   avatar_url: string | null;
-  wallet_address: string | null;
-  providers: Array<"email" | "google" | "wallet">;
+  providers: Array<"email" | "google">;
   created_at: string;
 }
 
 export interface AuthConfig {
   email: boolean;
   google: boolean;
-  wallet: boolean;
   reset?: boolean;
   verify?: boolean;
 }
@@ -54,6 +52,8 @@ export interface Obligation {
   checklist: string[];
   evidence?: any;
   marketplace?: any;
+  payer_paypal_email?: string | null;
+  payee_paypal_email?: string | null;
   created_at: string;
   last_completed_at?: string;
   last_proof?: string;
@@ -76,6 +76,7 @@ export interface Agent {
   description: string;
   capabilities: string[];
   autonomy_ceiling: Autonomy;
+  spend_ceiling?: number | null;
   trust: number;
   runs_30d: number;
   success_rate: number | null;
@@ -142,6 +143,7 @@ export interface Provider {
   description: string;
   capabilities: string[];
   response_min: number;
+  paypal_email?: string | null;
 }
 
 export interface EventItem {
@@ -170,111 +172,111 @@ export interface ApiKey {
   expired?: boolean;
 }
 
-export interface TrustNetwork {
-  key: string;
+export interface TrustRail {
+  key: "paypal";
   label: string;
-  role: string;
-  description: string;
-  chain_id: number;
-  caip2: string;
-  currency: string;
-  usdc: string;
-  usdc_decimals: number;
-  explorer: string;
-  rpc_configured: boolean;
-  attestation_contract: string | null;
-  escrow_contract: string | null;
-  ready: boolean;
-  preview: boolean;
-  status: "configured" | "preview";
-  tone: string;
-  testnet: boolean;
-  guardrail: string | null;
-  env: { rpc: string; attestation: string; escrow: string };
+  mode: "sandbox" | "live";
+  configured: boolean;
+  hold_days: number;
+  fee_percent: number;
+  auditor: string;
+  auditor_configured: boolean;
+  threshold: number;
 }
 
 export interface TrustStats {
   receipts: number;
-  prepared: number;
-  signed: number;
-  anchored: number;
+  filed: number;
+  verified: number;
+  rejected: number;
+  settled: number;
   escrows: number;
   open_escrows: number;
   released_escrows: number;
   escrow_value: number;
   released_value: number;
+  fees_collected: number;
 }
 
 export interface TrustGuardrails {
-  ethiopia_offchain: boolean;
+  proof_before_money: boolean;
   note: string;
   disclosure: string;
 }
 
 export interface TrustSummary {
-  networks: TrustNetwork[];
+  rail: TrustRail;
   stats: TrustStats;
   guardrails: TrustGuardrails;
 }
 
-export interface TypedDataPayload {
-  domain: {
-    name: string;
-    version: string;
-    chainId: number;
-    verifyingContract: string;
-  };
-  types: Record<string, { name: string; type: string }[]>;
-  primaryType: string;
-  message: {
-    obligationId: string;
-    proofHash: string;
-    evidenceHash: string;
-    agentId: string;
-    issuedAt: number;
-    nonce: string;
-  };
+export interface ReceiptAudit {
+  verified: boolean;
+  confidence: number;
+  engine: string;
+  matching_verdict?: string;
+  discrepancies?: string[];
+  audited_at?: string;
 }
+
+export interface ReceiptSettlement {
+  escrow_id: string;
+  capture_id: string | null;
+  payout_batch_id: string;
+  gross: number;
+  fee: number;
+  net: number;
+  recipient: string;
+  at: string;
+}
+
+export type ReceiptStatus = "filed" | "verified" | "rejected" | "settled";
 
 export interface ProofReceipt {
   id: string;
   obligation_id: string;
   obligation_title: string;
+  obligation_amount: number;
   agent_id: string | null;
   agent_name: string | null;
-  chain: string;
-  chain_id: number;
-  network_label: string;
-  network_role: string;
-  explorer: string;
-  explorer_url: string | null;
-  contract: string | null;
-  contract_url: string | null;
+  actor_id: string | null;
+  actor_type: string;
+  actor: string;
   proof_label: string;
   proof_hash: string;
-  evidence_hash: string;
-  short_hash: string;
-  short_proof: string;
-  issued_at: string;
-  issued_at_unix: number;
-  nonce: string;
-  digest: string;
-  typed_data: TypedDataPayload;
-  wallet_payload: TypedDataPayload;
-  status: "prepared" | "signed" | "anchored";
-  signer: string | null;
+  artifact_hash: string;
+  artifact: {
+    name: string;
+    type: string;
+    text: string;
+    bytes: number;
+    mime?: string;
+    inline?: boolean;
+  };
+  completed_at: string;
+  status: ReceiptStatus;
+  audit: ReceiptAudit | null;
+  settlement: ReceiptSettlement | null;
   signature: string | null;
+  settlement_signature: string | null;
   signed_at: string | null;
-  tx_hash: string | null;
-  block_number: number | null;
-  anchored_at: string | null;
-  anchor_mode: string;
   source: string;
   demo: boolean;
   created_at: string;
-  usdc: string;
-  mode: "preview" | "live";
+  short_hash: string;
+  short_signature: string;
+  verified: boolean;
+  settled: boolean;
+  mode: string;
 }
+
+export type EscrowStatus =
+  | "draft"
+  | "hold_pending"
+  | "authorized"
+  | "captured_awaiting_payout"
+  | "released"
+  | "voided";
 
 export interface Escrow {
   id: string;
@@ -283,30 +285,35 @@ export interface Escrow {
   provider_id: string | null;
   provider_name: string | null;
   provider_kind: string | null;
-  chain: string;
-  chain_id: number;
-  network_label: string;
-  network_role: string;
-  explorer: string;
-  explorer_url: string | null;
-  release_url: string | null;
-  contract: string | null;
-  contract_url: string | null;
+  payee_paypal_email: string;
+  rail: "paypal";
   currency: string;
   amount: number;
-  amount_base: string;
-  mode: string;
-  jurisdiction_ack: boolean;
-  status: "draft" | "committed" | "funded" | "released";
+  platform_fee_percent: number;
+  platform_fee: number;
+  net_payout: number;
+  fee_percent: number;
+  status: EscrowStatus;
+  paypal_order_id: string | null;
+  approve_url: string | null;
+  authorization_id: string | null;
+  authorization_expires_at: string | null;
+  capture_id: string | null;
+  payout_batch_id: string | null;
+  payout_status?: string | null;
   proof_receipt_id: string | null;
+  failure_code: string | null;
+  failure_reason: string | null;
+  timeline: { at: string; status: string; note: string }[];
   note: string;
-  short_id: string;
-  tx_hash: string | null;
-  release_tx_hash: string | null;
   created_at: string;
-  committed_at: string | null;
-  funded_at: string | null;
+  hold_at: string | null;
+  authorized_at: string | null;
+  captured_at: string | null;
   released_at: string | null;
+  voided_at: string | null;
+  short_id: string;
+  hold_expires_in_days: number | null;
 }
 
 export interface Stats {
@@ -333,7 +340,7 @@ export type SellerBookingStatus =
   | "completed"
   | "declined";
 
-export type PayoutMethod = "none" | "bank" | "wallet" | "usdc" | "paypal";
+export type PayoutMethod = "none" | "bank" | "paypal";
 
 export interface SellerPayoutAccount {
   method: PayoutMethod;
@@ -518,6 +525,25 @@ export interface PaymentsSummary {
   failed: number;
 }
 
+export interface Invoice {
+  id: string;
+  obligation_id: string;
+  obligation_title: string;
+  agent_id: string | null;
+  agent_name: string;
+  payer_paypal_email: string;
+  amount: number;
+  currency: string;
+  status: string;
+  paypal_invoice_id: string;
+  payer_view_url: string | null;
+  due_date: string | null;
+  reminders: number;
+  last_reminded_at: string | null;
+  demo: boolean;
+  created_at: string;
+}
+
 export interface AppState {
   now: string;
   clock_offset_days: number;
@@ -538,6 +564,7 @@ export interface AppState {
   trust: TrustSummary;
   seller: SellerState;
   payments: Payment[];
+  invoices: Invoice[];
   paypal: { configured: boolean; mode: "sandbox" | "live" };
   stats: Stats;
   api_calls: number;
@@ -568,5 +595,6 @@ export interface Draft {
   grace_days: number;
   checklist: string[];
   evidence?: any;
+  payee_paypal_email?: string | null;
   needs_review?: boolean;
 }

@@ -39,18 +39,45 @@ export const isPostgres = true;
 
 const USER_COLUMNS = [
   "id", "email", "name", "password_hash", "password_salt", "google_sub",
-  "avatar_url", "wallet_address", "email_verified_at", "created_at", "last_login_at", "workspace_id",
+  "avatar_url", "email_verified_at", "created_at", "last_login_at", "workspace_id",
 ];
 const USER_COLUMNS_SQL = USER_COLUMNS.join(", ");
 const ITEM_KINDS = [
   "obligations", "agents", "approvals", "runs", "providers", "events",
   "keys", "receipts", "escrows",
   "seller_profile", "bookings", "seller_receipts", "earnings", "payouts", "payments",
+  "invoices",
 ];
 
-// One serialized writer per database. Requests from different workspaces still
-// share the lock; per-workspace locking is a later optimization.
-const WORKSPACE_LOCK = 728394;
+// Writers serialise per workspace, so a slow request in workspace A cannot
+// queue workspace B behind it. The key is resolved from the request credential
+// before the lock is taken (see resolveLockWorkspace).
+export async function withWorkspaceLock(client, workspaceId, fn = async () => {}) {
+  const lockKey = `ws:${String(workspaceId || "global_default")}`;
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [lockKey]);
+  return await fn();
+}
+
+async function resolveLockWorkspace(client, hint = {}) {
+  if (hint.workspaceId) return String(hint.workspaceId);
+  if (hint.sessionTokenHash) {
+    const { rows } = await client.query(
+      `SELECT u.workspace_id FROM auth_sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = $1 AND s.expires_at > $2 LIMIT 1`,
+      [hint.sessionTokenHash, new Date().toISOString()]
+    );
+    if (rows[0]?.workspace_id) return String(rows[0].workspace_id);
+  }
+  if (hint.apiKey) {
+    const { rows } = await client.query(
+      `SELECT workspace_id FROM app_items WHERE kind = 'keys'
+       AND (data->>'secret_hash' = $1 OR data->>'secret' = $2) LIMIT 1`,
+      [hint.apiKeyDigest || "", hint.apiKey]
+    );
+    if (rows[0]?.workspace_id) return String(rows[0].workspace_id);
+  }
+  return "global_default";
+}
 
 function itemKey(workspaceId, kind, id) {
   return `${workspaceId}\u0000${kind}\u0000${id}`;
@@ -112,7 +139,6 @@ const SCHEMA_STATEMENTS = [
     password_salt text,
     google_sub text UNIQUE,
     avatar_url text,
-    wallet_address text UNIQUE,
     email_verified_at text,
     created_at text NOT NULL,
     last_login_at text,
@@ -194,13 +220,14 @@ async function ensureSchema() {
   return schemaPromise;
 }
 
-export async function beginRequest() {
+export async function beginRequest(hint = {}) {
   await ensureSchema();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     if (process.env.PG_NO_LOCK !== "1") {
-      await client.query("SELECT pg_advisory_xact_lock($1)", [WORKSPACE_LOCK]);
+      const workspaceId = await resolveLockWorkspace(client, hint);
+      await withWorkspaceLock(client, workspaceId);
     }
 
     const items = await client.query("SELECT workspace_id, kind, id, data FROM app_items");
@@ -220,7 +247,6 @@ export async function beginRequest() {
       users: new Map(),
       usersByEmail: new Map(),
       usersByGoogleSub: new Map(),
-      usersByWallet: new Map(),
       sessions: new Map(),
       challenges: new Map(),
       tokens: new Map(),
@@ -272,7 +298,6 @@ export function runWithStore(store, fn) {
 function indexUser(store, user) {
   if (user.email) store.usersByEmail.set(String(user.email).toLowerCase(), user);
   if (user.google_sub) store.usersByGoogleSub.set(String(user.google_sub), user);
-  if (user.wallet_address) store.usersByWallet.set(String(user.wallet_address).toLowerCase(), user);
 }
 
 function unindexUser(store, user) {
@@ -281,9 +306,6 @@ function unindexUser(store, user) {
   }
   if (user.google_sub && store.usersByGoogleSub.get(String(user.google_sub))?.id === user.id) {
     store.usersByGoogleSub.delete(String(user.google_sub));
-  }
-  if (user.wallet_address && store.usersByWallet.get(String(user.wallet_address).toLowerCase())?.id === user.id) {
-    store.usersByWallet.delete(String(user.wallet_address).toLowerCase());
   }
 }
 
@@ -382,7 +404,6 @@ export async function endRequest(store) {
           password_salt = EXCLUDED.password_salt,
           google_sub = EXCLUDED.google_sub,
           avatar_url = EXCLUDED.avatar_url,
-          wallet_address = EXCLUDED.wallet_address,
           email_verified_at = EXCLUDED.email_verified_at,
           created_at = EXCLUDED.created_at,
           last_login_at = EXCLUDED.last_login_at,
@@ -486,6 +507,7 @@ export function loadAll() {
     obligations: [], agents: [], approvals: [], runs: [], providers: [], events: [], keys: [],
     receipts: [], escrows: [], outbox: [],
     seller_profile: [], bookings: [], seller_receipts: [], earnings: [], payouts: [], payments: [],
+    invoices: [],
   };
   for (const row of store.items.values()) {
     if (row.workspace_id !== workspaceId) continue;
@@ -561,12 +583,6 @@ export function findUserByGoogleSub(sub) {
   return user ? { ...user } : null;
 }
 
-export function findUserByWallet(address) {
-  const store = requireStore();
-  const user = store.usersByWallet.get(String(address).toLowerCase());
-  return user ? { ...user } : null;
-}
-
 export function createUser(user) {
   const store = requireStore();
   const row = {
@@ -577,7 +593,6 @@ export function createUser(user) {
     password_salt: user.password_salt || null,
     google_sub: user.google_sub || null,
     avatar_url: user.avatar_url || null,
-    wallet_address: user.wallet_address || null,
     email_verified_at: user.email_verified_at || null,
     created_at: user.created_at,
     last_login_at: user.last_login_at || null,
@@ -585,9 +600,6 @@ export function createUser(user) {
   };
   if (row.email && store.usersByEmail.has(row.email)) throw new Error("email_taken");
   if (row.google_sub && store.usersByGoogleSub.has(row.google_sub)) throw new Error("google_taken");
-  if (row.wallet_address && store.usersByWallet.has(row.wallet_address.toLowerCase())) {
-    throw new Error("wallet_taken");
-  }
   store.users.set(row.id, row);
   indexUser(store, row);
   store.dirtyUsers.add(row.id);
@@ -612,10 +624,6 @@ export function updateUser(id, patch) {
   if (next.google_sub) {
     const other = store.usersByGoogleSub.get(String(next.google_sub));
     if (other && other.id !== id) throw new Error("google_taken");
-  }
-  if (next.wallet_address) {
-    const other = store.usersByWallet.get(String(next.wallet_address).toLowerCase());
-    if (other && other.id !== id) throw new Error("wallet_taken");
   }
 
   unindexUser(store, previous);

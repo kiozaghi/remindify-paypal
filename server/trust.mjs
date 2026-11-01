@@ -1,244 +1,102 @@
-// Remindify Trust — proof receipts and escrow intents on EVM chains.
+// Remindify Trust — proof receipts and PayPal-settled escrow.
 //
 // Design notes:
-// - Wallet-optional: a receipt exists offchain the moment proof is filed.
-//   A wallet only enters the picture when someone signs the EIP-712 receipt
-//   or anchors it to a deployed contract.
-// - No custody: the server never holds a private key and never moves funds.
-//   When a contract is configured, the owner's wallet sends the transaction
-//   and the server verifies the result against the configured RPC.
-// - Ethiopia stays offchain. The EVM module is geo-fenced by product policy:
-//   no wallet or USDC flows are offered for Ethiopian counterparties until
-//   the NBE authorises virtual-asset activity.
-// - Preview mode is a first-class state. Without a deployed contract the
-//   module still files, signs, verifies and audits receipts, and prepares
-//   calldata for a later deployment.
+// - A receipt is filed the moment proof is attached and signed by the server
+//   with HMAC-SHA256 over a canonical payload, so any later edit is detectable.
+// - Nothing moves on an unverified artifact. The proof auditor gates the
+//   release; a rejection leaves the payer's hold in place.
+// - Escrow is a PayPal authorization hold. The buyer approves the amount up
+//   front, the merchant captures only on verified proof, and the provider is
+//   paid net of the Remindify fee.
+// - A capture that cannot be followed by a payout is parked as
+//   CAPTURED_AWAITING_PAYOUT rather than reported as settled.
 
-import { randomBytes } from "node:crypto";
-import { loadAll, put, getMeta, setMeta } from "./db.mjs";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { getMeta, loadAll, put, setMeta } from "./db.mjs";
 import {
-  createPublicClient,
-  encodeAbiParameters,
-  encodeFunctionData,
-  getAddress,
-  hashTypedData,
-  http,
-  isAddress,
-  keccak256,
-  parseEventLogs,
-  stringToHex,
-  verifyTypedData,
-  zeroAddress,
-} from "viem";
-import { base, baseSepolia, celo, celoSepolia } from "viem/chains";
+  authorizeOrder,
+  captureAuthorization,
+  createAuthorizationOrder,
+  createPayout,
+  paypalConfigured,
+  paypalMode,
+  voidAuthorization,
+} from "./paypal.mjs";
+import { auditEvidence, auditThreshold } from "./audit.mjs";
 
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 
+export const HOLD_DAYS = 29;
+
+export function escrowFeePercent(env = process.env) {
+  const raw = Number(env.PAYPAL_PLATFORM_FEE_PERCENT ?? 10);
+  if (!Number.isFinite(raw) || raw < 0 || raw >= 100) return 10;
+  return raw;
+}
+
+function cents(value) {
+  return Math.round(Number(value) * 100);
+}
+
+export function escrowSplit(amount, env = process.env) {
+  const total = cents(amount);
+  const percent = escrowFeePercent(env);
+  const fee = Math.round((total * percent) / 100);
+  return { gross: total / 100, fee: fee / 100, net: (total - fee) / 100, percent };
+}
+
 // ---------------------------------------------------------------------------
-// Network registry
+// Receipt signatures
 // ---------------------------------------------------------------------------
 
-const NETWORKS = [
-  {
-    key: "base",
-    label: "Base",
-    role: "primary",
-    description: "Primary chain for proof anchoring and USDC escrow.",
-    chain: base,
-    chain_id: 8453,
-    caip2: "eip155:8453",
-    currency: "USDC",
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    usdc_decimals: 6,
-    explorer: "https://basescan.org",
-    rpc_env: "BASE_RPC_URL",
-    rpc_default: "https://mainnet.base.org",
-    attestation_env: "BASE_ATTESTATION_CONTRACT",
-    escrow_env: "BASE_ESCROW_CONTRACT",
-    tone: "blue",
-    testnet: false,
-  },
-  {
-    key: "base-sepolia",
-    label: "Base Sepolia",
-    role: "testnet",
-    description: "Rehearsal chain for anchoring and escrow before mainnet.",
-    chain: baseSepolia,
-    chain_id: 84532,
-    caip2: "eip155:84532",
-    currency: "USDC",
-    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    usdc_decimals: 6,
-    explorer: "https://sepolia.basescan.org",
-    rpc_env: "BASE_SEPOLIA_RPC_URL",
-    rpc_default: "https://sepolia.base.org",
-    attestation_env: "BASE_SEPOLIA_ATTESTATION_CONTRACT",
-    escrow_env: "BASE_SEPOLIA_ESCROW_CONTRACT",
-    tone: "violet",
-    testnet: true,
-  },
-  {
-    key: "celo",
-    label: "Celo",
-    role: "grant-pilot",
-    description: "Prezenti pilot chain. Mainnet only, for non-Ethiopian counterparties.",
-    chain: celo,
-    chain_id: 42220,
-    caip2: "eip155:42220",
-    currency: "USDC",
-    usdc: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
-    usdc_decimals: 6,
-    explorer: "https://celoscan.io",
-    rpc_env: "CELO_RPC_URL",
-    rpc_default: "https://forno.celo.org",
-    attestation_env: "CELO_ATTESTATION_CONTRACT",
-    escrow_env: "CELO_ESCROW_CONTRACT",
-    tone: "amber",
-    testnet: false,
-    guardrail: "Ethiopian obligations stay offchain. Celo is for counterparties outside NBE restrictions.",
-  },
-  {
-    key: "celo-sepolia",
-    label: "Celo Sepolia",
-    role: "testnet",
-    description: "Celo testnet for rehearsing the Prezenti pilot.",
-    chain: celoSepolia,
-    chain_id: 11142220,
-    caip2: "eip155:11142220",
-    currency: "USDC",
-    usdc: "0x01C5C0122039549AD1493B8220cABEdD739BC44E",
-    usdc_decimals: 6,
-    explorer: "https://celo-sepolia.blockscout.com",
-    rpc_env: "CELO_SEPOLIA_RPC_URL",
-    rpc_default: "https://forno.celo-sepolia.celo-testnet.org",
-    attestation_env: "CELO_SEPOLIA_ATTESTATION_CONTRACT",
-    escrow_env: "CELO_SEPOLIA_ESCROW_CONTRACT",
-    tone: "teal",
-    testnet: true,
-  },
-];
-
-const NETWORK_BY_KEY = Object.fromEntries(NETWORKS.map((n) => [n.key, n]));
-
-function networkFor(key) {
-  return NETWORK_BY_KEY[key] || NETWORK_BY_KEY.base;
+function receiptSecret() {
+  const configured = String(process.env.TRUST_RECEIPT_SECRET || "").trim();
+  if (configured) return configured;
+  let secret = getMeta("receipt_secret", null);
+  if (!secret) {
+    secret = randomBytes(32).toString("hex");
+    setMeta("receipt_secret", secret);
+  }
+  return secret;
 }
 
-function rpcFor(net) {
-  return (process.env[net.rpc_env] || "").trim() || net.rpc_default;
-}
-
-function contractFor(net, kind) {
-  const env = kind === "escrow" ? net.escrow_env : net.attestation_env;
-  const value = (process.env[env] || "").trim();
-  return isAddress(value) ? getAddress(value) : null;
-}
-
-export function networkProfiles() {
-  return NETWORKS.map((net) => {
-    const attestation = contractFor(net, "attestation");
-    const escrow = contractFor(net, "escrow");
-    return {
-      key: net.key,
-      label: net.label,
-      role: net.role,
-      description: net.description,
-      chain_id: net.chain_id,
-      caip2: net.caip2,
-      currency: net.currency,
-      usdc: net.usdc,
-      usdc_decimals: net.usdc_decimals,
-      explorer: net.explorer,
-      rpc_configured: Boolean((process.env[net.rpc_env] || "").trim()),
-      attestation_contract: attestation,
-      escrow_contract: escrow,
-      ready: Boolean(attestation || escrow),
-      preview: !(attestation && escrow),
-      status: attestation && escrow ? "configured" : "preview",
-      tone: net.tone,
-      testnet: net.testnet,
-      guardrail: net.guardrail || null,
-      env: {
-        rpc: net.rpc_env,
-        attestation: net.attestation_env,
-        escrow: net.escrow_env,
-      },
-    };
+export function canonicalPayload(receipt) {
+  return JSON.stringify({
+    obligation_id: receipt.obligation_id,
+    actor_id: receipt.actor_id || null,
+    actor_type: receipt.actor_type || "human",
+    proof_hash: receipt.proof_hash,
+    completed_at: receipt.completed_at,
   });
 }
 
-// ---------------------------------------------------------------------------
-// EIP-712 proof receipts
-// ---------------------------------------------------------------------------
-
-const DOMAIN_NAME = "Remindify Trust";
-const DOMAIN_VERSION = "1";
-
-const DOMAIN_TYPE = [
-  { name: "name", type: "string" },
-  { name: "version", type: "string" },
-  { name: "chainId", type: "uint256" },
-  { name: "verifyingContract", type: "address" },
-];
-
-const RECEIPT_TYPE = [
-  { name: "obligationId", type: "string" },
-  { name: "proofHash", type: "bytes32" },
-  { name: "evidenceHash", type: "bytes32" },
-  { name: "agentId", type: "string" },
-  { name: "issuedAt", type: "uint64" },
-  { name: "nonce", type: "bytes32" },
-];
-
-const RECEIPT_TYPES = { ProofReceipt: RECEIPT_TYPE };
-const WALLET_TYPES = { EIP712Domain: DOMAIN_TYPE, ProofReceipt: RECEIPT_TYPE };
-
-const ANCHOR_ABI = [
-  {
-    type: "function",
-    name: "anchor",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "obligationId", type: "string" },
-      { name: "proofHash", type: "bytes32" },
-      { name: "evidenceHash", type: "bytes32" },
-      { name: "agentId", type: "string" },
-      { name: "issuedAt", type: "uint64" },
-      { name: "nonce", type: "bytes32" },
-      { name: "signature", type: "bytes" },
-    ],
-    outputs: [],
-  },
-];
-
-const ATTESTATION_ABI = [
-  {
-    type: "event",
-    name: "ReceiptAnchored",
-    inputs: [
-      { indexed: true, name: "receiptId", type: "bytes32" },
-      { indexed: true, name: "signer", type: "address" },
-      { indexed: false, name: "proofHash", type: "bytes32" },
-      { indexed: false, name: "evidenceHash", type: "bytes32" },
-      { indexed: false, name: "issuedAt", type: "uint64" },
-    ],
-  },
-];
-
-function typedDataFor({ chainId, contract, message }) {
-  const domain = {
-    name: DOMAIN_NAME,
-    version: DOMAIN_VERSION,
-    chainId,
-    verifyingContract: contract || zeroAddress,
-  };
-  return {
-    typed_data: { domain, types: RECEIPT_TYPES, primaryType: "ProofReceipt", message },
-    wallet_payload: { domain, types: WALLET_TYPES, primaryType: "ProofReceipt", message },
-  };
+function sign(payload) {
+  return createHmac("sha256", receiptSecret()).update(payload).digest("hex");
 }
 
-function shortHex(value, head = 8, tail = 6) {
+export function verifyReceiptSignature(receipt) {
+  if (!receipt?.signature) return false;
+  const expected = Buffer.from(sign(canonicalPayload(receipt)), "hex");
+  const given = Buffer.from(String(receipt.signature), "hex");
+  if (expected.length !== given.length) return false;
+  return timingSafeEqual(expected, given);
+}
+
+function settlementPayload(receipt) {
+  return JSON.stringify({
+    receipt: canonicalPayload(receipt),
+    audit: receipt.audit
+      ? {
+          verified: receipt.audit.verified,
+          confidence: receipt.audit.confidence,
+          engine: receipt.audit.engine,
+        }
+      : null,
+    settlement: receipt.settlement || null,
+  });
+}
+
+function shortHex(value, head = 10, tail = 6) {
   if (!value || typeof value !== "string") return "";
   if (value.length <= head + tail + 2) return value;
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
@@ -265,25 +123,34 @@ function actorFrom(input) {
     actor_id: actor.id ?? null,
     actor: actor.name || "Solomon Tigabu",
     channel: input?.channel || actor.channel || "app",
+    agent_id: actor.agent_id || input?.agent_id || null,
   };
 }
 
+// ---------------------------------------------------------------------------
+// Receipts
+// ---------------------------------------------------------------------------
+
 export function enrichReceipt(receipt) {
-  const net = networkFor(receipt.chain);
-  const contract = receipt.contract || null;
+  const artifact = receipt.artifact
+    ? {
+        name: receipt.artifact.name,
+        type: receipt.artifact.type,
+        text: receipt.artifact.text,
+        bytes: receipt.artifact.bytes,
+        ...(receipt.artifact.data
+          ? { mime: receipt.artifact.mime || receipt.artifact.type, inline: true }
+          : {}),
+      }
+    : receipt.artifact;
   return {
     ...receipt,
-    network_label: net.label,
-    network_role: net.role,
-    chain_id: receipt.chain_id || net.chain_id,
-    explorer: net.explorer,
-    explorer_url: receipt.tx_hash ? `${net.explorer}/tx/${receipt.tx_hash}` : null,
-    contract,
-    contract_url: contract ? `${net.explorer}/address/${contract}` : null,
-    short_hash: shortHex(receipt.digest, 10, 6),
-    short_proof: shortHex(receipt.proof_hash, 10, 6),
-    usdc: net.usdc,
-    mode: contract ? "live" : "preview",
+    artifact,
+    short_hash: shortHex(receipt.proof_hash),
+    short_signature: shortHex(receipt.signature, 8, 6),
+    verified: receipt.status === "verified" || receipt.status === "settled",
+    settled: receipt.status === "settled",
+    mode: receipt.status === "settled" ? "paypal" : "recorded",
   };
 }
 
@@ -293,96 +160,92 @@ export function createReceipt(input = {}) {
   const ob = data.obligations.find((o) => o.id === obligationId);
   if (!ob) return { ok: false, error: "obligation_not_found" };
 
-  const net = networkFor(input.chain || "base");
-  const contract = contractFor(net, "attestation");
   const proof = String(input.proof || ob.last_proof || ob.proof_required || "Completed").slice(0, 240);
+  const artifact = normaliseArtifact(input.artifact, input.note || proof);
   const agent = data.agents.find((a) => a.id === (input.agent_id || ob.agent_id));
-  const nonce = `0x${randomBytes(32).toString("hex")}`;
-  const issuedAtUnix = Math.floor(Date.now() / 1000);
-  const issuedAt = new Date().toISOString();
-
-  const proofHash = keccak256(
-    stringToHex(`remindify:proof:${ob.id}:${nonce}:${proof}`)
-  );
-  const evidenceHash = keccak256(
-    stringToHex(
-      JSON.stringify({
-        obligation_id: ob.id,
-        title: ob.title,
-        category: ob.category,
-        provider: ob.provider,
-        amount: ob.amount || 0,
-        currency: ob.currency || "USD",
-        proof_required: ob.proof_required,
-        completed_at: ob.last_completed_at || ob.completed_at || null,
-      })
-    )
-  );
-
-  const message = {
-    obligationId: ob.id,
-    proofHash,
-    evidenceHash,
-    agentId: agent?.id || "",
-    issuedAt: issuedAtUnix,
-    nonce,
-  };
-
-  const { typed_data, wallet_payload } = typedDataFor({
-    chainId: net.chain_id,
-    contract,
-    message,
-  });
-  const digest = hashTypedData(typed_data);
+  const who = actorFrom(input);
+  const createdAt = new Date().toISOString();
 
   const receipt = {
     id: uid("rcpt"),
     obligation_id: ob.id,
     obligation_title: ob.title,
-    agent_id: agent?.id || null,
+    obligation_amount: ob.amount || 0,
+    agent_id: who.agent_id || agent?.id || null,
     agent_name: agent?.name || null,
-    chain: net.key,
-    chain_id: net.chain_id,
-    contract,
+    actor_id: who.actor_id,
+    actor_type: who.actor_type,
+    actor: who.actor,
     proof_label: proof,
-    proof_hash: proofHash,
-    evidence_hash: evidenceHash,
-    issued_at: issuedAt,
-    issued_at_unix: issuedAtUnix,
-    nonce,
-    digest,
-    typed_data,
-    wallet_payload,
-    status: "prepared",
-    signer: null,
+    proof_hash: createHash("sha256").update(`${ob.id}:${artifactDigestInput(artifact)}:${createdAt}`).digest("hex"),
+    artifact_hash: createHash("sha256").update(artifactDigestInput(artifact)).digest("hex"),
+    artifact,
+    completed_at: ob.last_completed_at || ob.completed_at || createdAt,
+    status: "filed",
+    audit: null,
+    settlement: null,
     signature: null,
+    settlement_signature: null,
     signed_at: null,
-    tx_hash: null,
-    block_number: null,
-    anchored_at: null,
-    anchor_mode: contract ? "ready" : "preview",
     source: input.source || "manual",
     demo: Boolean(input.demo || input.source === "demo"),
-    created_at: issuedAt,
+    created_at: createdAt,
   };
+  receipt.signature = sign(canonicalPayload(receipt));
+  receipt.signed_at = createdAt;
 
   put("receipts", receipt);
 
   if (!input.silent) {
-    const who = actorFrom(input);
     logTrustEvent({
       actor_type: who.actor_type,
       actor_id: who.actor_id,
       actor: who.actor,
       verb: "filed a proof receipt",
       object: ob.title,
-      detail: `${net.label} · ${shortHex(proofHash)}${contract ? "" : " · preview"}`,
+      detail: `${artifact.name || "proof"} · ${shortHex(receipt.proof_hash)}`,
       kind: "proof",
       channel: who.channel,
     });
   }
 
   return { ok: true, receipt: enrichReceipt(receipt) };
+}
+
+const MAX_INLINE_CHARS = 900_000;
+
+// Text artifacts hash their text; media artifacts hash the payload itself, so
+// two different images can never share a receipt hash.
+function artifactDigestInput(artifact) {
+  const text = String(artifact?.text || "");
+  if (text) return text;
+  const data = String(artifact?.data || "");
+  return data ? `inline:${artifact?.mime || artifact?.type || ""}:${data}` : "";
+}
+
+function normaliseArtifact(artifact, fallbackText) {
+  if (!artifact) {
+    const text = String(fallbackText || "").trim();
+    return { name: "proof note", type: "text", text: text.slice(0, 4000), bytes: text.length };
+  }
+  if (typeof artifact === "string") {
+    const text = artifact.slice(0, 4000);
+    return { name: "proof note", type: "text", text, bytes: text.length };
+  }
+  const text = String(artifact.text || artifact.excerpt || "").slice(0, 4000);
+  const data = typeof artifact.data === "string" ? artifact.data.trim().slice(0, MAX_INLINE_CHARS) : "";
+  const mime = String(artifact.mime || "").trim().toLowerCase().slice(0, 60);
+  const normalised = {
+    name: String(artifact.name || "proof").slice(0, 160),
+    type: String(artifact.type || mime || (data ? "application/octet-stream" : "text")).slice(0, 60),
+    text,
+    bytes: Number(artifact.bytes || (data ? Math.round(data.length * 0.75) : text.length)),
+  };
+  if (data) {
+    normalised.data = data;
+    normalised.mime = mime || normalised.type;
+  }
+  return normalised;
 }
 
 export function fileReceiptForCompletion({ obligation, proof, by, auto = false } = {}) {
@@ -395,7 +258,6 @@ export function fileReceiptForCompletion({ obligation, proof, by, auto = false }
         ? `Filed automatically when ${by || "an agent"} completed the obligation.`
         : `Filed when ${by || "the owner"} completed the obligation.`,
       source: "completion",
-      chain: "base",
       silent: true,
       demo: false,
     });
@@ -404,210 +266,61 @@ export function fileReceiptForCompletion({ obligation, proof, by, auto = false }
   }
 }
 
-export async function signReceipt(input = {}) {
+/** Run the proof auditor over a filed receipt and record the verdict. */
+export async function auditReceipt(input = {}) {
   const data = loadAll();
   const receipt = data.receipts.find((r) => r.id === input.id || r.id === input.receipt_id);
   if (!receipt) return { ok: false, error: "receipt_not_found" };
-  if (receipt.status === "anchored") return { ok: false, error: "receipt_already_anchored" };
-  if (!input.signature || !input.signer) return { ok: false, error: "signature_required" };
-  if (!isAddress(input.signer)) return { ok: false, error: "signer_invalid" };
+  if (receipt.status === "settled") return { ok: false, error: "receipt_already_settled" };
 
-  const signer = getAddress(input.signer);
-  let valid = false;
-  try {
-    valid = await verifyTypedData({
-      address: signer,
-      domain: receipt.typed_data.domain,
-      types: RECEIPT_TYPES,
-      primaryType: "ProofReceipt",
-      message: receipt.typed_data.message,
-      signature: input.signature,
-    });
-  } catch {
-    valid = false;
+  const ob = data.obligations.find((o) => o.id === receipt.obligation_id);
+  if (!ob) return { ok: false, error: "obligation_not_found" };
+
+  const artifact = input.artifact
+    ? normaliseArtifact(input.artifact, receipt.proof_label)
+    : receipt.artifact;
+  if (input.artifact) {
+    receipt.artifact = artifact;
+    receipt.artifact_hash = createHash("sha256").update(artifactDigestInput(artifact)).digest("hex");
   }
-  if (!valid) return { ok: false, error: "signature_invalid" };
 
-  receipt.signature = input.signature;
-  receipt.signer = signer;
-  receipt.signed_at = new Date().toISOString();
-  receipt.status = "signed";
-  receipt.anchor_mode = receipt.contract ? "ready" : "preview";
+  const verdict = await auditEvidence({ obligation: ob, artifact, receipt, env: process.env });
+
+  receipt.audit = { ...verdict, audited_at: new Date().toISOString() };
+  receipt.status = verdict.verified ? "verified" : "rejected";
+  receipt.signature = sign(canonicalPayload(receipt));
   put("receipts", receipt);
 
   logTrustEvent({
-    actor_type: "human",
-    actor_id: null,
-    actor: `${signer.slice(0, 6)}…${signer.slice(-4)}`,
-    verb: "signed a proof receipt",
+    actor_type: "system",
+    actor: "Proof auditor",
+    verb: verdict.verified ? "verified a proof receipt" : "rejected a proof receipt",
     object: receipt.obligation_title,
-    detail: `${networkFor(receipt.chain).label} · ${shortHex(receipt.digest)}`,
-    kind: "trust",
-    channel: "app",
+    detail: `${Math.round((verdict.confidence || 0) * 100)}% · ${verdict.engine}${
+      verdict.discrepancies?.length ? ` · ${verdict.discrepancies.length} discrepancies` : ""
+    }`,
+    kind: "proof",
+    channel: "system",
   });
 
-  return { ok: true, receipt: enrichReceipt(receipt) };
-}
-
-function receiptIdOnchain(receipt) {
-  return keccak256(
-    encodeAbiParameters(
-      [
-        { type: "string" },
-        { type: "bytes32" },
-        { type: "bytes32" },
-        { type: "string" },
-        { type: "uint64" },
-        { type: "bytes32" },
-      ],
-      [
-        receipt.obligation_id,
-        receipt.proof_hash,
-        receipt.evidence_hash,
-        receipt.agent_id || "",
-        BigInt(receipt.issued_at_unix),
-        receipt.nonce,
-      ]
-    )
-  );
-}
-
-export function receiptCalldata(id) {
-  const data = loadAll();
-  const receipt = data.receipts.find((r) => r.id === id || r.obligation_id === id);
-  if (!receipt) return { ok: false, error: "receipt_not_found" };
-  const net = networkFor(receipt.chain);
-  const contract = contractFor(net, "attestation");
-  if (!receipt.signature) return { ok: false, error: "receipt_not_signed" };
-  if (contract && (!receipt.contract || receipt.contract.toLowerCase() !== contract.toLowerCase())) {
-    return {
-      ok: false,
-      error: "receipt_domain_mismatch",
-      hint: "This receipt was prepared for a different contract. File a new receipt after configuring the attestation contract.",
-    };
-  }
-
-  const calldata = encodeFunctionData({
-    abi: ANCHOR_ABI,
-    functionName: "anchor",
-    args: [
-      receipt.obligation_id,
-      receipt.proof_hash,
-      receipt.evidence_hash,
-      receipt.agent_id || "",
-      BigInt(receipt.issued_at_unix),
-      receipt.nonce,
-      receipt.signature,
-    ],
-  });
-
-  return {
-    ok: true,
-    chain: net.key,
-    chain_id: net.chain_id,
-    contract: contract,
-    to: contract,
-    data: calldata,
-    value: "0x0",
-    receipt_id: receiptIdOnchain(receipt),
-    preview: !contract,
-    hint: contract
-      ? "Send this transaction from the signer's wallet, then verify the hash."
-      : `Set ${net.attestation_env} to a deployed RemindifyAttestations address to anchor.`,
-  };
-}
-
-export async function anchorReceipt(input = {}) {
-  const data = loadAll();
-  const receipt = data.receipts.find((r) => r.id === input.id || r.id === input.receipt_id);
-  if (!receipt) return { ok: false, error: "receipt_not_found" };
-  if (receipt.status === "anchored") {
-    return { ok: false, error: "receipt_already_anchored", receipt: enrichReceipt(receipt) };
-  }
-  if (receipt.status !== "signed") {
-    return { ok: false, error: "receipt_not_signed" };
-  }
-  if (!input.tx_hash) return { ok: false, error: "tx_hash_required" };
-
-  const net = networkFor(receipt.chain);
-  const contract = contractFor(net, "attestation");
-  if (!contract) {
-    return {
-      ok: false,
-      error: "attestation_contract_not_configured",
-      hint: `Set ${net.attestation_env} to enable onchain anchoring. The signed receipt is already verifiable offchain.`,
-    };
-  }
-  if (!receipt.contract || receipt.contract.toLowerCase() !== contract.toLowerCase()) {
-    return {
-      ok: false,
-      error: "receipt_domain_mismatch",
-      hint: "This receipt was signed for preview mode or a different contract. File a new receipt after configuring the attestation contract.",
-    };
-  }
-
-  let tx;
-  try {
-    const client = createPublicClient({ chain: net.chain, transport: http(rpcFor(net)) });
-    tx = await client.getTransactionReceipt({ hash: input.tx_hash });
-  } catch (error) {
-    return { ok: false, error: "receipt_lookup_failed", detail: String(error?.message || error) };
-  }
-  if (!tx) return { ok: false, error: "transaction_not_found" };
-  if (tx.status !== "success") return { ok: false, error: "transaction_reverted" };
-  if (!tx.to || tx.to.toLowerCase() !== contract.toLowerCase()) {
-    return { ok: false, error: "wrong_contract", expected: contract, got: tx.to };
-  }
-
-  const expectedId = receiptIdOnchain(receipt);
-  const events = parseEventLogs({
-    abi: ATTESTATION_ABI,
-    logs: tx.logs,
-    eventName: "ReceiptAnchored",
-  });
-  const match = events.find((event) => event.args?.receiptId === expectedId);
-  if (!match) return { ok: false, error: "attestation_event_not_found" };
-
-  receipt.tx_hash = input.tx_hash;
-  receipt.block_number = Number(tx.blockNumber);
-  receipt.anchored_at = new Date().toISOString();
-  receipt.status = "anchored";
-  receipt.anchor_mode = "onchain";
-  put("receipts", receipt);
-
-  logTrustEvent({
-    actor_type: "human",
-    actor_id: null,
-    actor: receipt.signer ? `${receipt.signer.slice(0, 6)}…${receipt.signer.slice(-4)}` : "Solomon Tigabu",
-    verb: "anchored a proof receipt",
-    object: receipt.obligation_title,
-    detail: `${net.label} · ${shortHex(input.tx_hash)}`,
-    kind: "trust",
-    channel: "app",
-  });
-
-  return { ok: true, receipt: enrichReceipt(receipt) };
+  return { ok: true, verified: verdict.verified, audit: receipt.audit, receipt: enrichReceipt(receipt) };
 }
 
 // ---------------------------------------------------------------------------
-// Escrow intents
+// Escrows
 // ---------------------------------------------------------------------------
 
 export function enrichEscrow(escrow) {
-  const net = networkFor(escrow.chain);
-  const contract = escrow.contract || null;
+  const split = escrowSplit(escrow.amount);
   return {
     ...escrow,
-    network_label: net.label,
-    network_role: net.role,
-    chain_id: escrow.chain_id || net.chain_id,
-    explorer: net.explorer,
-    explorer_url: escrow.tx_hash ? `${net.explorer}/tx/${escrow.tx_hash}` : null,
-    release_url: escrow.release_tx_hash ? `${net.explorer}/tx/${escrow.release_tx_hash}` : null,
-    contract,
-    contract_url: contract ? `${net.explorer}/address/${contract}` : null,
-    short_id: shortHex(escrow.id),
-    mode: escrow.mode || (contract ? "onchain-ready" : "offchain"),
+    fee_percent: escrow.platform_fee_percent ?? split.percent,
+    platform_fee: escrow.platform_fee ?? split.fee,
+    net_payout: escrow.net_payout ?? split.net,
+    short_id: shortHex(escrow.id, 8, 4),
+    hold_expires_in_days: escrow.authorization_expires_at
+      ? Math.ceil((new Date(escrow.authorization_expires_at).getTime() - Date.now()) / 86_400_000)
+      : null,
   };
 }
 
@@ -615,13 +328,6 @@ export function createEscrow(input = {}) {
   const data = loadAll();
   const ob = data.obligations.find((o) => o.id === (input.obligation_id || input.obligationId));
   if (!ob) return { ok: false, error: "obligation_not_found" };
-  if (input.jurisdiction_ack !== true) {
-    return {
-      ok: false,
-      error: "jurisdiction_ack_required",
-      hint: "Confirm the payment is outside Ethiopia's virtual-asset restrictions. Ethiopian obligations stay offchain.",
-    };
-  }
 
   const provider = data.providers.find(
     (p) => p.id === (input.provider_id || ob.marketplace?.provider_id)
@@ -629,10 +335,19 @@ export function createEscrow(input = {}) {
   const amount = Number(input.amount ?? provider?.price ?? ob.amount ?? 0);
   if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "amount_required" };
 
-  const net = networkFor(input.chain || "base");
-  const contract = contractFor(net, "escrow");
-  const now = new Date().toISOString();
+  const payeeEmail = String(
+    input.payee_paypal_email || provider?.paypal_email || ob.payee_paypal_email || ""
+  ).trim();
+  if (!payeeEmail) {
+    return {
+      ok: false,
+      error: "payee_required",
+      hint: "Add the provider's PayPal email before opening an escrow — the payout goes there.",
+    };
+  }
 
+  const split = escrowSplit(amount);
+  const now = new Date().toISOString();
   const escrow = {
     id: uid("esc"),
     obligation_id: ob.id,
@@ -640,23 +355,31 @@ export function createEscrow(input = {}) {
     provider_id: provider?.id || null,
     provider_name: provider?.name || ob.provider || null,
     provider_kind: provider?.kind || null,
-    chain: net.key,
-    chain_id: net.chain_id,
-    currency: "USDC",
-    amount,
-    amount_base: String(Math.round(amount * 10 ** net.usdc_decimals)),
-    contract,
+    payee_paypal_email: payeeEmail,
+    rail: "paypal",
+    currency: "USD",
+    amount: split.gross,
+    platform_fee_percent: split.percent,
+    platform_fee: split.fee,
+    net_payout: split.net,
     status: "draft",
-    mode: contract ? "onchain-ready" : "offchain",
-    jurisdiction_ack: true,
+    paypal_order_id: null,
+    approve_url: null,
+    authorization_id: null,
+    authorization_expires_at: null,
+    capture_id: null,
+    payout_batch_id: null,
     proof_receipt_id: null,
+    failure_code: null,
+    failure_reason: null,
+    timeline: [{ at: now, status: "draft", note: "Escrow opened" }],
     note: String(input.note || "").slice(0, 240),
-    tx_hash: null,
-    release_tx_hash: null,
     created_at: now,
-    committed_at: null,
-    funded_at: null,
+    hold_at: null,
+    authorized_at: null,
+    captured_at: null,
     released_at: null,
+    voided_at: null,
   };
   put("escrows", escrow);
 
@@ -666,9 +389,9 @@ export function createEscrow(input = {}) {
       actor_type: who.actor_type,
       actor_id: who.actor_id,
       actor: who.actor,
-      verb: "opened an escrow intent",
+      verb: "opened an escrow",
       object: ob.title,
-      detail: `${provider?.name || ob.provider} · ${amount} USDC on ${net.label}${contract ? "" : " · offchain"}`,
+      detail: `${escrow.provider_name} · $${split.gross.toFixed(2)} · fee $${split.fee.toFixed(2)}`,
       kind: "trust",
       channel: who.channel,
     });
@@ -677,160 +400,304 @@ export function createEscrow(input = {}) {
   return { ok: true, escrow: enrichEscrow(escrow) };
 }
 
-export function commitEscrow(input = {}) {
+function pushTimeline(escrow, status, note) {
+  escrow.timeline = Array.isArray(escrow.timeline) ? escrow.timeline : [];
+  escrow.timeline.push({ at: new Date().toISOString(), status, note });
+}
+
+/** Ask PayPal for a hold the payer can approve. */
+export async function holdEscrow(input = {}) {
   const data = loadAll();
   const escrow = data.escrows.find((e) => e.id === input.id || e.id === input.escrow_id);
   if (!escrow) return { ok: false, error: "escrow_not_found" };
-  if (escrow.status !== "draft") return { ok: false, error: "escrow_not_draft" };
+  if (["released", "voided"].includes(escrow.status)) return { ok: false, error: "escrow_closed" };
+  if (["authorized", "captured_awaiting_payout"].includes(escrow.status)) {
+    return { ok: false, error: "escrow_already_held", escrow: enrichEscrow(escrow) };
+  }
+  if (!paypalConfigured()) {
+    return {
+      ok: false,
+      error: "paypal_not_configured",
+      hint: "Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET to place a hold.",
+    };
+  }
 
-  escrow.status = "committed";
-  escrow.mode = "offchain";
-  escrow.committed_at = new Date().toISOString();
+  const origin = String(input.origin || process.env.PUBLIC_ORIGIN || "").replace(/\/+$/, "");
+  const order = await createAuthorizationOrder(
+    {
+      id: escrow.id,
+      title: `Escrow: ${escrow.obligation_title}`,
+      amount: escrow.amount,
+      currency: escrow.currency,
+      payeeEmail: escrow.payee_paypal_email,
+    },
+    {
+      returnUrl: input.return_url || `${origin}/api/trust/escrows/paypal/return`,
+      cancelUrl: input.cancel_url || `${origin}/trust?escrow=cancelled`,
+    }
+  );
+
+  escrow.status = "hold_pending";
+  escrow.paypal_order_id = order.orderId;
+  escrow.approve_url = order.approveUrl;
+  escrow.hold_at = new Date().toISOString();
+  escrow.failure_code = null;
+  escrow.failure_reason = null;
+  pushTimeline(
+    escrow,
+    "hold_pending",
+    `PayPal order ${order.orderId} created; $${escrow.amount.toFixed(2)} awaiting approval`
+  );
   put("escrows", escrow);
 
   logTrustEvent({
     actor_type: "human",
-    actor_id: null,
     actor: "Solomon Tigabu",
-    verb: "committed an escrow offchain",
+    verb: "asked PayPal for an escrow hold",
     object: escrow.obligation_title,
-    detail: `${escrow.provider_name} · ${escrow.amount} USDC · release requires a signed receipt`,
+    detail: `$${escrow.amount.toFixed(2)} · order ${order.orderId}`,
     kind: "trust",
     channel: "app",
+  });
+
+  return { ok: true, escrow: enrichEscrow(escrow), approveUrl: order.approveUrl };
+}
+
+/** Turn the payer's approval (return_url token) into an authorization hold. */
+export async function authorizeEscrowHold(input = {}) {
+  const data = loadAll();
+  const escrow = data.escrows.find(
+    (e) => (input.id && e.id === input.id) || (input.order_id && e.paypal_order_id === input.order_id)
+  );
+  if (!escrow) return { ok: false, error: "escrow_not_found" };
+  if (escrow.status === "authorized") return { ok: true, escrow: enrichEscrow(escrow) };
+  if (!escrow.paypal_order_id) return { ok: false, error: "escrow_not_held" };
+
+  const authorization = await authorizeOrder(input.order_id || escrow.paypal_order_id);
+  escrow.status = "authorized";
+  escrow.authorization_id = authorization.authorizationId;
+  escrow.authorization_expires_at =
+    authorization.expiresAt || new Date(Date.now() + HOLD_DAYS * 86_400_000).toISOString();
+  escrow.authorized_at = new Date().toISOString();
+  escrow.payer_email = authorization.payerEmail || null;
+  pushTimeline(escrow, "authorized", `Hold placed · ${authorization.authorizationId}`);
+  put("escrows", escrow);
+
+  logTrustEvent({
+    actor_type: "human",
+    actor: authorization.payerEmail || "Payer",
+    verb: "authorized an escrow hold",
+    object: escrow.obligation_title,
+    detail: `$${escrow.amount.toFixed(2)} held for ${HOLD_DAYS} days · ${authorization.authorizationId}`,
+    kind: "trust",
+    channel: "paypal",
   });
 
   return { ok: true, escrow: enrichEscrow(escrow) };
 }
 
-export async function fundEscrow(input = {}) {
-  const data = loadAll();
-  const escrow = data.escrows.find((e) => e.id === input.id || e.id === input.escrow_id);
-  if (!escrow) return { ok: false, error: "escrow_not_found" };
-  if (escrow.status === "released") return { ok: false, error: "escrow_already_released" };
-  if (escrow.status === "funded") return { ok: false, error: "escrow_already_funded" };
-  if (!input.tx_hash) return { ok: false, error: "tx_hash_required" };
-
-  const net = networkFor(escrow.chain);
-  const contract = contractFor(net, "escrow");
-  if (!contract) {
-    return {
-      ok: false,
-      error: "escrow_contract_not_configured",
-      hint: `Set ${net.escrow_env} to record onchain funding. Use Commit for an offchain intent.`,
-    };
-  }
-  if (!escrow.contract || escrow.contract.toLowerCase() !== contract.toLowerCase()) {
-    return {
-      ok: false,
-      error: "escrow_contract_changed",
-      hint: "Open a new escrow intent after configuring the escrow contract.",
-    };
-  }
-
-  let tx;
-  try {
-    const client = createPublicClient({ chain: net.chain, transport: http(rpcFor(net)) });
-    tx = await client.getTransactionReceipt({ hash: input.tx_hash });
-  } catch (error) {
-    return { ok: false, error: "receipt_lookup_failed", detail: String(error?.message || error) };
-  }
-  if (!tx) return { ok: false, error: "transaction_not_found" };
-  if (tx.status !== "success") return { ok: false, error: "transaction_reverted" };
-  if (!tx.to || tx.to.toLowerCase() !== contract.toLowerCase()) {
-    return { ok: false, error: "wrong_contract", expected: contract, got: tx.to };
-  }
-
-  escrow.status = "funded";
-  escrow.mode = "onchain";
-  escrow.tx_hash = input.tx_hash;
-  escrow.funded_at = new Date().toISOString();
-  put("escrows", escrow);
-
-  logTrustEvent({
-    actor_type: "human",
-    actor_id: null,
-    actor: "Solomon Tigabu",
-    verb: "funded an escrow with USDC",
-    object: escrow.obligation_title,
-    detail: `${net.label} · ${shortHex(input.tx_hash)}`,
-    kind: "trust",
-    channel: "app",
-  });
-
-  return { ok: true, escrow: enrichEscrow(escrow) };
-}
-
+/**
+ * Capture and pay out. The receipt must be verified by the auditor first; a
+ * capture whose payout fails is parked, never reported as settled.
+ */
 export async function releaseEscrow(input = {}) {
   const data = loadAll();
   const escrow = data.escrows.find((e) => e.id === input.id || e.id === input.escrow_id);
   if (!escrow) return { ok: false, error: "escrow_not_found" };
-  if (!["committed", "funded"].includes(escrow.status)) {
-    return { ok: false, error: "escrow_not_releasable" };
+  if (escrow.status === "released") return { ok: true, escrow: enrichEscrow(escrow), replayed: true };
+  if (escrow.status === "voided") return { ok: false, error: "escrow_voided" };
+  if (!["authorized", "captured_awaiting_payout"].includes(escrow.status)) {
+    return {
+      ok: false,
+      error: "escrow_not_releasable",
+      hint: "Place the PayPal hold before releasing.",
+    };
+  }
+
+  // Seeded escrows carry placeholder PayPal ids so the UI can show an
+  // authorized hold without credentials. They can never settle for real.
+  if (String(escrow.authorization_id || "").startsWith("DEMO-")) {
+    return {
+      ok: false,
+      error: "demo_hold",
+      message:
+        "This is a seeded rehearsal hold with placeholder PayPal ids. Open escrow on the filing and authorize a sandbox hold to exercise capture and payout.",
+      escrow: enrichEscrow(escrow),
+    };
   }
 
   const receiptId = input.proof_receipt_id || input.receipt_id;
   const candidates = data.receipts
     .filter((r) => r.obligation_id === escrow.obligation_id)
-    .filter((r) => r.status === "signed" || r.status === "anchored")
-    .sort((a, b) => new Date(b.signed_at || b.created_at) - new Date(a.signed_at || a.created_at));
-  const receipt = receiptId
-    ? data.receipts.find((r) => r.id === receiptId)
-    : candidates[0];
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  let receipt = receiptId ? data.receipts.find((r) => r.id === receiptId) : candidates[0];
 
   if (!receipt) {
-    return { ok: false, error: "proof_required", hint: "Sign a proof receipt for this obligation first." };
+    return { ok: false, error: "proof_required", hint: "Attach proof for this obligation first." };
   }
   if (receipt.obligation_id !== escrow.obligation_id) {
-    return { ok: false, error: "proof_wrong_obligation", hint: "The receipt must belong to the escrow obligation." };
-  }
-  if (!["signed", "anchored"].includes(receipt.status)) {
-    return { ok: false, error: "proof_not_signed", hint: "The release needs a signed or anchored receipt." };
-  }
-
-  const net = networkFor(escrow.chain);
-  const contract = contractFor(net, "escrow");
-  let releaseTx = null;
-
-  if (contract && escrow.contract && escrow.contract.toLowerCase() !== contract.toLowerCase()) {
     return {
       ok: false,
-      error: "escrow_contract_changed",
-      hint: "This escrow belongs to a different contract. Open a new intent after configuring the escrow contract.",
+      error: "proof_wrong_obligation",
+      hint: "The receipt must belong to the escrow obligation.",
     };
   }
-  if (contract && input.tx_hash) {
-    try {
-      const client = createPublicClient({ chain: net.chain, transport: http(rpcFor(net)) });
-      const tx = await client.getTransactionReceipt({ hash: input.tx_hash });
-      if (!tx || tx.status !== "success") return { ok: false, error: "transaction_reverted" };
-      if (!tx.to || tx.to.toLowerCase() !== contract.toLowerCase()) {
-        return { ok: false, error: "wrong_contract", expected: contract, got: tx.to };
-      }
-      releaseTx = input.tx_hash;
-    } catch (error) {
-      return { ok: false, error: "receipt_lookup_failed", detail: String(error?.message || error) };
+
+  if (receipt.status !== "verified" && receipt.status !== "settled") {
+    const audited = await auditReceipt({ receipt_id: receipt.id });
+    receipt = audited.receipt || receipt;
+    if (!audited.ok) return { ok: false, error: audited.error || "audit_failed", receipt };
+    if (!audited.verified) {
+      return {
+        ok: false,
+        error: "proof_rejected",
+        message: "The proof auditor rejected this artifact. The PayPal hold is still in place.",
+        audit: audited.audit,
+        receipt,
+        escrow: enrichEscrow(escrow),
+      };
     }
   }
 
-  escrow.status = "released";
-  escrow.mode = releaseTx ? "onchain" : "offchain";
-  escrow.proof_receipt_id = receipt.id;
-  escrow.release_tx_hash = releaseTx;
-  escrow.released_at = new Date().toISOString();
+  if (!paypalConfigured()) return { ok: false, error: "paypal_not_configured" };
+
+  const split = escrowSplit(escrow.amount);
+  let captureId = escrow.capture_id;
+
+  if (escrow.status === "authorized") {
+    const capture = await captureAuthorization(escrow.authorization_id, {
+      invoiceId: `RMDFY-${escrow.id}`,
+      note: `Released on verified proof ${shortHex(receipt.proof_hash, 8, 4)}`,
+      requestId: `remindify-capture-${escrow.id}`,
+    });
+    captureId = capture.captureId;
+    escrow.capture_id = captureId;
+    escrow.captured_at = new Date().toISOString();
+    pushTimeline(escrow, "captured", `$${split.gross.toFixed(2)} captured · ${captureId}`);
+  }
+
+  try {
+    const payout = await createPayout({
+      payout: { id: `rmdfy_${escrow.id}`, amount: split.net, ref: escrow.obligation_id },
+      receiverEmail: escrow.payee_paypal_email,
+    });
+    escrow.payout_batch_id = payout.batchId;
+    escrow.payout_status = payout.status;
+    escrow.platform_fee = split.fee;
+    escrow.net_payout = split.net;
+    escrow.proof_receipt_id = receipt.id;
+    escrow.status = "released";
+    escrow.released_at = new Date().toISOString();
+    escrow.failure_code = null;
+    escrow.failure_reason = null;
+    pushTimeline(
+      escrow,
+      "released",
+      `$${split.net.toFixed(2)} paid to ${escrow.payee_paypal_email} · ${payout.batchId}`
+    );
+  } catch (error) {
+    escrow.status = "captured_awaiting_payout";
+    escrow.proof_receipt_id = receipt.id;
+    escrow.failure_code = error?.code || "payout_failed";
+    escrow.failure_reason = String(error?.message || error).slice(0, 240);
+    pushTimeline(
+      escrow,
+      "captured_awaiting_payout",
+      `Captured ${captureId}; payout failed: ${escrow.failure_reason}`
+    );
+    put("escrows", escrow);
+    logTrustEvent({
+      actor_type: "system",
+      actor: "Remindify",
+      verb: "captured an escrow but could not pay out",
+      object: escrow.obligation_title,
+      detail: `$${split.net.toFixed(2)} owed to ${escrow.payee_paypal_email} · ${escrow.failure_reason}`,
+      kind: "trust",
+      channel: "system",
+    });
+    return {
+      ok: false,
+      error: "payout_failed",
+      message:
+        "The hold was captured, but the payout was refused. The balance is parked and can be retried.",
+      escrow: enrichEscrow(escrow),
+      receipt,
+    };
+  }
+
   put("escrows", escrow);
+
+  receipt.status = "settled";
+  receipt.settlement = {
+    escrow_id: escrow.id,
+    capture_id: captureId || null,
+    payout_batch_id: escrow.payout_batch_id,
+    gross: split.gross,
+    fee: split.fee,
+    net: split.net,
+    recipient: escrow.payee_paypal_email,
+    at: escrow.released_at,
+  };
+  receipt.settlement_signature = sign(settlementPayload(receipt));
+  put("receipts", receipt);
 
   logTrustEvent({
     actor_type: "human",
-    actor_id: null,
     actor: "Solomon Tigabu",
-    verb: "released an escrow on proof",
+    verb: "released an escrow on verified proof",
     object: escrow.obligation_title,
-    detail: `${escrow.provider_name} · ${escrow.amount} USDC · proof ${shortHex(receipt.digest)}${releaseTx ? ` · ${shortHex(releaseTx)}` : " · offchain"}`,
+    detail: `$${split.net.toFixed(2)} to ${escrow.payee_paypal_email} · fee $${split.fee.toFixed(2)} · ${escrow.payout_batch_id}`,
     kind: "trust",
     channel: "app",
   });
 
   return { ok: true, escrow: enrichEscrow(escrow), receipt: enrichReceipt(receipt) };
+}
+
+/** Release the hold back to the payer. */
+export async function voidEscrow(input = {}) {
+  const data = loadAll();
+  const escrow = data.escrows.find((e) => e.id === input.id || e.id === input.escrow_id);
+  if (!escrow) return { ok: false, error: "escrow_not_found" };
+  if (escrow.status === "released") return { ok: false, error: "escrow_already_released" };
+  if (escrow.status === "captured_awaiting_payout") {
+    return {
+      ok: false,
+      error: "escrow_already_captured",
+      hint: "The hold was captured; retry the payout instead of voiding.",
+    };
+  }
+
+  if (escrow.authorization_id) {
+    const result = await voidAuthorization(escrow.authorization_id);
+    if (result.status === "FAILED") {
+      escrow.failure_code = result.code || "void_failed";
+      escrow.failure_reason = "PayPal refused to void this hold.";
+      put("escrows", escrow);
+      return { ok: false, error: "void_failed", escrow: enrichEscrow(escrow) };
+    }
+  }
+
+  escrow.status = "voided";
+  escrow.voided_at = new Date().toISOString();
+  pushTimeline(
+    escrow,
+    "voided",
+    escrow.authorization_id ? "Hold released back to the payer" : "Escrow closed before a hold"
+  );
+  put("escrows", escrow);
+
+  logTrustEvent({
+    actor_type: "human",
+    actor: "Solomon Tigabu",
+    verb: "voided an escrow hold",
+    object: escrow.obligation_title,
+    detail: `$${escrow.amount.toFixed(2)} returned to the payer`,
+    kind: "trust",
+    channel: "app",
+  });
+
+  return { ok: true, escrow: enrichEscrow(escrow) };
 }
 
 // ---------------------------------------------------------------------------
@@ -847,40 +714,51 @@ export function trustSnapshot(data = loadAll()) {
 
   const stats = {
     receipts: receipts.length,
-    prepared: receipts.filter((r) => r.status === "prepared").length,
-    signed: receipts.filter((r) => r.status === "signed").length,
-    anchored: receipts.filter((r) => r.status === "anchored").length,
+    filed: receipts.filter((r) => r.status === "filed").length,
+    verified: receipts.filter((r) => r.status === "verified").length,
+    rejected: receipts.filter((r) => r.status === "rejected").length,
+    settled: receipts.filter((r) => r.status === "settled").length,
     escrows: escrows.length,
-    open_escrows: escrows.filter((e) => e.status !== "released").length,
+    open_escrows: escrows.filter((e) => ["draft", "hold_pending", "authorized"].includes(e.status)).length,
     released_escrows: escrows.filter((e) => e.status === "released").length,
     escrow_value: escrows
-      .filter((e) => e.status !== "released")
+      .filter((e) => ["hold_pending", "authorized"].includes(e.status))
       .reduce((sum, e) => sum + (e.amount || 0), 0),
     released_value: escrows
       .filter((e) => e.status === "released")
       .reduce((sum, e) => sum + (e.amount || 0), 0),
+    fees_collected: escrows
+      .filter((e) => e.status === "released")
+      .reduce((sum, e) => sum + (e.platform_fee || 0), 0),
   };
 
   return {
-    networks: networkProfiles(),
+    rail: {
+      key: "paypal",
+      label: "PayPal",
+      mode: paypalMode(),
+      configured: paypalConfigured(),
+      hold_days: HOLD_DAYS,
+      fee_percent: escrowFeePercent(),
+      auditor: String(process.env.AI_MODEL_ID || "gemini-2.5-flash"),
+      auditor_configured: Boolean(process.env.GEMINI_API_KEY),
+      threshold: Math.round(auditThreshold() * 100),
+    },
     receipts,
     escrows,
     stats,
     guardrails: {
-      ethiopia_offchain: true,
-      note: "No wallets or USDC payments for Ethiopian obligations until the NBE authorises virtual-asset activity.",
-      disclosure: "Remindify never holds a private key. Anchoring and funding are signed by the owner's wallet.",
+      proof_before_money: true,
+      note: "A hold is captured only after the proof auditor verifies the artifact. A rejected artifact leaves the payer's money in place.",
+      disclosure:
+        "Remindify never holds a card or a private key. PayPal holds and payouts settle between the payer, the merchant account and the provider.",
     },
   };
 }
 
 export function trustSummary(data = loadAll()) {
   const snapshot = trustSnapshot(data);
-  return {
-    networks: snapshot.networks,
-    stats: snapshot.stats,
-    guardrails: snapshot.guardrails,
-  };
+  return { rail: snapshot.rail, stats: snapshot.stats, guardrails: snapshot.guardrails };
 }
 
 // ---------------------------------------------------------------------------
@@ -897,8 +775,7 @@ export function ensureTrustDemo() {
   createReceipt({
     obligation_id: ob.id,
     proof: ob.id === "ob_domain" ? "domain_renewal_receipt_2026.pdf" : `${ob.id}_proof_2026.pdf`,
-    note: "Sample receipt. Sign it, anchor it when a contract is configured, or file your own from any completed obligation.",
-    chain: "base",
+    note: "Sample receipt. Attach proof to any completed obligation to file your own.",
     source: "demo",
     demo: true,
     silent: true,

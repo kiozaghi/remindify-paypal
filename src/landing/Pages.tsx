@@ -52,7 +52,7 @@ export function PricingPage({ onNavigate, user }: PageProps) {
       <PageHero
         eyebrow="Pricing"
         title={<>A small price for<br /><em>the thing that didn’t slip.</em></>}
-        lede="Start free while Remindify is in preview. Upgrade when the register is carrying real work. No token, no usage trap, no card to begin."
+        lede="Start free while Remindify is in preview. Upgrade when the register is carrying real work. No usage trap, no card to begin, and a 10% fee only when work settles."
         actions={
           <>
             <a
@@ -74,10 +74,10 @@ export function PricingPage({ onNavigate, user }: PageProps) {
         aside={
           <div className="price-aside-card">
             <span className="eyebrow">Preview promise</span>
-            <strong>No card. No token.<br />No lock-in.</strong>
+            <strong>No card. No lock-in.<br />A fair fee.</strong>
             <ul>
-              <li><Icon name="check" size={13} /> Email, Google or wallet sign-in</li>
-              <li><Icon name="check" size={13} /> Wallet optional</li>
+              <li><Icon name="check" size={13} /> Email and Google sign-in</li>
+              <li><Icon name="check" size={13} /> PayPal holds and payouts</li>
               <li><Icon name="check" size={13} /> Export your register</li>
               <li><Icon name="check" size={13} /> Cancel whenever</li>
             </ul>
@@ -122,7 +122,7 @@ export function PricingPage({ onNavigate, user }: PageProps) {
           {[
             { icon: "target", title: "Coverage, not activity", copy: "Every recurring thing has an owner and a backup. You are paying for nothing to fall through." },
             { icon: "bot", title: "A bench that shows its work", copy: "Agents with scopes and ceilings, plus vetted humans when the work needs one." },
-            { icon: "receipt", title: "Proof when it matters", copy: "Receipts are included. Anchoring and escrow are optional escalations, not a second product." },
+            { icon: "receipt", title: "Proof when it matters", copy: "Receipts are included. The auditor checks the evidence, the PayPal hold releases, and the 10% fee is taken only on settled work." },
             { icon: "download", title: "Portable by default", copy: "Export the register and audit trail. Your obligations are not hostage to a subscription." },
           ].map((item) => (
             <article key={item.title} className="value-card" data-reveal>
@@ -176,7 +176,7 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
       <PageHero
         eyebrow="Security & trust"
         title={<>Trust is something<br /><em>you can check.</em></>}
-        lede="Remindify is built around a simple rule: the parts that matter should be inspectable, and the parts that move money should require your signature. Here is the model, including the parts that are still preview."
+        lede="Remindify is built around a simple rule: the parts that matter should be inspectable, and money should move only with the payer's approval. Here is the model, including the parts that are still preview."
         actions={
           <>
             <a
@@ -197,13 +197,12 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
         }
         aside={
           <div className="security-aside">
-            <div className="security-aside-row"><span>Token</span><strong>None</strong></div>
             <div className="security-aside-row"><span>Custody</span><strong>None</strong></div>
-            <div className="security-aside-row"><span>Server-held keys</span><strong>None</strong></div>
-            <div className="security-aside-row"><span>Fiat rail</span><strong>PayPal</strong></div>
-            <div className="security-aside-row"><span>Default proof</span><strong>Offchain</strong></div>
-            <div className="security-aside-row"><span>Primary chain</span><strong>Base</strong></div>
-            <div className="security-aside-row"><span>Pilot chain</span><strong>Celo</strong></div>
+            <div className="security-aside-row"><span>Payments</span><strong>PayPal</strong></div>
+            <div className="security-aside-row"><span>Escrow</span><strong>PayPal hold</strong></div>
+            <div className="security-aside-row"><span>Proof receipts</span><strong>HMAC-SHA256</strong></div>
+            <div className="security-aside-row"><span>Proof audit</span><strong>Gemini 2.5 Flash</strong></div>
+            <div className="security-aside-row"><span>Fee</span><strong>10% on settled</strong></div>
           </div>
         }
       />
@@ -211,10 +210,10 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
       <section className="security-principles section-wrap">
         <div className="security-grid">
           {[
-            { icon: "fingerprint", title: "Your account is yours", copy: "Passwords are salted and hashed with scrypt. Sessions are random tokens, stored as hashes and carried in HttpOnly, SameSite cookies. Google and wallet sign-in are optional." },
-            { icon: "receipt", title: "Proof is a hash, not a document", copy: "Proof references and evidence envelopes are hashed with keccak-256. The receipt contains the hashes, not the documents. You choose what, if anything, is anchored." },
-            { icon: "wallet", title: "Your wallet signs", copy: "The server never holds a private key. PayPal payments settle between your own accounts without a wallet; anchoring and escrow require your wallet to sign the transaction. The server verifies the result over RPC before updating state." },
-            { icon: "scale", title: "No token, no financial product", copy: "There is no Remindify token and no custody of customer funds. USDC is the only asset the escrow module can move, and only when a contract is configured. PayPal is the fiat rail: Remindify records the capture, never the balance." },
+            { icon: "fingerprint", title: "Your account is yours", copy: "Passwords are salted and hashed with scrypt. Sessions are random strings, stored as hashes and carried in HttpOnly, SameSite cookies. Google sign-in is optional." },
+            { icon: "receipt", title: "Proof is a hash, not a document", copy: "Proof references and evidence envelopes are hashed with SHA-256 and bound into the receipt. The receipt contains the hashes, not the documents. Your evidence stays in your workspace." },
+            { icon: "lock", title: "Money moves with your approval", copy: "A payer approves a PayPal authorization hold in their own account. The server can request a capture and a payout, but it never holds a balance, a card or a private key, and it cannot move money without that approval." },
+            { icon: "scale", title: "Not a bank, not a balance", copy: "Remindify is not a bank and holds no customer funds. PayPal is a third-party processor: it holds the authorization, captures it and pays the provider. Remindify records the result. The platform fee is 10%, deducted on settlement." },
           ].map((item) => (
             <article key={item.title} className="security-card" data-reveal>
               <span className="security-icon"><Icon name={item.icon} size={19} /></span>
@@ -229,19 +228,18 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
         <div className="security-detail-grid">
           <div className="security-detail-copy" data-reveal>
             <SectionTag>How it works</SectionTag>
-            <h2>Offchain by default.<br /><em>Onchain by choice.</em></h2>
+            <h2>Proof first.<br /><em>Money second.</em></h2>
             <p>
-              Most obligations never need a chain. A family birthday, a boiler service or a
-              domain renewal belongs in a register, not in a block. The trust layer is an
-              escalation path for the moments when a third party needs independent evidence
-              or money must release against proof. Ordinary payment does not need a chain at
-              all — that is the PayPal rail.
+              Every obligation follows the same order: the work happens, the evidence is
+              filed, the auditor scores it, and only then can money move. A filing or a
+              compliance check can stop at the receipt. Work that is paid continues to the
+              payer's PayPal authorization hold.
             </p>
             <p>
-              Receipts begin as <code>prepared</code>, become <code>signed</code> when a valid
-              EIP-712 signature is verified, and optionally become <code>anchored</code> when
-              a transaction is confirmed. Escrow releases require a signed or anchored receipt
-              for the same obligation — a receipt from a different obligation is rejected.
+              Receipts begin as <code>filed</code>, become <code>verified</code> when the
+              auditor clears the 80% threshold, and are <code>settled</code> once PayPal
+              captures the hold and pays the provider. A <code>rejected</code> receipt
+              leaves the payer's hold untouched, and the provider can file again.
             </p>
           </div>
           <div className="security-diagram" data-reveal>
@@ -250,19 +248,19 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
             </div>
             <i className="security-connector" />
             <div className="security-step">
-              <span>02</span><div><strong>Receipt is prepared</strong><em>Proof and evidence are hashed locally.</em></div>
+              <span>02</span><div><strong>Evidence is filed</strong><em>References and hashes are attached to the obligation.</em></div>
             </div>
             <i className="security-connector" />
             <div className="security-step">
-              <span>03</span><div><strong>Signature verifies</strong><em>EIP-712 typed data is checked with viem.</em></div>
-            </div>
-            <i className="security-connector" />
-            <div className="security-step step-optional">
-              <span>04</span><div><strong>Optional anchoring</strong><em>Base or Celo holds only the hash.</em></div>
+              <span>03</span><div><strong>Auditor scores</strong><em>Gemini 2.5 Flash checks amount, reference and date. 80% to pass.</em></div>
             </div>
             <i className="security-connector" />
             <div className="security-step">
-              <span>05</span><div><strong>Escrow can release</strong><em>Only against a valid receipt for this obligation.</em></div>
+              <span>04</span><div><strong>Hold releases</strong><em>PayPal captures the payer's authorization.</em></div>
+            </div>
+            <i className="security-connector" />
+            <div className="security-step">
+              <span>05</span><div><strong>Provider is paid</strong><em>Net of the 10% fee, to their PayPal email.</em></div>
             </div>
           </div>
         </div>
@@ -270,22 +268,37 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
 
       <section className="security-networks section-wrap">
         <div className="section-heading" data-reveal>
-          <SectionTag>Networks</SectionTag>
-          <h2>One EVM module.<br /><em>Two ecosystems.</em></h2>
-          <p>Base is the long-term home. Celo is the near-term pilot for mobile-first, emerging-market use.</p>
+          <SectionTag>The money path</SectionTag>
+          <h2>One rail.<br /><em>Three moves.</em></h2>
+          <p>PayPal holds, captures and pays out. Remindify asks for each step and records the proof; it never holds the money.</p>
         </div>
         <div className="network-grid">
           {[
-            { key: "Base", id: "8453", usdc: "0x8335…2913", role: "Primary", tone: "lime" },
-            { key: "Base Sepolia", id: "84532", usdc: "0x036C…CF7e", role: "Testnet", tone: "amber" },
-            { key: "Celo", id: "42220", usdc: "0xcebA…118C", role: "Grant pilot", tone: "teal" },
-            { key: "Celo Sepolia", id: "11142220", usdc: "0x01C5…C44E", role: "Testnet", tone: "violet" },
+            {
+              key: "Authorization hold",
+              role: "Step 01",
+              tone: "lime",
+              rows: [["Window", "Up to 29 days"], ["Approved by", "The payer"]],
+            },
+            {
+              key: "Capture",
+              role: "Step 02",
+              tone: "amber",
+              rows: [["Trigger", "Verified proof"], ["Fee", "10%, deducted first"]],
+            },
+            {
+              key: "Payout",
+              role: "Step 03",
+              tone: "teal",
+              rows: [["Destination", "Provider's PayPal email"], ["Amount", "Net of the fee"]],
+            },
           ].map((network) => (
             <article key={network.key} className={`network-card tone-${network.tone}`} data-reveal>
               <div className="network-top"><span className="network-dot"><i /></span><span>{network.role}</span></div>
               <h3>{network.key}</h3>
-              <div className="network-row"><span>Chain ID</span><code>{network.id}</code></div>
-              <div className="network-row"><span>USDC</span><code>{network.usdc}</code></div>
+              {network.rows.map(([label, value]) => (
+                <div className="network-row" key={label}><span>{label}</span><code>{value}</code></div>
+              ))}
             </article>
           ))}
         </div>
@@ -297,13 +310,11 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
           <div>
             <h3>What is still preview</h3>
             <p>
-              Remindify is a functional preview, not a finished financial service. The reference
-              contracts in the repository are unaudited and are not automatically deployed. No
-              mainnet escrow or anchoring has been verified with real funds, and PayPal runs
-              against the sandbox. Wallet, escrow and PayPal routes are region-gated where the
-              operator's rules require it, so those features stay offchain in Ethiopia until the
-              National Bank of Ethiopia authorises virtual-asset activity. We will publish audit
-              and deployment details before asking anyone to rely on them.
+              Remindify is a functional preview, not a finished financial service. PayPal
+              payments, holds and payouts run against the sandbox. The AI proof auditor
+              falls back to deterministic rules when no model key is configured. Remindify
+              holds no customer funds at any point. We will publish audit and availability
+              details before asking anyone to rely on them.
             </p>
           </div>
         </div>
@@ -321,7 +332,7 @@ export function SecurityPage({ onNavigate, user }: PageProps) {
       <section className="page-cta section-wrap" data-reveal>
         <div>
           <SectionTag light>Ready when you are</SectionTag>
-          <h2>Start offchain.<br /><em>Add proof later.</em></h2>
+          <h2>Start with proof.<br /><em>Add money later.</em></h2>
         </div>
         <a
           className="btn btn-lime btn-lg"
@@ -343,7 +354,7 @@ export function AboutPage({ onNavigate, user }: PageProps) {
       <PageHero
         eyebrow="Why Remindify"
         title={<>The most reliable person<br /><em>is usually exhausted.</em></>}
-        lede="Remindify started with an uncomfortable observation: the people who keep a life or a business running are rarely the ones with the most time. They are the ones who notice. This is a product for them."
+        lede="Remindify started with an uncomfortable observation: the people who keep a business running are rarely the ones with the most time. They are the ones who notice. This is a product for them."
         actions={
           <>
             <a
@@ -382,9 +393,9 @@ export function AboutPage({ onNavigate, user }: PageProps) {
           </div>
           <div className="about-body" data-reveal>
             <p className="about-lede">
-              The renewal letter. The payroll filing. The school form. The domain that expires
-              quietly. None of these are hard individually. Together, they form a second job
-              that nobody put on the org chart.
+              The renewal email. The payroll filing. The contractor handoff. The domain that
+              expires quietly. None of these are hard individually. Together, they form a
+              back office that nobody put on the org chart.
             </p>
             <p>
               The existing tools split the problem into notifications, project boards, calendars
@@ -399,9 +410,10 @@ export function AboutPage({ onNavigate, user }: PageProps) {
             </p>
             <p>
               We are building from Addis Ababa, for anyone who has ever been the person who
-              remembers. The product is intentionally wallet-optional. The trust layer is
-              Base-first and Celo-ready. There is no token. There is no custody. There is just
-              the work that comes back, and a better place for it to live.
+              remembers. Payments are PayPal-only: the payer approves a hold, a verified
+              proof releases it, and the provider is paid the net. An AI auditor reads the
+              evidence before any money moves, and the fee is 10%, taken only when work
+              settles. Remindify holds no funds.
             </p>
           </div>
         </div>
@@ -417,7 +429,7 @@ export function AboutPage({ onNavigate, user }: PageProps) {
             { n: "01", title: "Ownership over memory", copy: "A name and a backup beat a notification. If nobody owns it, it is not really scheduled." },
             { n: "02", title: "Proof over promises", copy: "“Done” is a claim. A receipt is evidence. The product should make the distinction obvious." },
             { n: "03", title: "Calm over engagement", copy: "Success is not more time in the app. It is closing the laptop because the register is covered." },
-            { n: "04", title: "Optional, not extractive", copy: "No token. No custody. Wallet optional. Export always. The trust layer should earn its use." },
+            { n: "04", title: "Fair, not extractive", copy: "No custody. Proof before money. A fair 10% fee, and only on settled work. Export always." },
           ].map((principle) => (
             <article key={principle.n} className="principle-card" data-reveal>
               <span>{principle.n}</span>
@@ -434,13 +446,13 @@ export function AboutPage({ onNavigate, user }: PageProps) {
             <span className="about-place-icon tone-lime"><Icon name="mapPin" size={20} /></span>
             <span className="eyebrow">Where we start</span>
             <h3>Addis Ababa</h3>
-            <p>Built close to the problem: households, small businesses and teams navigating a fast-moving, mobile-first economy.</p>
+            <p>Built close to the problem: small businesses, growing studios and teams navigating a fast-moving, mobile-first economy.</p>
           </div>
           <div className="about-place-card" data-reveal>
-            <span className="about-place-icon tone-violet"><Icon name="layers" size={20} /></span>
-            <span className="eyebrow">Where trust settles</span>
-            <h3>Base, then Celo</h3>
-            <p>One EVM proof and escrow module. Base is the long-term home. Celo is the near-term pilot for mobile reach.</p>
+            <span className="about-place-icon tone-violet"><Icon name="send" size={20} /></span>
+            <span className="eyebrow">Where money settles</span>
+            <h3>PayPal, then proof</h3>
+            <p>Payments and payouts run through the payer's and provider's own PayPal accounts. A verified proof releases the hold, and the 10% fee is deducted before the net is paid out.</p>
           </div>
           <div className="about-place-card" data-reveal>
             <span className="about-place-icon tone-teal"><Icon name="heart" size={20} /></span>
@@ -480,7 +492,7 @@ export function LegalPage({ kind, onNavigate, user }: PageProps & { kind: "priva
         <h1>{privacy ? "Privacy" : "Terms"}<em>.</em></h1>
         <p>
           {privacy
-            ? "What Remindify collects, why, and what stays yours. The short version: your register is yours, and the trust layer is optional."
+            ? "What Remindify collects, why, and what stays yours. The short version: your register is yours, and payments run through PayPal."
             : "The rules for using the Remindify preview. The short version: use it honestly, keep your account safe, and do not rely on preview infrastructure for money or legal deadlines."}
         </p>
         <div className="legal-meta">
@@ -505,7 +517,7 @@ export function LegalPage({ kind, onNavigate, user }: PageProps & { kind: "priva
             <Icon name="info" size={16} />
             <p>
               This is a plain-language preview, not legal advice. We will publish a reviewed
-              version before paid availability and before any onchain feature is offered as a
+              version before paid availability and before any payment feature is offered as a
               production service.
             </p>
           </div>
@@ -543,14 +555,15 @@ const PRIVACY: LegalSection[] = [
   {
     title: "What we collect",
     body: [
-      "When you create an account we collect the details you give us: your name and email address, or the profile information Google returns if you choose Google sign-in, or the public address your wallet returns if you choose wallet sign-in. We store a salted password hash if you use email and password; we never store the password itself.",
+      "When you create an account we collect the details you give us: your name and email address, or the profile information Google returns if you choose Google sign-in. We store a salted password hash if you use email and password; we never store the password itself.",
+      "If you pay or receive money, PayPal returns the email address and payment identifiers needed to create the order, authorization hold or payout. We never see your PayPal password.",
       "Inside the workspace we store the obligations, owners, backups, risk inputs, proof references, receipts and audit events you create. If you paste text into Capture, it is parsed to produce draft obligations. Raw pasted text is not added to your register unless it becomes part of a saved obligation.",
     ],
   },
   {
     title: "What we do not collect",
     body: [
-      "We do not sell personal data. We do not use advertising cookies. We do not upload your source documents to the trust layer. Proof receipts contain hashes and references, not the underlying document. We do not ask for a private key and we cannot sign a transaction for you.",
+      "We do not sell personal data. We do not use advertising cookies. We do not publish your source documents. Proof receipts contain hashes and references, not the underlying evidence. We never ask for a card number, a PayPal password or a private key, and we cannot move money without the payer's approval.",
     ],
   },
   {
@@ -568,26 +581,27 @@ const PRIVACY: LegalSection[] = [
   {
     title: "Third parties",
     body: [
-      "If you choose Google sign-in, Google processes the authentication request under its own privacy terms. If you choose wallet sign-in, your wallet software handles the signature locally; the server receives only the public address, message and signature needed to verify it. If you anchor a receipt or use escrow, a public RPC provider and the relevant network will see the public transaction you signed.",
+      "If you choose Google sign-in, Google processes the authentication request under its own privacy terms. If you pay or receive a payout, PayPal processes the transaction under its own terms, including the authorization hold, capture and payout. When the proof auditor runs, the evidence you file is sent to Google's Gemini API for scoring under Google's terms; if no model key is configured, those checks run on our server instead.",
       "We may use infrastructure providers to host the service and store the database. We will name material subprocessors before paid availability.",
     ],
   },
   {
-    title: "Onchain data",
+    title: "Payment data",
     body: [
-      "Blockchains are public and permanent. If you choose to anchor a receipt or fund an escrow, the transaction, your public wallet address and the proof hash become publicly visible. Do not anchor anything you are not prepared to make public. The underlying evidence is not uploaded by Remindify.",
+      "PayPal holds the authorization, moves the money and pays the provider. Remindify stores the identifiers needed to match a payment to an obligation, plus the receipt and audit events. We do not store card numbers, bank credentials or PayPal passwords, and we do not hold a balance on your behalf.",
+      "Payment records held by PayPal are governed by PayPal's own retention and privacy terms.",
     ],
   },
   {
     title: "Retention",
     body: [
-      "We keep account and workspace data while your account is active. Production workspaces live in a managed Postgres database; local development uses SQLite. If you ask us to delete an account, we will remove the account and its sessions; records already written to a public chain cannot be deleted by us or anyone else.",
+      "We keep account and workspace data while your account is active. Production workspaces live in a managed Postgres database; local development uses SQLite. If you ask us to delete an account, we will remove the account and its sessions. Records that PayPal holds for a payment are governed by PayPal's terms.",
     ],
   },
   {
     title: "Your choices",
     body: [
-      "You can export your register from the product. You can sign out at any time. You can ask us for access, correction or deletion of your account data by contacting us. If you signed in with Google, you can revoke Remindify's access from your Google account settings.",
+      "You can export your register from the product. You can sign out at any time. You can ask us for access, correction or deletion of your account data by contacting us. If you signed in with Google, you can revoke Remindify's access from your Google account settings. PayPal payment records are handled through your PayPal account.",
     ],
   },
   {
@@ -602,13 +616,13 @@ const TERMS: LegalSection[] = [
   {
     title: "The preview",
     body: [
-      "Remindify is currently a preview. The core register is functional, but hosted availability, billing, contracts and integrations may change. Do not use the preview as the only safeguard for a legal deadline, a regulated filing, payroll or money you cannot afford to lose. Keep an independent backup of anything critical.",
+      "Remindify is currently a preview. The core register is functional, but hosted availability, billing and integrations may change. Do not use the preview as the only safeguard for a legal deadline, a regulated filing, payroll or money you cannot afford to lose. Keep an independent backup of anything critical.",
     ],
   },
   {
     title: "Your account",
     body: [
-      "You are responsible for the activity under your account and for keeping your sign-in method secure. Use a real email address you control. If you sign in with a wallet, you are responsible for that wallet. Tell us promptly if you believe someone else has access to your account.",
+      "You are responsible for the activity under your account and for keeping your sign-in method secure. Use a real email address you control and keep your PayPal account secure. Tell us promptly if you believe someone else has access to your account.",
     ],
   },
   {
@@ -635,15 +649,16 @@ const TERMS: LegalSection[] = [
     ],
   },
   {
-    title: "Wallets and onchain transactions",
+    title: "Payments and holds",
     body: [
-      "Wallet features are optional. If you use them, you are responsible for the transaction you sign. Remindify does not custody funds, hold private keys or reverse a confirmed blockchain transaction. Gas, network conditions and counterparty behaviour are outside our control. USDC is the only asset the escrow module is designed to move.",
+      "Remindify is not a bank and does not hold customer funds. PayPal is a third-party payment processor: the payer approves an authorization hold of up to 29 days in their own PayPal account, and a verified proof allows Remindify to request capture. PayPal captures the hold, the 10% platform fee is deducted, and the provider is paid the net to their PayPal email.",
+      "A rejected proof leaves the hold untouched. Holds, captures and payouts are subject to PayPal's rules, limits and availability in your region. You are responsible for the PayPal account you use and for complying with PayPal's terms.",
     ],
   },
   {
     title: "Third-party services",
     body: [
-      "Google sign-in, wallet software, RPC providers and blockchains are third-party services with their own terms. We are not responsible for their availability or conduct. Links to third-party sites are provided for convenience and do not imply endorsement.",
+      "Google sign-in, PayPal and Gemini are third-party services with their own terms. We are not responsible for their availability or conduct. Links to third-party sites are provided for convenience and do not imply endorsement.",
     ],
   },
   {

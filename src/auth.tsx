@@ -12,13 +12,12 @@ type AuthContextValue = {
   signup: (name: string, email: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   startGoogle: () => void;
-  connectWallet: () => Promise<AuthUser>;
   refresh: () => Promise<void>;
 };
 
 const AuthCtx = createContext<AuthContextValue | null>(null);
 
-const DEFAULT_CONFIG: AuthConfig = { email: true, google: false, wallet: true };
+const DEFAULT_CONFIG: AuthConfig = { email: true, google: false };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -75,36 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.assign("/api/auth/google");
   }, []);
 
-  const connectWallet = useCallback(async () => {
-    const ethereum = window.ethereum;
-    if (!ethereum) {
-      throw new Error("No browser wallet found. Install MetaMask, or continue with email.");
-    }
-    const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-    const address = Array.isArray(accounts) ? accounts[0] : null;
-    if (!address) throw new Error("Your wallet didn't return an account.");
-    const challenge = await api.walletChallenge(address);
-    let signature: string;
-    try {
-      signature = await ethereum.request({
-        method: "personal_sign",
-        params: [challenge.message, address],
-      });
-    } catch {
-      throw new Error("Signature cancelled. Nothing was shared or charged.");
-    }
-    const result = await api.walletVerify({
-      address,
-      nonce: challenge.nonce,
-      signature,
-    });
-    setUser(result.user);
-    return result.user;
-  }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
-    user, loading, config, login, signup, logout, startGoogle, connectWallet, refresh,
-  }), [user, loading, config, login, signup, logout, startGoogle, connectWallet, refresh]);
+    user, loading, config, login, signup, logout, startGoogle, refresh,
+  }), [user, loading, config, login, signup, logout, startGoogle, refresh]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

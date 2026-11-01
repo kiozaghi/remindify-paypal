@@ -144,7 +144,7 @@ export function PublicNav({
                 href={appHref(route, user)}
                 onClick={spaClick(() => openApp(route))}
               >
-                {route === "today" ? "Today" : route === "obligations" ? "Obligations" : route === "agents" ? "Agents" : "Proof & escrow"}
+                {route === "today" ? "Today" : route === "obligations" ? "Obligations" : route === "agents" ? "Agents" : "Proof & holds"}
               </a>
             ))}
           </div>
@@ -242,7 +242,7 @@ export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?
               href={productHref(route)}
               onClick={spaClick(() => openProduct(route))}
             >
-              {route === "today" ? "Today" : route === "obligations" ? "Obligations" : route === "agents" ? "Agents" : route === "market" ? "Marketplace" : "Proof & escrow"}
+              {route === "today" ? "Today" : route === "obligations" ? "Obligations" : route === "agents" ? "Agents" : route === "market" ? "Marketplace" : "Proof & holds"}
             </a>
           ))}
         </div>
@@ -261,16 +261,16 @@ export function PublicFooter({ onNavigate, user }: { onNavigate: Navigate; user?
           <a href={routeHref("privacy")} onClick={spaClick(() => goPublic("privacy"))}>Privacy</a>
           <a href={routeHref("terms")} onClick={spaClick(() => goPublic("terms"))}>Terms</a>
           <a href="mailto:liyusoftwaresolution@gmail.com">liyusoftwaresolution@gmail.com</a>
-          <a href="https://base.org" target="_blank" rel="noreferrer">Base ecosystem <Icon name="arrowUpRight" size={11} /></a>
+          <a href={routeHref("security")} onClick={spaClick(() => goPublic("security"))}>Security model <Icon name="arrowUpRight" size={11} /></a>
         </div>
       </div>
 
       <div className="site-footer-bottom">
         <span>© 2026 Remindify. Built in Addis Ababa, for everywhere.</span>
         <span className="site-footer-values">
-          <i>No token</i>
-          <i>Wallet optional</i>
-          <i>PayPal + USDC</i>
+          <i>PayPal only</i>
+          <i>Proof before money</i>
+          <i>10% on settled work</i>
           <i>MIT-licensed</i>
         </span>
         <span>Preview build · v1.0</span>

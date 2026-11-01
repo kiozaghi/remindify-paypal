@@ -13,14 +13,14 @@ export const CATEGORIES: Record<string, { label: string; icon: string; tone: str
 /** The two kinds of weight the register carries. */
 export const LENSES = {
   life: {
-    label: "People & life",
-    short: "Life",
-    categories: ["people", "health", "other"],
+    label: "Duty & people",
+    short: "Duty",
+    categories: ["people", "health", "identity", "work", "other"],
   },
   money: {
-    label: "Money & admin",
+    label: "Money & ops",
     short: "Money",
-    categories: ["finance", "work", "home", "identity"],
+    categories: ["finance", "home"],
   },
 } as const;
 

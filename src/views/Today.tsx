@@ -6,7 +6,7 @@ import {
   Monogram, CategoryTile, RiskMeter, RiskPill, AutonomyControl, Ring, EmptyState, LiveDot,
 } from "../components/ui";
 import {
-  CATEGORIES, AUTONOMY, money, dueLabel, timeAgo, dateShort, recurrenceLabel, clockLabel, riskTone, lensOf,
+  CATEGORIES, AUTONOMY, money, moneyExact, dueLabel, timeAgo, dateShort, recurrenceLabel, clockLabel, riskTone, lensOf,
 } from "../lib/format";
 import type { Approval } from "../types";
 
@@ -15,6 +15,69 @@ function greeting(nowMs: number) {
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
+}
+
+const ESCROW_STATUS: Record<string, string> = {
+  draft: "Draft",
+  hold_pending: "Awaiting payer",
+  authorized: "Held",
+  captured_awaiting_payout: "Payout pending",
+  released: "Released",
+  voided: "Voided",
+};
+
+function EscrowStrip() {
+  const { state, navigate } = useApp();
+  const escrows = state?.escrows || [];
+  if (!escrows.length) return null;
+
+  const open = escrows.filter((e) => !["released", "voided"].includes(e.status));
+  const held = open
+    .filter((e) => ["authorized", "captured_awaiting_payout"].includes(e.status))
+    .reduce((sum, e) => sum + e.amount, 0);
+  const fees = escrows.reduce((sum, e) => sum + (e.status === "released" ? e.platform_fee : 0), 0);
+  const rows = (open.length ? open : escrows).slice(0, 3);
+
+  return (
+    <section className="escrow-strip" aria-label="PayPal escrow">
+      <div className="escrow-strip-head">
+        <div className="escrow-strip-title">
+          <span className="escrow-strip-icon"><Icon name="lock" size={15} /></span>
+          <div>
+            <span className="eyebrow">PayPal escrow</span>
+            <strong>{open.length ? `${open.length} ${open.length === 1 ? "hold" : "holds"} in flight` : "Every hold settled"}</strong>
+          </div>
+        </div>
+        <div className="escrow-strip-stats">
+          <span><b>{moneyExact(held)}</b> held</span>
+          <span><b>{moneyExact(fees)}</b> fees</span>
+          <button className="link-btn" onClick={() => navigate("trust")}>
+            Open Trust <Icon name="arrowRight" size={13} />
+          </button>
+        </div>
+      </div>
+      <div className="escrow-strip-rows">
+        {rows.map((escrow) => (
+          <button className="escrow-strip-row" key={escrow.id} onClick={() => navigate("trust")}>
+            <span className={`escrow-strip-dot ${escrow.status}`} />
+            <span className="escrow-strip-main">
+              <strong>{escrow.obligation_title}</strong>
+              <em>
+                {escrow.provider_name || "Provider"} · {escrow.payee_paypal_email}
+                {escrow.status === "authorized" && escrow.hold_expires_in_days != null
+                  ? ` · expires in ${escrow.hold_expires_in_days}d`
+                  : escrow.status === "released"
+                    ? ` · paid ${moneyExact(escrow.net_payout)}`
+                    : ""}
+              </em>
+            </span>
+            <span className="escrow-strip-status">{ESCROW_STATUS[escrow.status] || escrow.status}</span>
+            <span className="escrow-strip-amount">{moneyExact(escrow.amount)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function ApprovalCard({ approval }: { approval: Approval }) {
@@ -240,16 +303,16 @@ export default function Today() {
 
       <section className="ledger-strip">
         <div className="ledger-side life">
-          <span className="ledger-icon"><Icon name="heart" size={15} /></span>
+          <span className="ledger-icon"><Icon name="shield" size={15} /></span>
           <div className="ledger-copy">
-            <span className="eyebrow">The people side</span>
+            <span className="eyebrow">The duty side</span>
             <strong>
-              {lifeItems.length} {lifeItems.length === 1 ? "thing" : "things"} you hold for other people
+              {lifeItems.length} {lifeItems.length === 1 ? "obligation" : "obligations"} owed to a person or a regulator
             </strong>
             <em>
               {nextLife
                 ? `Next: ${nextLife.title} · ${dueLabel(nextLife.due_at, nowMs)}`
-                : "Nothing on the people side is close to the edge."}
+                : "Nothing on the duty side is close to the edge."}
             </em>
           </div>
         </div>
@@ -259,7 +322,7 @@ export default function Today() {
           <div className="ledger-copy">
             <span className="eyebrow">The money side</span>
             <strong>
-              {moneyItems.length} {moneyItems.length === 1 ? "thing" : "things"} that send an invoice
+              {moneyItems.length} {moneyItems.length === 1 ? "obligation" : "obligations"} that send or collect an invoice
             </strong>
             <em>
               {nextMoney
@@ -274,6 +337,8 @@ export default function Today() {
           <Icon name="arrowRight" size={14} />
         </button>
       </section>
+
+      <EscrowStrip />
 
       <div className="today-grid">
         <div className="today-main">

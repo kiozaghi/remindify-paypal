@@ -86,7 +86,7 @@ Remindify ships a dependency-free stdio MCP server. Add it to the client config:
 
 For Claude Desktop this file is `claude_desktop_config.json`; Cursor uses its MCP settings panel. Restart the client after editing.
 
-Tools exposed: `list_obligations`, `get_obligation`, `create_obligation`, `complete_obligation`, `portfolio_risk`, `list_agents`, `list_trust`.
+Tools exposed: `list_obligations`, `get_obligation`, `create_obligation`, `complete_obligation`, `portfolio_risk`, `list_agents`, `list_trust`, `list_escrows`, `get_proof_receipt`, `file_proof_receipt`.
 
 A useful first prompt:
 

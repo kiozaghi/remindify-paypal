@@ -7,10 +7,11 @@ import {
 } from "../lib/format";
 
 export default function ObligationDrawer() {
-  const { state, overlays, setOverlays, nowMs, actions, openAgent } = useApp();
+  const { state, overlays, setOverlays, nowMs, actions, openAgent, navigate } = useApp();
   const [completing, setCompleting] = useState(false);
   const [proof, setProof] = useState("");
   const [menu, setMenu] = useState(false);
+  const [payerEmail, setPayerEmail] = useState("");
 
   const ob = state?.obligations.find((o) => o.id === overlays.drawer);
   if (!state || !ob) return null;
@@ -20,6 +21,11 @@ export default function ObligationDrawer() {
   const runs = state.runs.filter((r) => r.obligation_id === ob.id).slice(0, 4);
   const events = state.events.filter((e) => e.object === ob.title).slice(0, 4);
   const payment = state.payments.find((p) => p.obligation_id === ob.id && p.rail === "paypal");
+  const invoice = state.invoices.find((i) => i.obligation_id === ob.id) || null;
+  const escrow = state.escrows.find((e) => e.obligation_id === ob.id) || null;
+  const invoicable = ob.amount > 0
+    && ["active", "waiting"].includes(ob.status)
+    && !ob.payee_paypal_email;
   const payable = ob.amount > 0
     && ["active", "waiting"].includes(ob.status)
     && !payment?.capture_id
@@ -40,9 +46,12 @@ export default function ObligationDrawer() {
     return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 7);
   }, [runs, events]);
 
+  const spendCeiling = Number(agent?.spend_ceiling) || null;
+  const aboveSpendCeiling = Boolean(spendCeiling && Number(ob.amount || 0) > spendCeiling);
   const autonomyAboveCeiling = agent
-    ? ["notify", "prepare", "approve", "autopilot"].indexOf(ob.autonomy) >
-      ["notify", "prepare", "approve", "autopilot"].indexOf(agent.autonomy_ceiling)
+    ? aboveSpendCeiling ||
+      ["notify", "prepare", "approve", "autopilot"].indexOf(ob.autonomy) >
+        ["notify", "prepare", "approve", "autopilot"].indexOf(agent.autonomy_ceiling)
     : false;
 
   const toggleStep = (step: string) => {
@@ -131,7 +140,10 @@ export default function ObligationDrawer() {
                       <span><strong>{agent.name}</strong><em>{agent.role}</em></span>
                       <Icon name="arrowUpRight" size={12} />
                     </button>
-                    <span className="ceiling-tag">ceiling · {AUTONOMY[agent.autonomy_ceiling].label}</span>
+                    <span className="ceiling-tag">
+                      ceiling · {AUTONOMY[agent.autonomy_ceiling].label}
+                      {spendCeiling ? ` · $${spendCeiling.toLocaleString("en-US")}/run` : ""}
+                    </span>
                   </>
                 ) : (
                   <span className="no-agent"><Icon name="users" size={14} /> You own this one</span>
@@ -140,7 +152,10 @@ export default function ObligationDrawer() {
               <AutonomyControl obligation={ob} />
               {autonomyAboveCeiling && (
                 <p className="ceiling-warning">
-                  <Icon name="alert" size={12} /> Above {agent?.name}'s ceiling — a human will still approve each run.
+                  <Icon name="alert" size={12} />
+                  {aboveSpendCeiling
+                    ? ` Above ${agent?.name}'s $${spendCeiling?.toLocaleString("en-US")} per-run ceiling — a human will still approve each run.`
+                    : ` Above ${agent?.name}'s ceiling — a human will still approve each run.`}
                 </p>
               )}
             </div>
@@ -199,8 +214,75 @@ export default function ObligationDrawer() {
           </section>
 
           <section className="drawer-section">
-            <div className="drawer-section-head"><h3>Timeline</h3><span className="eyebrow">Immutable</span></div>
-            <div className="drawer-timeline">
+            <div className="drawer-section-head">
+              <h3>Settlement</h3>
+              <span className="eyebrow">PayPal</span>
+            </div>
+            {invoice ? (
+              <div className="proof-box invoice-box">
+                <div>
+                  <strong>Invoice {invoice.paypal_invoice_id}</strong>
+                  <em>
+                    {invoice.payer_paypal_email} · {money(invoice.amount)} · {invoice.status}
+                    {invoice.reminders ? ` · ${invoice.reminders} reminder${invoice.reminders === 1 ? "" : "s"}` : ""}
+                  </em>
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={invoice.demo}
+                  title={invoice.demo ? "Sample invoice — send a live one to remind it" : "Send a reminder"}
+                  onClick={() => actions.remindInvoice(invoice.id)}
+                >
+                  Remind
+                </button>
+              </div>
+            ) : invoicable && ob.channel === "paypal" ? (
+              <div className="complete-form invoice-form">
+                <input
+                  value={payerEmail}
+                  onChange={(e) => setPayerEmail(e.target.value)}
+                  placeholder={ob.payer_paypal_email || "client@business.example.com"}
+                />
+                <button
+                  className="btn btn-lime btn-sm"
+                  onClick={() => actions.sendInvoice(ob.id, payerEmail.trim() || undefined)}
+                >
+                  <Icon name="receipt" size={14} /> Send invoice
+                </button>
+              </div>
+            ) : ob.payee_paypal_email ? null : (
+              <p className="drawer-empty">No invoice on this obligation.</p>
+            )}
+            {escrow ? (
+              <div className="proof-box invoice-box">
+                <div>
+                  <strong>Escrow {escrow.status.replace(/_/g, " ")}</strong>
+                  <em>
+                    {money(escrow.amount)} held · {money(escrow.net_payout)} net to{" "}
+                    {escrow.payee_paypal_email}
+                  </em>
+                </div>
+                <span className="mini-proof"><Icon name="shield" size={10} /> {escrow.short_id}</span>
+              </div>
+            ) : ob.payee_paypal_email ? (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setOverlays((o) => ({ ...o, drawer: null, escrowFor: ob.id }));
+                  navigate("trust");
+                }}
+              >
+                <Icon name="shield" size={13} /> Open escrow in Trust
+              </button>
+            ) : null}
+            <p className="ceiling-help">
+              PayPal moves the money; Remindify never holds a balance. The invoice is rebuilt from this obligation,
+              so the amount cannot be edited in the request.
+            </p>
+          </section>
+
+          <section className="drawer-section">
+            <div className="drawer-section-head"><h3>Timeline</h3><span className="eyebrow">Immutable</span></div>            <div className="drawer-timeline">
               {timeline.length ? timeline.map((t) => (
                 <div className="drawer-event" key={t.id}>
                   <span className={`drawer-event-dot actor-${t.kind}`} />

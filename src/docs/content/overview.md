@@ -1,6 +1,6 @@
 # Developer docs
 
-Remindify is a register for recurring obligations: rent, filings, renewals, inspections, birthdays. Each row has an owner, a backup, a due date, a risk score, an autonomy ceiling and a proof requirement. Your software can read and complete those rows.
+Remindify is a register for recurring business obligations: vendor renewals, compliance filings, contractor deliverables and invoice collections. Each row has an owner, a backup, a due date, a risk score, an autonomy ceiling and a proof requirement. Your software can read and complete those rows.
 
 These docs cover three audiences:
 
@@ -50,20 +50,19 @@ The REST API and the included MCP server are two views of the same register. See
 | --- | --- |
 | REST `/api/v1/*`, MCP server, machine keys | Available |
 | Execution connectors with signed requests and durable retries | Available |
-| Proof receipts, EIP-712 signing, optional anchoring | Available; anchoring needs deployed contracts |
-| Escrow intents | Available; onchain funding needs deployed contracts and a funded wallet |
-| PayPal payments and seller payouts | Available; needs `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, sandbox by default |
+| Proof receipts and the AI proof auditor | Available; Gemini 2.5 Flash when `GEMINI_API_KEY` is set, deterministic fallback otherwise |
+| PayPal payments, escrow holds and seller payouts | Available; needs `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, sandbox by default |
 | Billing | Preview: plans and metering work, subscription billing is not connected |
 | Proof file uploads | Not yet: proof is a reference string, not a stored file |
 | Seller workspace, earnings and payouts | Live in preview; PayPal Payouts is the only connected payout rail |
 
-Remindify does not hold private keys or custody funds. Escrow is non-custodial and releases only against a valid proof receipt. A PayPal payment moves between the payer's and payee's own PayPal accounts; Remindify records the capture and files it as proof.
+Remindify does not hold funds, cards or credentials. A proof receipt is a server-signed HMAC record; the auditor scores its evidence against the obligation. A PayPal escrow authorizes a hold for up to 29 days and captures it only after the auditor verifies the receipt, then pays the provider net of the platform fee. A direct PayPal payment moves between the payer's and payee's own PayPal accounts; Remindify records the capture and files it as proof.
 
 ## Conventions
 
 - Requests and responses are JSON. Send `content-type: application/json`.
 - Timestamps are ISO 8601 strings. Dates in machine responses are UTC.
-- Money is a number in the obligation's `currency`; the demo register uses USD. Onchain amounts are USDC. PayPal settles USD only; escrow moves USDC only.
+- Money is a number in the obligation's `currency`; the demo register uses USD. PayPal settles USD only. Escrow holds, captures and payouts are USD.
 - Mutating machine calls accept `Idempotency-Key`. Reuse it when retrying.
 - Every response includes `x-ratelimit-limit` and `x-ratelimit-remaining`.
 - Errors are `{ "error": "code", "message": "..." }`, with extra fields when useful. See [Errors](/docs/reference/errors).

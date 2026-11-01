@@ -6,7 +6,6 @@ import proof from "./content/concepts-proof-and-escrow.md?raw";
 import workspaces from "./content/concepts-workspaces-and-keys.md?raw";
 import agentTools from "./content/guides-agent-tools.md?raw";
 import executors from "./content/guides-executors.md?raw";
-import wallets from "./content/guides-wallets.md?raw";
 import payments from "./content/guides-payments.md?raw";
 import sellers from "./content/guides-sellers.md?raw";
 import api from "./content/reference-api.md?raw";
@@ -74,8 +73,8 @@ export const DOCS_PAGES: DocsPage[] = [
     label: "Proof and escrow",
     title: "Proof receipts and escrow",
     description:
-      "How completion becomes evidence: hashed proof receipts, EIP-712 signatures, optional anchoring and proof-gated escrow.",
-    keywords: "proof receipt eip-712 signature anchor base celo escrow usdc release",
+      "How completion becomes evidence: HMAC-SHA256 proof receipts, the Gemini proof auditor, PayPal authorization holds, capture and the fee split.",
+    keywords: "proof receipt hmac sha256 auditor gemini paypal hold capture payout fee escrow release",
     body: proof,
   },
   {
@@ -109,23 +108,13 @@ export const DOCS_PAGES: DocsPage[] = [
     body: executors,
   },
   {
-    slug: "guides/wallets",
-    group: "Guides",
-    label: "Wallets and signing",
-    title: "Wallets, networks and signing",
-    description:
-      "Add Base, sign a Remindify proof receipt with EIP-712, and keep a wallet safe while testing on a testnet.",
-    keywords: "wallet metamask coinbase base celo usdc sign eip-712 testnet sepolia",
-    body: wallets,
-  },
-  {
     slug: "guides/payments",
     group: "Guides",
     label: "Payments",
     title: "Payments: PayPal and escrow",
     description:
-      "Settle an obligation with PayPal Orders, send a seller payout through PayPal Payouts, and know when USDC escrow is the better rail.",
-    keywords: "paypal payment orders capture payout sellers webhook usd fiat money escrow usdc",
+      "Settle an obligation with PayPal Orders, send a seller payout through PayPal Payouts, and release escrow from a PayPal authorization hold.",
+    keywords: "paypal payment orders capture hold payout sellers webhook usd fiat money escrow fee",
     body: payments,
   },
   {

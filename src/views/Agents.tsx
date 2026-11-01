@@ -105,7 +105,10 @@ export default function Agents() {
                     />
                   ))}
                 </div>
-                <strong>{AUTONOMY[agent.autonomy_ceiling]?.label}</strong>
+                <strong>
+                  {AUTONOMY[agent.autonomy_ceiling]?.label}
+                  {agent.spend_ceiling ? <em> · up to ${agent.spend_ceiling.toLocaleString("en-US")}/run</em> : null}
+                </strong>
               </div>
 
               <footer className="agent-foot">

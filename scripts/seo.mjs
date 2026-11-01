@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
-const origin = (process.env.PUBLIC_ORIGIN || "https://remindify-xi.vercel.app").replace(/\/+$/, "");
+const origin = (process.env.PUBLIC_ORIGIN || "https://remindify-paypal.vercel.app").replace(/\/+$/, "");
 const builtAt = new Date().toISOString().slice(0, 10);
 
 const seo = await import(pathToFileURL(join(root, "dist-ssr", "entry-server.js")).href);
@@ -132,20 +132,20 @@ const docsIndex = DOCS_PAGES.map((doc) => {
 
 const llms = `# Remindify
 
-> Remindify is one calm register for both kinds of weight: the people you love and the money you can't lose. Renewals, filings, school terms and birthdays, with humans and agents who can actually do the work, community calendar packs, and verifiable proof.
+> Remindify is the governance, risk and proof-gated escrow layer for PayPal agentic commerce. Vendor renewals, compliance filings, contractor deliverables and invoice collections, with agents that carry spending ceilings, humans who sign off, and verifiable proof before money moves.
 
-Remindify is a web application for individuals and small teams. Every recurring obligation has one owner, one backup, a risk score, an autonomy level, a proof requirement and an audit trail. The product is in private preview; billing is not enabled.
+Remindify is a web application for operators and small teams. Every recurring obligation has one owner, one backup, a risk score, an autonomy level, a spending ceiling, a proof requirement and an audit trail. The product is in private preview; billing is not enabled.
 
 Key facts:
-- Two sides, one register: people (relationships, family, health, caregiving) and money (jobs, insurance, subscriptions, filings, home).
+- Two books, one register: vendors (contractors, specialist merchants, deliverables) and compliance (filings, insurance, payroll, subscriptions).
 - Remind, then do: open the item yourself, delegate to an agent you built, or hire a community agent or human for one obligation.
-- Community packs: importable calendars for love and connection, the school year, holidays, caregiving, tax filings, home cover, subscriptions and moving country.
-- No token. No custody. No server-held private keys.
-- Wallet sign-in and onchain proof are optional; email and Google sign-in work without a wallet.
-- Proof receipts are hashed and signed with EIP-712 offchain. Anchoring to Base is optional.
-- Escrow is non-custodial USDC and releases only against a valid proof receipt.
+- Community packs: importable playbooks for tax filings, vendor onboarding, contractor milestones, workplace safety, travel and entity registration.
+- No token. No custody. Remindify never holds a balance.
+- Proof receipts are HMAC-SHA256 signed and stored on the register.
+- An AI proof auditor checks evidence against the proof required; low-confidence evidence falls back to a deterministic check.
+- Escrow is a PayPal authorization hold, captured and paid out only after the proof audit passes. Remindify keeps a 10% platform fee.
 - Capture parses pasted text and text-based PDFs deterministically on the server. No third-party AI API is required.
-- In Ethiopia, wallet and payment features stay offchain until the National Bank of Ethiopia authorises virtual-asset activity.
+- Live payments need a PayPal business account in a supported market; the demo runs against the PayPal sandbox.
 - The code is MIT-licensed. The repository is private while the preview is running.
 
 ## Pages
@@ -201,11 +201,11 @@ Summary generated: ${builtAt}
 
 Remindify is the register for everything that comes back. A reminder is a notification; an obligation is a relationship with an owner, a backup, a due date, a risk score, an autonomy ceiling and a proof requirement. Remindify gives recurring work a place to live so it stops depending on somebody remembering.
 
-It is built for the person who remembers everything for everyone: a founder, an operator, a household manager, a small team. Humans and agents work from the same register, with scoped access and an audit trail.
+It is built for the operator who remembers everything for the business: a founder, an agency lead, a finance manager, a small team. Humans and agents work from the same register, with scoped access, spending ceilings and an audit trail.
 
 ## The two sides
 
-Most tools pick one side of a life. A finance app ignores a mother's birthday; a family calendar forgets the insurance renewal. Remindify carries both, with one owner, one backup and one proof trail.
+Most tools pick one book. A finance app forgets the contractor handoff; a project board forgets the tax filing. Remindify carries both, with one owner, one backup and one proof trail.
 
 ${sideLines}
 
@@ -217,7 +217,7 @@ ${delegationLines}
 
 ## Community packs
 
-Packs are calendars someone already survived: love and connection, the school year, holidays, caregiving, tax filings, home cover, subscriptions and moving country. Import a pack, edit it, and it becomes yours. Community agents are held to the same scopes, ceilings and proof standard as your own.
+Packs are playbooks someone already ran: tax filings, vendor onboarding, contractor milestones, workplace safety, travel and entity registration. Import a pack, edit it, and it becomes yours. Community agents are held to the same scopes, ceilings and proof standard as your own.
 
 ${packLines}
 
@@ -228,10 +228,10 @@ ${productLines}
 ## How it works
 
 1. Capture: paste a letter, email, note or text-based PDF. A deterministic parser extracts the dates, amounts, provider and recurrence. No AI API is required for this path.
-2. Own: assign one owner and one backup. Set the risk and the autonomy ceiling (notify, prepare, approve, autopilot). Filter the register by the people side or the money side.
+2. Own: assign one owner and one backup. Set the risk, the autonomy ceiling (notify, prepare, approve, autopilot) and the agent's spending ceiling. Filter the register by vendor or compliance work.
 3. Do: open the next step yourself, delegate to your own agent, or hire a community agent or vetted human from the marketplace.
-4. Prove: define what evidence counts. Completion files a hashed proof receipt signed with EIP-712.
-5. Escalate only when needed: anchor the proof hash to Base, or fund non-custodial USDC escrow that releases against proof.
+4. Prove: define what evidence counts. Completion files a signed proof receipt with the evidence references.
+5. Settle: send a PayPal invoice to collect a receivable, or place an authorization hold that is captured only after the proof audit passes, then paid out through PayPal Payouts.
 6. Audit: Activity keeps an attributed event stream of who did what, with which scope, and what evidence was filed.
 
 ## Pricing
@@ -246,14 +246,15 @@ ${faqLines}
 
 ## Trust and safety facts
 
-- Authentication: email and password, Google OAuth when configured, or an EVM wallet signature. Wallet use is optional.
+- Authentication: email and password, or Google OAuth when configured.
 - Data: production workspaces live in a managed Postgres database; local development uses SQLite. Accounts and sessions are stored in separate tables from workspace data.
 - Capture privacy: text is parsed on the server and is not sent to a third party or an AI model. Scanned PDFs and images need OCR or a vision service and are not part of the deterministic path.
-- Proof: EIP-712 typed data, hashed evidence references, offchain by default. Documents are never uploaded to a chain.
-- Onchain: Base is the primary ecosystem. Celo is the pilot for mobile-first, emerging-market use. One reusable EVM proof and escrow module.
-- Escrow: USDC only, non-custodial, created with an explicit jurisdiction acknowledgement, released against a valid receipt. Remindify never holds a private key.
+- Proof: an HMAC-SHA256 receipt over the evidence digest. The signing key stays on the server.
+- Audit: Gemini 2.5 Flash checks the evidence against the proof required, with a minimum confidence (default 0.80). Without a model key a deterministic check runs instead.
+- Escrow: a PayPal authorization hold for up to 29 days, captured only against a verified proof. The 10% application fee is deducted from the captured amount and the provider is paid by PayPal Payouts.
+- Invoicing: receivables are sent and reminded through PayPal Invoicing. The amount is rebuilt from the obligation, never from the request.
+- Payments: PayPal does not operate in every market. Live payments need a PayPal business account in a supported market; the demo runs on the PayPal sandbox.
 - No token is planned or sold. Nothing in the product requires holding an asset.
-- Ethiopia: the register, capture and offchain proof work today. Wallet and payment features remain offchain until the National Bank of Ethiopia authorises virtual-asset activity.
 
 ## Page index
 

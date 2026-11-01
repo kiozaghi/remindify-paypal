@@ -91,7 +91,7 @@ const DOCS_ENTRY_POINTS = [
     tone: "ink",
     meta: "Concept",
     title: "Proof and escrow",
-    copy: "Hashed receipts, EIP-712 signatures and release against proof.",
+    copy: "HMAC-signed receipts, a Gemini proof audit and PayPal release on proof.",
   },
   {
     slug: "guides/sellers",
@@ -352,7 +352,7 @@ export default function DocsPage({ slug, onNavigate, user }: DocsPageProps) {
                     <p className="docs-entry-foot">
                       Also in the manual:{" "}
                       <a href={docsHref("concepts/workspaces-and-keys")} onClick={spaClick(() => go("concepts/workspaces-and-keys"))}>workspaces and keys</a>,{" "}
-                      <a href={docsHref("guides/wallets")} onClick={spaClick(() => go("guides/wallets"))}>wallets and signing</a>,{" "}
+                      <a href={docsHref("concepts/proof-and-escrow")} onClick={spaClick(() => go("concepts/proof-and-escrow"))}>proof and escrow</a>,{" "}
                       <a href={docsHref("reference/errors")} onClick={spaClick(() => go("reference/errors"))}>errors</a> and{" "}
                       <a href={docsHref("reference/environment")} onClick={spaClick(() => go("reference/environment"))}>environment variables</a>.
                       Press <kbd>⌘K</kbd> to search.

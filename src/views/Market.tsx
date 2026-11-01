@@ -67,7 +67,7 @@ export default function Market() {
           <span className="compare-icon tone-coral"><Icon name="users" size={18} /></span>
           <div>
             <h3>Pick a human when…</h3>
-            <p>It needs a body, a signature or a judgement call. Immigration queues, notaries, negotiations, things that break.</p>
+            <p>It needs a body, a signature or a judgement call. Regulators, notaries, facilities crews, the things that break in a building.</p>
           </div>
         </div>
       </div>
@@ -77,8 +77,8 @@ export default function Market() {
           <span className="eyebrow light">Built by the community</span>
           <h2>Borrow a bench <em>someone already built.</em></h2>
           <p>
-            People with the same year you’re having have already mapped it: the school run,
-            the tax cycle, the holidays, the move abroad. Import their pack, or publish the
+            Operators with the same quarter you’re having have already mapped it: the vendor bench,
+            the tax cycle, the audit calendar, the second entity. Import their pack, or publish the
             agent that finally solved yours — and get paid when the proof is accepted.
           </p>
           <div className="community-bench-actions">
@@ -100,7 +100,7 @@ export default function Market() {
           <div className="community-packs">
             <span className="community-label">Popular packs</span>
             <div className="community-chips">
-              {["Love & connection", "Family & school", "Tax & filings", "Holidays", "Caregiving", "Moving country"].map((name) => (
+              {["Vendor lifecycle", "Contractor deliverables", "Vendor onboarding", "Entity expansion", "Tax & filings", "Workplace safety"].map((name) => (
                 <span key={name}>{name}</span>
               ))}
             </div>

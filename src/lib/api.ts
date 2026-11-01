@@ -57,14 +57,6 @@ export const api = {
       "POST",
       payload
     ),
-  walletChallenge: (address: string) =>
-    request<{ address: string; nonce: string; message: string; expires_at: string }>(
-      "/api/auth/wallet/challenge",
-      "POST",
-      { address }
-    ),
-  walletVerify: (payload: { address: string; nonce: string; signature: string }) =>
-    request<{ user: AuthUser }>("/api/auth/wallet/verify", "POST", payload),
 
   capture: (text: string) => request("/api/capture", "POST", { text }),
   addObligations: (items: any[]) => request("/api/obligations/bulk", "POST", { items }),
@@ -91,17 +83,14 @@ export const api = {
   setLive: (live: boolean) => request("/api/meta", "PATCH", { live }),
   trust: () => request("/api/trust"),
   createReceipt: (payload: any) => request("/api/trust/receipts", "POST", payload),
-  signReceipt: (id: string, signature: string, signer: string) =>
-    request(`/api/trust/receipts/${id}/sign`, "POST", { signature, signer }),
-  anchorReceipt: (id: string, tx_hash: string) =>
-    request(`/api/trust/receipts/${id}/anchor`, "POST", { tx_hash }),
-  receiptCalldata: (id: string) => request(`/api/trust/receipts/${id}/calldata`),
+  auditReceipt: (id: string, artifact?: any) =>
+    request(`/api/trust/receipts/${id}/audit`, "POST", artifact ? { artifact } : {}),
+  verifyReceipt: (id: string) => request(`/api/trust/receipts/${id}/verify`),
   createEscrow: (payload: any) => request("/api/trust/escrows", "POST", payload),
-  commitEscrow: (id: string) => request(`/api/trust/escrows/${id}/commit`, "POST", {}),
-  fundEscrow: (id: string, tx_hash: string) =>
-    request(`/api/trust/escrows/${id}/fund`, "POST", { tx_hash }),
-  releaseEscrow: (id: string, proof_receipt_id?: string | null, tx_hash?: string) =>
-    request(`/api/trust/escrows/${id}/release`, "POST", { proof_receipt_id, tx_hash }),
+  holdEscrow: (id: string) => request(`/api/trust/escrows/${id}/hold`, "POST", {}),
+  voidEscrow: (id: string) => request(`/api/trust/escrows/${id}/void`, "POST", {}),
+  releaseEscrow: (id: string, payload: { proof_receipt_id?: string; artifact?: any } = {}) =>
+    request(`/api/trust/escrows/${id}/release`, "POST", payload),
 
   paypalOrder: (obligation_id: string) =>
     request<{ payment: Payment; approve_url: string; mode: "sandbox" | "live" }>(
@@ -121,6 +110,9 @@ export const api = {
       "POST",
       { payout_id }
     ),
+  sendInvoice: (payload: { obligation_id: string; payer_paypal_email?: string }) =>
+    request("/api/invoices", "POST", payload),
+  remindInvoice: (id: string) => request(`/api/invoices/${id}/remind`, "POST", {}),
 
   sellerSave: (payload: any) => request("/api/seller", "PATCH", payload),
   sellerBooking: (id: string, action: "accept" | "decline" | "start" | "proof", payload: any = {}) =>

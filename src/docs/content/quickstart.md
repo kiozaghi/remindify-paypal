@@ -149,10 +149,12 @@ curl -X POST "$REMINDIFY_URL/api/v1/obligations/ob_.../complete" \
 A successful completion:
 
 - advances a recurring obligation to its next due date, or archives a one-off;
-- files a proof receipt in the trust layer;
+- files a proof receipt in the trust layer, signed server-side with HMAC-SHA256;
 - records an attributed `proof` event.
 
 The response includes `next_due` for recurring obligations, or `archived: true` for one-off ones.
+
+To check the evidence, run the auditor on the receipt with `POST /api/trust/receipts/:id/audit`. It returns `verified`, `confidence`, a verdict and any discrepancies. `GET /api/trust/receipts/:id/verify` returns the receipt `status`, whether its signature is `valid`, the `proof_hash` and any `settlement`. A rejected receipt leaves any PayPal escrow hold untouched; see [Proof and escrow](/docs/concepts/proof-and-escrow).
 
 ## 7. Let the agent act
 

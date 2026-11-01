@@ -4,7 +4,6 @@ import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { privateKeyToAccount } from "viem/accounts";
 
 test("a paid plan needs a confirmed email once email is configured", async () => {
   const dir = mkdtempSync(join(tmpdir(), "remindify-plan-"));
@@ -53,19 +52,6 @@ test("a paid plan needs a confirmed email once email is configured", async () =>
     db.updateUser(db.findUserByEmail(email).id, { email_verified_at: new Date().toISOString() });
     assert.equal((await plan("studio", cookie)).status, 200);
 
-    // A wallet account has no address to confirm; it is not blocked.
-    const account = privateKeyToAccount(`0x${"11".repeat(32)}`);
-    const challenge = await post("/api/auth/wallet/challenge", { address: account.address });
-    assert.equal(challenge.status, 200);
-    const { nonce, message } = await challenge.json();
-    const verified = await post("/api/auth/wallet/verify", {
-      address: account.address,
-      nonce,
-      signature: await account.signMessage({ message }),
-    });
-    assert.equal(verified.status, 200);
-    const walletCookie = verified.headers.get("set-cookie").split(";")[0];
-    assert.equal((await plan("studio", walletCookie)).status, 200);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

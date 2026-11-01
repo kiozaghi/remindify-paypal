@@ -6,17 +6,17 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   buildState, completeObligation, sweep, applyApproval, snoozeObligation,
   runObligation, advanceClock, deleteObligation, logEvent, uid, virtualNow,
-  riskFor, enrichObligation, drainOutbox, autonomyRank, reclaimObligation,
+  riskFor, enrichObligation, drainOutbox, effectiveAutonomy, reclaimObligation,
 } from "./engine.mjs";
 import {
   loadAll, put, putMany, getMeta, setMeta, seedDatabase, pruneAuth,
   beginRequest, runWithStore, endRequest, abortRequest, isPostgres, findKeyBySecret,
   workspacesWithKind,
 } from "./db.mjs";
-import { parseCapture } from "./parse.mjs";
+import { parseCapture, parseCaptureAI } from "./parse.mjs";
 import {
-  anchorReceipt, commitEscrow, createEscrow, createReceipt, ensureTrustDemo,
-  fundEscrow, receiptCalldata, releaseEscrow, signReceipt, trustSnapshot,
+  auditReceipt, authorizeEscrowHold, createEscrow, createReceipt, ensureTrustDemo,
+  holdEscrow, releaseEscrow, trustSnapshot, verifyReceiptSignature, voidEscrow,
 } from "./trust.mjs";
 import { handleAuthRoute, handleAccountDelete, getSessionFromRequest } from "./auth.mjs";
 import { emailConfigured } from "./email.mjs";
@@ -24,10 +24,11 @@ import {
   sendDailyDigest, subscribeByToken, unsubscribeByToken, unsubscribePage,
 } from "./digest.mjs";
 import { pruneActivity } from "./retention.mjs";
-import { sanctionsConfigured, screenAddresses } from "./sanctions.mjs";
 import { setWorkspace, runWithWorkspace } from "./workspace.mjs";
 import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
-import { DEMO_EXECUTOR_PATH, newExecutorSecret, signExecutorRequest, validateExecutorUrl } from "./executors.mjs";
+import {
+  DEMO_EXECUTOR_PATH, LEGACY_EXECUTOR_PATH, newExecutorSecret, signExecutorRequest, validateExecutorUrl,
+} from "./executors.mjs";
 import { takeRateLimit } from "./ratelimit.mjs";
 import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
 import {
@@ -41,6 +42,7 @@ import {
   PayPalError, captureOrder, createOrder, createPayout, getOrder, orderCapture,
   payableAmount, paypalConfigured, paypalMode, payoutBatch, verifyWebhook,
 } from "./paypal.mjs";
+import { remindObligationInvoice, sendObligationInvoice } from "./invoices.mjs";
 import {
   beginObligationPayment, findPayment, listPayments, markCaptured, markFailed,
   markPayoutStatus, paymentsSummary, recordPayout,
@@ -64,6 +66,7 @@ const MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
+  ".mp4": "video/mp4",
 };
 
 // Baseline headers for every response, API and static. HSTS is only added
@@ -207,9 +210,7 @@ function applyPaypalEvent(event) {
 function clampAutonomyToCeiling(ob) {
   if (!ob.agent_id) return ob;
   const agent = loadAll().agents.find((a) => a.id === ob.agent_id);
-  if (agent && autonomyRank(ob.autonomy) > autonomyRank(agent.autonomy_ceiling)) {
-    ob.autonomy = agent.autonomy_ceiling;
-  }
+  if (agent) ob.autonomy = effectiveAutonomy(ob, agent);
   return ob;
 }
 
@@ -217,6 +218,13 @@ function clampAutonomyToCeiling(ob) {
 // on signup, so every human action can be attributed to whoever is signed in.
 function humanActor() {
   return getMeta("user", "Operator");
+}
+
+const PAYPAL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function paypalEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email || email.length > 254 || !PAYPAL_EMAIL_RE.test(email)) return null;
+  return email;
 }
 
 function normalizeObligation(input) {
@@ -251,6 +259,8 @@ function normalizeObligation(input) {
     checklist: Array.isArray(input.checklist) ? input.checklist : [],
     evidence: input.evidence || null,
     marketplace: input.marketplace || null,
+    payee_paypal_email: paypalEmail(input.payee_paypal_email),
+    payer_paypal_email: paypalEmail(input.payer_paypal_email),
     created_at: input.created_at || new Date().toISOString(),
   };
 }
@@ -498,11 +508,11 @@ async function handleRequest(req, res) {
         logEvent({
           actor_type: "automation", actor: key.name, actor_id: key.id,
           verb: "read the trust layer", object: "Proof receipts",
-          detail: "GET /v1/trust · receipts, escrows and chain status",
+          detail: "GET /v1/trust · receipts, escrows and settlement state",
           kind: "api", channel: "api",
         });
         return send(res, 200, {
-          networks: trust.networks,
+          rail: trust.rail,
           receipts: trust.receipts,
           escrows: trust.escrows,
           stats: trust.stats,
@@ -539,7 +549,7 @@ async function handleRequest(req, res) {
         return send(res, 200, {
           agents: state.agents.map((a) => ({
             id: a.id, name: a.name, role: a.role, status: a.status,
-            autonomy_ceiling: a.autonomy_ceiling, trust: a.trust,
+            autonomy_ceiling: a.autonomy_ceiling, spend_ceiling: a.spend_ceiling ?? null, trust: a.trust,
             capabilities: a.capabilities, scopes: a.scopes, runs_30d: a.runs_30d,
           })),
         });
@@ -607,10 +617,10 @@ async function handleRequest(req, res) {
         console.error("PayPal webhook verification failed:", error?.message || error);
         return send(res, 502, { error: "verification_unavailable" });
       }
-      if (!verification.configured) {
-        return send(res, 202, { ok: true, verified: false, applied: false });
-      }
       if (!verification.verified) {
+        if (!verification.configured) {
+          return send(res, 202, { ok: true, verified: false, applied: false });
+        }
         return send(res, 400, { error: "invalid_signature" });
       }
 
@@ -618,10 +628,17 @@ async function handleRequest(req, res) {
       for (const workspaceId of workspacesWithKind("payments")) {
         if (runWithWorkspace(workspaceId, () => applyPaypalEvent(event))) {
           applied = true;
+          runWithWorkspace(workspaceId, () => logEvent({
+            actor: "PayPal",
+            kind: "payment",
+            verb: "delivered a webhook",
+            object: String(event?.event_type || "event"),
+            detail: `Signature verified (${verification.mode || "paypal_rsa_sha256"}).`,
+          }));
           break;
         }
       }
-      return send(res, 200, { ok: true, verified: true, applied });
+      return send(res, 200, { ok: true, verified: true, mode: verification.mode, applied });
     }
 
     // Seeded agents point their connector at this route. It accepts the same
@@ -629,7 +646,7 @@ async function handleRequest(req, res) {
     // payload, so the demo exercises the real execution path rather than
     // pretending. It acknowledges the run and files sandbox proof; it never
     // moves money. Users can still connect their own https executor instead.
-    if (path === DEMO_EXECUTOR_PATH && req.method === "POST") {
+    if ((path === DEMO_EXECUTOR_PATH || path === LEGACY_EXECUTOR_PATH) && req.method === "POST") {
       const event = await body(req);
       const workspaceId = String(event?.workspace?.id || "").slice(0, 80);
       const agentId = String(event?.agent?.id || "").slice(0, 80);
@@ -639,7 +656,8 @@ async function handleRequest(req, res) {
 
       const verdict = runWithWorkspace(workspaceId, () => {
         const agent = loadAll().agents.find((item) => item.id === agentId);
-        if (!agent || agent.executor_url !== DEMO_EXECUTOR_PATH) {
+        const builtIn = agent?.executor_url === DEMO_EXECUTOR_PATH || agent?.executor_url === LEGACY_EXECUTOR_PATH;
+        if (!agent || !builtIn) {
           return { status: 404, body: { error: "unknown_executor" } };
         }
         const issuedAt = Number(req.headers["x-remindify-timestamp"] || 0);
@@ -686,7 +704,8 @@ async function handleRequest(req, res) {
     if (path === "/api/capture" && req.method === "POST") {
       const { text } = await body(req);
       if (!text || text.trim().length < 4) return send(res, 422, { error: "Paste a little more text." });
-      const parsed = parseCapture(text, Date.now());
+      const now = Date.now();
+      const parsed = (await parseCaptureAI(text, now)) || parseCapture(text, now);
       return send(res, 200, parsed);
     }
 
@@ -794,6 +813,7 @@ async function handleRequest(req, res) {
         description: input.description || "A custom agent built inside Remindify.",
         capabilities: input.capabilities || ["execute"],
         autonomy_ceiling: input.autonomy_ceiling || "approve",
+        spend_ceiling: Number(input.spend_ceiling) > 0 ? Number(input.spend_ceiling) : null,
         trust: 80,
         cost_per_run: 0,
         status: "active",
@@ -820,6 +840,10 @@ async function handleRequest(req, res) {
       if (!agent) return send(res, 404, { error: "not_found" });
       for (const key of ["name", "role", "description", "autonomy_ceiling", "status", "capabilities", "scopes"]) {
         if (key in patch) agent[key] = patch[key];
+      }
+      if ("spend_ceiling" in patch) {
+        const value = Number(patch.spend_ceiling);
+        agent.spend_ceiling = Number.isFinite(value) && value > 0 ? value : null;
       }
       put("agents", agent);
       const state = buildState();
@@ -1015,9 +1039,9 @@ async function handleRequest(req, res) {
       if (!target) {
         return send(res, 422, { error: "unknown_plan", plans: Object.keys(PLANS) });
       }
-      // A paid plan needs a confirmed address for invoices and dunning. Wallet
-      // accounts have no address to confirm, and without an email provider
-      // nobody can confirm, so the gate only applies when both exist.
+      // A paid plan needs a confirmed address for invoices and dunning. Without
+      // an email provider nobody can confirm, so the gate only applies when
+      // verification is actually possible.
       const user = req.auth?.user;
       if (target.price > 0 && emailConfigured() && user?.email && !user.email_verified) {
         return send(res, 403, {
@@ -1065,60 +1089,123 @@ async function handleRequest(req, res) {
       return send(res, result.ok ? 201 : 422, { ...result, state: buildState() });
     }
 
-    const receiptSignMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/sign$/);
-    if (receiptSignMatch && req.method === "POST") {
-      const { signature, signer } = await body(req);
-      const result = await signReceipt({ id: receiptSignMatch[1], signature, signer });
+    const receiptAuditMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/audit$/);
+    if (receiptAuditMatch && req.method === "POST") {
+      const { artifact } = await body(req);
+      const result = await auditReceipt({
+        receipt_id: receiptAuditMatch[1],
+        artifact: artifact || undefined,
+      });
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
     }
 
-    const receiptAnchorMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/anchor$/);
-    if (receiptAnchorMatch && req.method === "POST") {
-      const { tx_hash } = await body(req);
-      const result = await anchorReceipt({ id: receiptAnchorMatch[1], tx_hash });
-      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
-    }
-
-    const receiptCalldataMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/calldata$/);
-    if (receiptCalldataMatch && req.method === "GET") {
-      const result = receiptCalldata(receiptCalldataMatch[1]);
-      return send(res, result.ok ? 200 : 422, result);
+    const receiptVerifyMatch = path.match(/^\/api\/trust\/receipts\/([^/]+)\/verify$/);
+    if (receiptVerifyMatch && req.method === "GET") {
+      const receipt = (loadAll().receipts || []).find((r) => r.id === receiptVerifyMatch[1]);
+      if (!receipt) return send(res, 404, { error: "receipt_not_found" });
+      return send(res, 200, {
+        id: receipt.id,
+        status: receipt.status,
+        valid: verifyReceiptSignature(receipt),
+        proof_hash: receipt.proof_hash,
+        settlement: receipt.settlement || null,
+      });
     }
 
     if (path === "/api/trust/escrows" && req.method === "POST") {
       if (regionBlockedResponse(req, res)) return;
-      if (await sanctionsBlockedResponse(req, res)) return;
       const input = await body(req);
       const result = createEscrow(input);
       return send(res, result.ok ? 201 : 422, { ...result, state: buildState() });
     }
 
-    const escrowCommitMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/commit$/);
-    if (escrowCommitMatch && req.method === "POST") {
-      const result = commitEscrow({ id: escrowCommitMatch[1] });
-      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    if (path === "/api/trust/escrows/paypal/return" && req.method === "GET") {
+      const url = new URL(req.url || "/", originFor(req));
+      const token = url.searchParams.get("token") || url.searchParams.get("order_id");
+      if (!token) return redirect(res, "/trust?escrow=missing");
+      try {
+        const result = await authorizeEscrowHold({ order_id: token });
+        return redirect(res, `/trust?escrow=${result.ok ? "authorized" : result.error || "error"}`);
+      } catch (error) {
+        if (error instanceof PayPalError) return redirect(res, `/trust?escrow=${error.code}`);
+        throw error;
+      }
     }
 
-    const escrowFundMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/fund$/);
-    if (escrowFundMatch && req.method === "POST") {
+    const escrowHoldMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/hold$/);
+    if (escrowHoldMatch && req.method === "POST") {
       if (regionBlockedResponse(req, res)) return;
-      if (await sanctionsBlockedResponse(req, res)) return;
-      const { tx_hash } = await body(req);
-      const result = await fundEscrow({ id: escrowFundMatch[1], tx_hash });
+      const result = await holdEscrow({ id: escrowHoldMatch[1], origin: originFor(req) });
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
     }
 
     const escrowReleaseMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/release$/);
     if (escrowReleaseMatch && req.method === "POST") {
       if (regionBlockedResponse(req, res)) return;
-      if (await sanctionsBlockedResponse(req, res)) return;
-      const { proof_receipt_id, tx_hash } = await body(req);
-      const result = await releaseEscrow({
-        id: escrowReleaseMatch[1],
-        proof_receipt_id,
-        tx_hash,
-      });
+      const { proof_receipt_id, artifact } = await body(req);
+      const escrow = (loadAll().escrows || []).find((e) => e.id === escrowReleaseMatch[1]);
+      let receiptId = proof_receipt_id;
+      if (artifact && escrow) {
+        const filed = createReceipt({
+          obligation_id: escrow.obligation_id,
+          artifact,
+          proof: artifact.name || "Escrow proof",
+          source: "escrow",
+        });
+        receiptId = filed.receipt?.id || receiptId;
+      }
+      const result = await releaseEscrow({ id: escrowReleaseMatch[1], proof_receipt_id: receiptId });
       return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    }
+
+    const escrowVoidMatch = path.match(/^\/api\/trust\/escrows\/([^/]+)\/void$/);
+    if (escrowVoidMatch && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      const result = await voidEscrow({ id: escrowVoidMatch[1] });
+      return send(res, result.ok ? 200 : 422, { ...result, state: buildState() });
+    }
+
+    if (path === "/api/invoices" && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      if (!paypalConfigured()) {
+        return send(res, 503, {
+          error: "paypal_not_configured",
+          message: "Add PayPal credentials before sending an invoice.",
+          state: buildState(),
+        });
+      }
+      const input = await body(req);
+      const data = loadAll();
+      const obligation = (data.obligations || []).find((item) => item.id === input.obligation_id);
+      if (!obligation) return send(res, 404, { error: "obligation_not_found", state: buildState() });
+      const agent = (data.agents || []).find(
+        (item) => item.id === (input.agent_id || obligation.agent_id)
+      );
+      try {
+        const invoice = await sendObligationInvoice({
+          obligation,
+          agent,
+          payerEmail: input.payer_paypal_email,
+          now: virtualNow(),
+        });
+        return send(res, 201, { invoice, state: buildState() });
+      } catch (error) {
+        return paypalFailure(res, error);
+      }
+    }
+
+    const invoiceRemindMatch = path.match(/^\/api\/invoices\/([^/]+)\/remind$/);
+    if (invoiceRemindMatch && req.method === "POST") {
+      if (regionBlockedResponse(req, res)) return;
+      const data = loadAll();
+      const invoice = (data.invoices || []).find((item) => item.id === invoiceRemindMatch[1]);
+      if (!invoice) return send(res, 404, { error: "invoice_not_found", state: buildState() });
+      try {
+        const next = await remindObligationInvoice({ invoice, now: virtualNow() });
+        return send(res, 200, { invoice: next, state: buildState() });
+      } catch (error) {
+        return paypalFailure(res, error);
+      }
     }
 
     if (path === "/api/account/delete" && req.method === "POST") {
@@ -1383,7 +1470,20 @@ async function handleRequest(req, res) {
     }
     try {
       const content = await readFile(filePath);
-      return send(res, 200, content, MIME[extname(filePath)] || "application/octet-stream");
+      const type = MIME[extname(filePath)] || "application/octet-stream";
+      res.setHeader("accept-ranges", "bytes");
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
+      if (range && content.length) {
+        const start = range[1] ? Number(range[1]) : 0;
+        const end = range[2] ? Number(range[2]) : content.length - 1;
+        if (start <= end && start < content.length) {
+          const last = Math.min(end, content.length - 1);
+          res.setHeader("content-range", `bytes ${start}-${last}/${content.length}`);
+          res.setHeader("content-length", last - start + 1);
+          return send(res, 206, content.subarray(start, last + 1), type);
+        }
+      }
+      return send(res, 200, content, type);
     } catch {
       return send(
         res,
@@ -1405,29 +1505,21 @@ function regionBlockedResponse(req, res) {
   return true;
 }
 
-// The payer's connected wallet is screened before escrow money moves. Accounts
-// without a wallet have nothing to look up here; the regional gate still
-// applies to them.
-async function sanctionsBlockedResponse(req, res) {
-  const address = req.auth?.user?.wallet_address;
-  if (!address || !sanctionsConfigured()) return false;
-  const screen = await screenAddresses([address]);
-  if (screen.hits.length) {
-    send(res, 403, {
-      error: "sanctions_hit",
-      message: "This wallet is on a sanctions list, so the escrow cannot move.",
-      hits: screen.hits,
-    });
-    return true;
-  }
-  if (screen.unavailable && !screen.ok) {
-    send(res, 503, {
-      error: "sanctions_unavailable",
-      message: "The sanctions screen is unavailable. Try again later.",
-    });
-    return true;
-  }
-  return false;
+// Where PayPal sends the payer back. PUBLIC_ORIGIN wins so a proxied deploy
+// never hands PayPal an internal host.
+function originFor(req) {
+  const configured = String(process.env.PUBLIC_ORIGIN || "").replace(/\/+$/, "");
+  if (configured) return configured;
+  const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0].trim();
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "localhost:4178")
+    .split(",")[0]
+    .trim();
+  return `${proto}://${host}`;
+}
+
+function redirect(res, location) {
+  res.writeHead(302, { location });
+  res.end();
 }
 
 function secretMatches(given, secret) {
@@ -1558,6 +1650,32 @@ function normalizedPath(req) {
   }
 }
 
+// The store needs the workspace before it can take the per-workspace advisory
+// lock. Read the credential from the request without a database round trip:
+// the session cookie hashes to the auth_sessions key, the bearer token to a
+// workspace API key.
+function requestLockHint(req) {
+  const cookie = String(req.headers.cookie || "");
+  let sessionToken = "";
+  for (const part of cookie.split(";")) {
+    const index = part.indexOf("=");
+    if (index === -1) continue;
+    if (part.slice(0, index).trim() !== "remindify_session") continue;
+    try {
+      sessionToken = decodeURIComponent(part.slice(index + 1).trim());
+    } catch {
+      sessionToken = "";
+    }
+    break;
+  }
+  const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  return {
+    sessionTokenHash: sessionToken ? digestSecret(sessionToken) : null,
+    apiKey: bearer || null,
+    apiKeyDigest: bearer ? digestSecret(bearer) : null,
+  };
+}
+
 // Vercel and the local Node server both enter through this handler. With
 // Postgres, a request-scoped snapshot is loaded under a transaction and
 // flushed before the response ends. With SQLite, the lifecycle hooks are
@@ -1574,7 +1692,7 @@ export async function handle(req, res) {
 
   let store;
   try {
-    store = await beginRequest();
+    store = await beginRequest(requestLockHint(req));
   } catch (error) {
     console.error("Postgres request start failed:", error);
     return send(res, 500, { error: "database_unavailable", message: "The workspace database is unavailable." });

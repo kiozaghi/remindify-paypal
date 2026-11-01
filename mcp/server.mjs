@@ -93,14 +93,65 @@ const TOOLS = [
   {
     name: "list_trust",
     description:
-      "Read proof receipts and escrow intents across Base and Celo. Check status, signer, proof hash and whether a chain is in preview or configured mode before claiming a proof is anchored.",
+      "Read the trust rail: PayPal authorization holds, HMAC-signed proof receipts and the AI auditor threshold. Check a receipt's audit and settlement before claiming money moved.",
     inputSchema: {
       type: "object",
       properties: {
-        status: { type: "string", enum: ["prepared", "signed", "anchored"], description: "Filter receipts by status." },
+        status: {
+          type: "string",
+          enum: ["filed", "verified", "rejected", "settled"],
+          description: "Filter receipts by status.",
+        },
         obligation_id: { type: "string", description: "Only receipts for this obligation." },
         limit: { type: "number", description: "Max receipts. Default 20, max 100." },
       },
+    },
+  },
+  {
+    name: "list_escrows",
+    description:
+      "List PayPal escrows with hold status, gross, platform fee, net payout, payee email and the days left on the authorization. Use before promising a provider they will be paid.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["draft", "hold_pending", "authorized", "captured_awaiting_payout", "released", "voided"],
+        },
+        obligation_id: { type: "string" },
+        limit: { type: "number", description: "Default 20, max 100." },
+      },
+    },
+  },
+  {
+    name: "get_proof_receipt",
+    description: "Read one proof receipt in full: the evidence hash, the auditor verdict, the settlement split and whether the signature is intact.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Receipt ID." } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "file_proof_receipt",
+    description:
+      "File a signed proof receipt for an obligation. Include the actual evidence text, not a summary. The receipt is filed as unsigned-of-money: settlement still requires the auditor to pass and a human-approved PayPal hold.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        obligation_id: { type: "string" },
+        proof: { type: "string", description: "Short label, e.g. 'PayPal settlement notice'." },
+        artifact: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            type: { type: "string", description: "MIME type, e.g. application/pdf or text/plain." },
+            text: { type: "string", description: "Extracted text of the evidence." },
+          },
+          required: ["text"],
+        },
+      },
+      required: ["obligation_id", "proof"],
     },
   },
 ];
@@ -204,29 +255,85 @@ async function callTool(name, args = {}) {
       receipts = receipts.filter((receipt) => receipt.obligation_id === args.obligation_id);
     }
     return {
+      rail: data.rail,
       stats: data.stats,
       guardrails: data.guardrails,
-      networks: (data.networks || []).map((network) => ({
-        key: network.key,
-        label: network.label,
-        chain_id: network.chain_id,
-        status: network.status,
-        guardrail: network.guardrail,
-      })),
       receipts: receipts.slice(0, limit).map((receipt) => ({
         id: receipt.id,
         obligation_id: receipt.obligation_id,
         obligation_title: receipt.obligation_title,
-        chain: receipt.chain,
-        network_label: receipt.network_label,
         status: receipt.status,
-        signer: receipt.signer,
-        digest: receipt.digest,
-        tx_hash: receipt.tx_hash,
-        explorer_url: receipt.explorer_url,
+        proof_label: receipt.proof_label,
+        proof_hash: receipt.proof_hash,
+        completed_at: receipt.completed_at,
+        audit: receipt.audit ? {
+          verified: receipt.audit.verified,
+          confidence: receipt.audit.confidence,
+          engine: receipt.audit.engine,
+          discrepancies: receipt.audit.discrepancies || [],
+        } : null,
+        settlement: receipt.settlement || null,
+        settled: Boolean(receipt.settled),
+        signature: receipt.short_signature || null,
       })),
       escrows: data.escrows || [],
     };
+  }
+
+  if (name === "list_escrows") {
+    const data = await api("/api/v1/trust");
+    const limit = Math.min(100, Math.max(1, Number(args.limit) || 20));
+    let escrows = data.escrows || [];
+    if (args.status) escrows = escrows.filter((escrow) => escrow.status === args.status);
+    if (args.obligation_id) {
+      escrows = escrows.filter((escrow) => escrow.obligation_id === args.obligation_id);
+    }
+    return {
+      fee_percent: data.rail?.fee_percent ?? null,
+      hold_days: data.rail?.hold_days ?? null,
+      count: escrows.length,
+      escrows: escrows.slice(0, limit).map((escrow) => ({
+        id: escrow.id,
+        short_id: escrow.short_id,
+        obligation_id: escrow.obligation_id,
+        obligation_title: escrow.obligation_title,
+        provider_name: escrow.provider_name,
+        status: escrow.status,
+        gross: escrow.amount,
+        platform_fee: escrow.platform_fee,
+        net_payout: escrow.net_payout,
+        currency: escrow.currency,
+        payee_paypal_email: escrow.payee_paypal_email,
+        authorization_id: escrow.authorization_id,
+        capture_id: escrow.capture_id,
+        payout_batch_id: escrow.payout_batch_id,
+        proof_receipt_id: escrow.proof_receipt_id,
+        hold_expires_in_days: escrow.hold_expires_in_days,
+        failure_reason: escrow.failure_reason || null,
+      })),
+    };
+  }
+
+  if (name === "get_proof_receipt") {
+    if (!args.id) throw new Error("id is required");
+    const data = await api("/api/v1/trust");
+    const receipt = (data.receipts || []).find((item) => item.id === args.id);
+    if (!receipt) throw new Error(`No receipt ${args.id}`);
+    return receipt;
+  }
+
+  if (name === "file_proof_receipt") {
+    if (!args.obligation_id) throw new Error("obligation_id is required");
+    if (!args.proof) throw new Error("proof is required — an outcome without evidence is just a claim");
+    const data = await api("/api/v1/trust/receipts", {
+      method: "POST",
+      body: JSON.stringify({
+        obligation_id: args.obligation_id,
+        proof: args.proof,
+        artifact: args.artifact || undefined,
+      }),
+    });
+    return data.receipt;
   }
 
   throw new Error(`Unknown tool: ${name}`);
