@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "../components/Icon";
 import { CategoryTile, Field } from "../components/ui";
@@ -200,9 +200,22 @@ export default function Capture() {
   const [text, setText] = useState("");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [parsing, setParsing] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [confirmed, setConfirmed] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [reviewToken, setReviewToken] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  // `scheduling` only reaches the DOM on the next render, so a second click in
+  // the same tick would otherwise post the drafts twice.
+  const schedulingRef = useRef(false);
+
+  // The results render below the fold on a laptop-height viewport, so every
+  // parse has to bring them into view or the user sees nothing happen.
+  useEffect(() => {
+    if (!parsing && !reviewToken) return;
+    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [parsing, reviewToken]);
 
   if (!state) return null;
 
@@ -217,7 +230,17 @@ export default function Capture() {
     setParsing(false);
     if (result?.items) {
       setDrafts((prev) => [...prev.filter((d) => !result.items.some((i: any) => i.title === d.title)), ...result.items]);
-      if (!result.items.length) toast("Nothing extracted", "Try adding a date or a clearer task line.", "warn");
+      setReviewToken((t) => t + 1);
+      const count = result.items.length;
+      if (count) {
+        toast(
+          `${count} ${count === 1 ? "obligation" : "obligations"} extracted`,
+          "Check the dates and owners, then confirm to schedule them.",
+          "success",
+        );
+      } else {
+        toast("Nothing extracted", "Try adding a date or a clearer task line.", "warn");
+      }
     }
   };
 
@@ -226,8 +249,12 @@ export default function Capture() {
   const remove = (id: string) => setDrafts((prev) => prev.filter((d) => d.id !== id));
 
   const confirm = async () => {
-    if (!drafts.length) return;
+    if (!drafts.length || schedulingRef.current) return;
+    schedulingRef.current = true;
+    setScheduling(true);
     const result = await actions.addObligations(drafts);
+    schedulingRef.current = false;
+    setScheduling(false);
     if (result) {
       setConfirmed(drafts.length);
       setDrafts([]);
@@ -392,6 +419,7 @@ export default function Capture() {
         </aside>
       </div>
 
+      <div className="capture-results" ref={resultsRef}>
       {parsing && (
         <section className="block">
           <header className="block-head">
@@ -417,9 +445,12 @@ export default function Capture() {
               <h2>{drafts.length} {drafts.length === 1 ? "obligation" : "obligations"} extracted <span className="count-badge">{drafts.length}</span></h2>
             </div>
             <div className="draft-actions">
-              <button className="btn btn-ghost btn-sm" onClick={() => setDrafts([])}>Discard</button>
-              <button className="btn btn-ink" onClick={confirm}>
-                <Icon name="check" size={16} /> Confirm &amp; schedule {drafts.length}
+              <button className="btn btn-ghost btn-sm" onClick={() => setDrafts([])} disabled={scheduling}>
+                Discard
+              </button>
+              <button className="btn btn-ink" onClick={confirm} disabled={scheduling}>
+                {scheduling ? <span className="spinner" /> : <Icon name="check" size={16} />}
+                {scheduling ? "Scheduling…" : `Confirm & schedule ${drafts.length}`}
               </button>
             </div>
           </header>
@@ -447,6 +478,7 @@ export default function Capture() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }

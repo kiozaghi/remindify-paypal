@@ -224,7 +224,9 @@
 .capture-tip svg { flex: none; margin-top: 1px; color: var(--violet); }
 
 /* Drafts */
-.drafts-block { margin-top: 26px; }
+/* Scroll target for a completed parse. Clears the 66px sticky topbar. */
+.capture-results { margin-top: 26px; scroll-margin-top: 82px; }
+.drafts-block { margin-top: 0; }
 .draft-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 .draft-card {
   border: 1px solid var(--line);

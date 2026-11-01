@@ -10,7 +10,7 @@ export const CONTENT_PAGES: Route[] = [
 ];
 
 export const SHELL_PAGES: Route[] = [
-  "login", "signup", "today", "obligations", "capture", "agents",
+  "login", "signup", "today", "calendar", "obligations", "capture", "agents",
   "market", "seller", "activity", "trust", "access",
 ];
 
@@ -86,6 +86,7 @@ export const PAGE_META: Record<Route, PageMeta> = {
     index: false,
   },
   today: { label: "Today", title: "Today — Remindify", description: APP_DESCRIPTION, index: false },
+  calendar: { label: "Calendar", title: "Calendar — Remindify", description: APP_DESCRIPTION, index: false },
   obligations: { label: "Obligations", title: "Obligations — Remindify", description: APP_DESCRIPTION, index: false },
   capture: { label: "Capture", title: "Capture — Remindify", description: APP_DESCRIPTION, index: false },
   agents: { label: "Agents", title: "Agents — Remindify", description: APP_DESCRIPTION, index: false },

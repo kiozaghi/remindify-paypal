@@ -11,6 +11,7 @@ import {
 } from "./lib/router";
 import { applySeo } from "./lib/seo";
 import Today from "./views/Today";
+import Calendar from "./views/Calendar";
 import Obligations from "./views/Obligations";
 import Capture from "./views/Capture";
 import Agents from "./views/Agents";
@@ -24,6 +25,7 @@ import AgentDrawer from "./components/AgentDrawer";
 import { CommandPalette, Toasts } from "./components/CommandPalette";
 import { CreateAgentModal, DeleteAccountModal, HireModal, NewObligationModal } from "./components/Modals";
 import { TemplatesModal } from "./components/TemplatesModal";
+import { WelcomeTour } from "./components/WelcomeTour";
 import { clockLabel, download } from "./lib/format";
 import { api, request } from "./lib/api";
 
@@ -32,6 +34,7 @@ const NAV = [
     label: "Run",
     items: [
       { id: "today", label: "Today", icon: "today" },
+      { id: "calendar", label: "Calendar", icon: "calendar" },
       { id: "obligations", label: "Obligations", icon: "list" },
       { id: "capture", label: "Capture", icon: "sparkle" },
     ],
@@ -56,6 +59,7 @@ const NAV = [
 
 const TITLES: Record<string, { title: string; sub: string }> = {
   today: { title: "Command center", sub: "The state of everything that comes back" },
+  calendar: { title: "Calendar", sub: "Every obligation and held slot, one grid" },
   obligations: { title: "Register", sub: "One owner, one backup, one proof trail" },
   capture: { title: "Capture", sub: "Turn prose into obligations" },
   agents: { title: "The bench", sub: "Agents and automations with a paper trail" },
@@ -222,7 +226,7 @@ function Shell() {
           </div>
 
           <div className="topbar-right">
-            <button className="clock-chip" onClick={() => navigate("activity")} title="Virtual portfolio clock">
+            <button className="clock-chip" onClick={() => navigate("calendar")} title="Calendar — every obligation by day">
               <Icon name="calendar" size={14} />
               <span>{clockLabel(state.now)}</span>
               {offset !== 0 && <em className="clock-offset">+{offset}d</em>}
@@ -299,6 +303,7 @@ function Shell() {
 
         <main className="content" key={route}>
           {route === "today" && <Today />}
+          {route === "calendar" && <Calendar />}
           {route === "obligations" && <Obligations />}
           {route === "capture" && <Capture />}
           {route === "agents" && <Agents />}
@@ -323,6 +328,7 @@ function Shell() {
       <CreateAgentModal />
       <HireModal />
       <DeleteAccountModal />
+      <WelcomeTour />
       <Toasts />
     </div>
   );
