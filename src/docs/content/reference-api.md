@@ -20,6 +20,7 @@ A missing or invalid key returns `401 unauthorized`. An expired key returns `401
 | `obligations:write` | `POST /obligations`, `POST /obligations/:id/complete`, `POST /trust/receipts` |
 | `risk:read` | `GET /risk`, `GET /trust` |
 | `agents:read` | `GET /agents` |
+| `trust:audit` | `POST /trust/receipts/:id/audit` |
 
 ## Request headers
 
@@ -52,6 +53,7 @@ Idempotent replays add `Idempotent-Replay: true`. A `429` includes `Retry-After`
 | `GET` | `/api/v1/agents` | `agents:read` | Agent roster with ceilings and scopes. |
 | `GET` | `/api/v1/trust` | `risk:read` | Networks, receipts, escrows and trust stats. |
 | `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt. |
+| `POST` | `/api/v1/trust/receipts/:id/audit` | `trust:audit` | Run the proof auditor on a filed receipt. Does not release escrow. |
 
 ## List obligations
 
@@ -270,11 +272,11 @@ curl "$REMINDIFY_URL/api/v1/agents" \
 
 - It cannot create, rotate or revoke keys. Those are human actions with a session cookie.
 - It cannot change agents, approvals or billing.
-- It cannot audit receipts, release escrows or send payouts; it can file receipts.
+- It can audit a filed receipt only with `trust:audit`; it cannot capture or release an escrow or send a payout.
 - It does not bypass the plan allowance or the per-key rate limit.
 
 ## App endpoints
 
 `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/*`, `/api/agents`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/payments/*`, `/api/seller/*`, `/api/billing` and `/api/demo/*` require a signed-in session cookie. A machine key does not open them.
 
-Public endpoints are `/api/auth/*`, `/api/health`, `/api/v1/*`, `/api/paypal/webhook` (signature-verified) and the secret-protected `/api/cron/*` schedulers.
+Session-free endpoints are `/api/auth/*`, `/api/health`, signed `/api/digest/*` links, the timestamp/HMAC-signed sandbox executor, `/api/paypal/webhook` (PayPal signature-verified), and secret-protected `/api/cron/*` schedulers. `/api/v1/*` is not anonymous: every request requires a workspace machine key and the endpoint's scope.

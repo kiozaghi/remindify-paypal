@@ -351,6 +351,18 @@
 }
 .studio-head strong { display: block; font-size: 15px; letter-spacing: -0.03em; }
 .studio-head p { font-size: 10.5px; color: var(--faint); max-width: 520px; }
+.studio-exposure { padding: 12px 16px 14px; border-bottom: 1px solid var(--line); background: rgba(20, 20, 15, 0.018); }
+.studio-exposure-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 16px; margin-bottom: 10px; }
+.studio-exposure-head strong { font-size: 12px; }
+.studio-exposure-head span { font-size: 10px; color: var(--muted); }
+.studio-exposure-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.studio-exposure-band { display: grid; gap: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); font-size: 10px; color: var(--muted); }
+.studio-exposure-band b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.studio-risk-band { justify-self: start; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.studio-risk-band.band-critical { color: var(--coral); }
+.studio-risk-band.band-high { color: #a86b12; }
+.studio-risk-band.band-watch { color: #3562c4; }
+.studio-risk-band.band-guarded { color: var(--teal); }
 .studio-grid { padding: 8px 10px 12px; }
 .studio-grid .ag-root-wrapper { border: 0; background: transparent; }
 .studio-cell { display: flex; align-items: center; gap: 9px; min-width: 0; height: 100%; }
@@ -397,3 +409,7 @@
 .studio-escrow-wrap em { font-style: normal; font-size: 8.5px; color: var(--faint); }
 .studio-seg { gap: 1px; }
 .studio-seg button { padding: 3px 4px; font-size: 7px; }
+
+@media (max-width: 700px) {
+  .studio-exposure-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

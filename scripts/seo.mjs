@@ -144,9 +144,9 @@ Key facts:
 - Proof receipts are HMAC-SHA256 signed and stored on the register.
 - An AI proof auditor checks evidence against the proof required; low-confidence evidence falls back to a deterministic check.
 - Escrow is a PayPal authorization hold, captured and paid out only after the proof audit passes. Remindify keeps a 10% platform fee.
-- Capture parses pasted text and text-based PDFs deterministically on the server. No third-party AI API is required.
+- Capture uses Gemini for structured extraction when configured; without it, a deterministic server-side parser is used.
 - Live payments need a PayPal business account in a supported market; the demo runs against the PayPal sandbox.
-- The code is MIT-licensed. The repository is private while the preview is running.
+- The code is MIT-licensed and the repository is public: https://github.com/kiozaghi/remindify-paypal
 
 ## Pages
 ${pageIndex}
@@ -158,9 +158,9 @@ ${docsIndex}
 - [Sitemap](${origin}/sitemap.xml)
 - [Full text summary](${origin}/llms-full.txt)
 
-## Contact
-- hello@remindify.app
-- security@remindify.app
+## Source
+- Public repository: https://github.com/kiozaghi/remindify-paypal
+- License: MIT
 `;
 
 await writeFile(join(dist, "llms.txt"), llms);
@@ -248,7 +248,7 @@ ${faqLines}
 
 - Authentication: email and password, or Google OAuth when configured.
 - Data: production workspaces live in a managed Postgres database; local development uses SQLite. Accounts and sessions are stored in separate tables from workspace data.
-- Capture privacy: text is parsed on the server and is not sent to a third party or an AI model. Scanned PDFs and images need OCR or a vision service and are not part of the deterministic path.
+- Capture privacy: capture text is sent to Gemini when a model key is configured; without one, the server uses the deterministic parser. Evidence is sent to Gemini for multimodal proof review when configured, with deterministic checks otherwise.
 - Proof: an HMAC-SHA256 receipt over the evidence digest. The signing key stays on the server.
 - Audit: Gemini 2.5 Flash checks the evidence against the proof required, with a minimum confidence (default 0.80). Without a model key a deterministic check runs instead.
 - Escrow: a PayPal authorization hold for up to 29 days, captured only against a verified proof. The 10% application fee is deducted from the captured amount and the provider is paid by PayPal Payouts.
@@ -275,10 +275,9 @@ Group: ${doc.group}
 
 ${doc.body}`).join("\n\n---\n\n")}
 
-## Contact
+## Source
 
-- General: hello@remindify.app
-- Security: security@remindify.app
+- Public repository: https://github.com/kiozaghi/remindify-paypal
 - Location: Addis Ababa, Ethiopia
 - License: MIT
 `;

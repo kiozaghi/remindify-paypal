@@ -10,6 +10,7 @@ const ENDPOINTS = [
   { method: "POST", path: "/api/v1/obligations/:id/complete", desc: "File an outcome and advance the schedule." },
   { method: "GET", path: "/api/v1/risk", desc: "Portfolio coverage, exposure and top risks." },
   { method: "GET", path: "/api/v1/agents", desc: "Discover the roster, scopes and autonomy ceilings." },
+  { method: "POST", path: "/api/v1/trust/receipts/:id/audit", desc: "Audit a filed receipt with the trust:audit scope; never releases escrow." },
 ];
 
 export default function Access() {
@@ -81,7 +82,7 @@ export default function Access() {
   };
 
   const samples = {
-    curl: `curl https://remindify.app/api/v1/obligations \\
+    curl: `curl https://remindify-paypal.vercel.app/api/v1/obligations \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -117,16 +118,16 @@ await rf.obligations.create({
       "command": "node",
       "args": ["/path/to/remindify/mcp/server.mjs"],
       "env": {
-        "REMINDIFY_API": "http://localhost:4178",
+        "REMINDIFY_URL": "http://localhost:4178",
         "REMINDIFY_KEY": "${token}"
       }
     }
   }
 }
 
-// Tools exposed to any MCP client:
-// list_obligations · create_obligation
-// complete_obligation · get_portfolio_risk`,
+// MCP tools include register, risk, trust, and proof-audit actions.
+// audit_proof_receipt requires the trust:audit machine-key scope.
+// It never captures or pays out; escrow release stays human-approved in the app.`,
   };
 
   const webhookEvents = ["obligation.due_soon", "approval.requested", "proof.filed", "risk.escalated"];
@@ -168,7 +169,7 @@ await rf.obligations.create({
             title="Orders v2, authorizations and captures run through the APIMatic-generated PayPal Server SDK"
           >
             <Icon name="checkCircle" size={12} />
-            APIMatic Validated PayPal Schema
+            APIMatic-Generated PayPal SDK
             <Icon name="arrowUpRight" size={11} />
           </a>
         </div>

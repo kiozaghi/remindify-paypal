@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "./auth";
 import { AppProvider, useApp } from "./store";
 import { Icon } from "./components/Icon";
@@ -10,16 +10,16 @@ import {
   NAV_EVENT, isAppRoute, isAuthRoute, isPublicRoute, navigateTo, readLocation,
 } from "./lib/router";
 import { applySeo } from "./lib/seo";
-import Today from "./views/Today";
-import Calendar from "./views/Calendar";
-import Obligations from "./views/Obligations";
-import Capture from "./views/Capture";
-import Agents from "./views/Agents";
-import Market from "./views/Market";
-import Seller from "./views/Seller";
-import Activity from "./views/Activity";
-import Trust from "./views/Trust";
-import Access from "./views/Access";
+const Today = lazy(() => import("./views/Today"));
+const Calendar = lazy(() => import("./views/Calendar"));
+const Obligations = lazy(() => import("./views/Obligations"));
+const Capture = lazy(() => import("./views/Capture"));
+const Agents = lazy(() => import("./views/Agents"));
+const Market = lazy(() => import("./views/Market"));
+const Seller = lazy(() => import("./views/Seller"));
+const Activity = lazy(() => import("./views/Activity"));
+const Trust = lazy(() => import("./views/Trust"));
+const Access = lazy(() => import("./views/Access"));
 import ObligationDrawer from "./components/ObligationDrawer";
 import AgentDrawer from "./components/AgentDrawer";
 import { CommandPalette, Toasts } from "./components/CommandPalette";
@@ -59,7 +59,7 @@ const NAV = [
 
 const TITLES: Record<string, { title: string; sub: string }> = {
   today: { title: "Command center", sub: "The state of everything that comes back" },
-  calendar: { title: "Calendar", sub: "Every obligation and held slot, one grid" },
+  calendar: { title: "Calendar", sub: "Every obligation, one grid" },
   obligations: { title: "Register", sub: "One owner, one backup, one proof trail" },
   capture: { title: "Capture", sub: "Turn prose into obligations" },
   agents: { title: "The bench", sub: "Agents and automations with a paper trail" },
@@ -302,16 +302,22 @@ function Shell() {
         )}
 
         <main className="content" key={route}>
-          {route === "today" && <Today />}
-          {route === "calendar" && <Calendar />}
-          {route === "obligations" && <Obligations />}
-          {route === "capture" && <Capture />}
-          {route === "agents" && <Agents />}
-          {route === "market" && <Market />}
-          {route === "seller" && <Seller />}
-          {route === "activity" && <Activity />}
-          {route === "trust" && <Trust />}
-          {route === "access" && <Access />}
+          <Suspense fallback={<div className="boot" role="status" aria-busy="true">
+            <Logo />
+            <p>Opening {titles.title.toLowerCase()}…</p>
+            <div className="boot-bar"><span /></div>
+          </div>}>
+            {route === "today" && <Today />}
+            {route === "calendar" && <Calendar />}
+            {route === "obligations" && <Obligations />}
+            {route === "capture" && <Capture />}
+            {route === "agents" && <Agents />}
+            {route === "market" && <Market />}
+            {route === "seller" && <Seller />}
+            {route === "activity" && <Activity />}
+            {route === "trust" && <Trust />}
+            {route === "access" && <Access />}
+          </Suspense>
           <footer className="app-foot">
             <span><Logo small /> Remindify OS · v1.0</span>
             <span>Never miss a beat. {state.stats.active} obligations under watch.</span>

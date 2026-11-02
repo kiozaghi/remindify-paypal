@@ -4,7 +4,7 @@ This walkthrough creates an agent key and completes a full loop: read the regist
 
 ## Before you start
 
-- A workspace. Sign up at [remindify-xi.vercel.app/signup](https://remindify-xi.vercel.app/signup), or run Remindify locally.
+- A workspace. Sign up at [remindify-paypal.vercel.app/signup](https://remindify-paypal.vercel.app/signup), or run Remindify locally.
 - Node.js 22 or newer only if you run Remindify locally.
 - About ten minutes.
 
@@ -12,13 +12,13 @@ This walkthrough creates an agent key and completes a full loop: read the regist
 
 | Where | Base URL | Setup |
 | --- | --- | --- |
-| Hosted preview | `https://remindify-xi.vercel.app` | Sign up in the browser; nothing to install |
+| Hosted preview | `https://remindify-paypal.vercel.app` | Sign up in the browser; nothing to install |
 | Local | `http://localhost:4178` | `npm install && npm run dev` |
 
 The hosted preview is a real deployment, not a mock: accounts, machine keys and the REST API work over HTTPS. Two conveniences are switched off there because it has no OAuth client or email webhook — Google sign-in and password reset. Use email and password, keep the password safe, and treat the workspace as demo data. [Environment variables](/docs/reference/environment) lists what a full deployment configures.
 
 ```bash
-export REMINDIFY_URL=https://remindify-xi.vercel.app
+export REMINDIFY_URL=https://remindify-paypal.vercel.app
 # or: export REMINDIFY_URL=http://localhost:4178
 ```
 
@@ -53,7 +53,7 @@ The ceiling caps the obligation's own autonomy. An agent with a `prepare` ceilin
 
 Open **Agent access**, choose **Create key**, and copy the secret immediately. It is shown once.
 
-The four scopes are:
+The five scopes are:
 
 | Scope | What it allows |
 | --- | --- |
@@ -61,8 +61,9 @@ The four scopes are:
 | `obligations:write` | Create obligations, complete them, file receipts |
 | `risk:read` | Portfolio risk and trust snapshots |
 | `agents:read` | Read the agent roster |
+| `trust:audit` | Audit a filed proof receipt; does not release an escrow |
 
-New keys default to all four if you omit `scopes`:
+New keys default to all five if you omit `scopes`:
 
 ```bash
 curl -X POST "$REMINDIFY_URL/api/keys" \

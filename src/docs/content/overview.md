@@ -25,7 +25,7 @@ A reminder is a notification. An obligation is a record with consequences:
 5. It cannot be closed without the **proof** you defined.
 6. Every action against it is attributed in the **event log**.
 
-Machine access is scoped, expiring and metered. Agents do not receive a shared root key; each key is issued by a workspace, limited to four scopes and revoked or rotated independently.
+Machine access is scoped, expiring and metered. Agents do not receive a shared root key; each key is issued by a workspace, limited to five scopes and revoked or rotated independently.
 
 ## Base URL and authentication
 

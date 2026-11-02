@@ -384,7 +384,9 @@ export default function AuthPage({
                   <h2>{tab === "signup" ? "Start with one thing." : "Pick up where you left off."}</h2>
                   <p>
                     {tab === "signup"
-                      ? "No card during preview. Use email or Google."
+                      ? config.google
+                        ? "No card during preview. Use email or Google."
+                        : "No card during preview. Create an account with email and password."
                       : "Your obligations, agents and proof trail are exactly where you left them."}
                   </p>
                 </div>
@@ -398,14 +400,17 @@ export default function AuthPage({
                   </button>
                 </div>
 
-                <div className="auth-options">
-                  <button className="auth-option" style={{ gridColumn: "1 / -1" }} onClick={useGoogle} disabled={busy !== null}>
-                    {busy === "google" ? <span className="spinner dark" /> : <GoogleGlyph />}
-                    Continue with Google
-                  </button>
-                </div>
-
-                <div className="auth-divider"><span>or use email</span></div>
+                {config.google && (
+                  <>
+                    <div className="auth-options">
+                      <button className="auth-option" style={{ gridColumn: "1 / -1" }} onClick={useGoogle} disabled={busy !== null}>
+                        {busy === "google" ? <span className="spinner dark" /> : <GoogleGlyph />}
+                        Continue with Google
+                      </button>
+                    </div>
+                    <div className="auth-divider"><span>or use email</span></div>
+                  </>
+                )}
 
                 <form className="auth-form" onSubmit={submitEmail}>
                   {tab === "signup" && (
@@ -471,15 +476,16 @@ export default function AuthPage({
                 </form>
 
                 <p className="auth-terms">
-                  By continuing you agree to our{" "}
-                  <button onClick={() => onNavigate("terms")}>Terms</button> and{" "}
-                  <button onClick={() => onNavigate("privacy")}>Privacy</button>.
-                  You can export or delete your register at any time.
+                  By continuing, you agree to these policies. You can export or delete your register at any time.
                 </p>
+                <div className="auth-policy-links">
+                  <button onClick={() => onNavigate("terms")}>Terms</button>
+                  <button onClick={() => onNavigate("privacy")}>Privacy</button>
+                </div>
 
                 <div className="auth-panel-foot">
                   <span><i className="dot dot-teal" /> Preview build</span>
-                  <span>Email and Google are the only ways in.</span>
+                  <span>{config.google ? "Email and Google sign-in are available." : "Email and password sign-in."}</span>
                 </div>
               </>
             )}

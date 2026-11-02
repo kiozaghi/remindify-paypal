@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "node server/dev.mjs",
     "build": "vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr --emptyOutDir && node scripts/seo.mjs",
-    "start": "node server/index.mjs",
+    "start": "node --import ./server/local-env.mjs server/index.mjs",
     "preview": "npm run build && npm start",
     "mcp": "node mcp/server.mjs",
     "typecheck": "tsc --noEmit",

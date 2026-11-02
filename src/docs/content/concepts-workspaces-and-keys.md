@@ -16,7 +16,7 @@ New accounts receive a seeded copy of the demo register inside their own workspa
 ## Key lifecycle
 
 - **Issue.** `POST /api/keys` from a signed-in session. The response contains `key.secret` once; only a SHA-256 digest and a display prefix are stored.
-- **Scope.** `obligations:read`, `obligations:write`, `risk:read`, `agents:read`. Omit `scopes` to receive all four.
+- **Scope.** `obligations:read`, `obligations:write`, `risk:read`, `agents:read`, `trust:audit`. Omit `scopes` to receive all five. `trust:audit` can audit a filed receipt but cannot release escrow.
 - **Expire.** Default 90 days; `expires_in_days` accepts 1–365. Expired keys return `401 key_expired`.
 - **Rotate.** `POST /api/keys/:id/rotate` issues a new secret and resets expiry; the old secret stops working immediately.
 - **Revoke.** `DELETE /api/keys/:id` locks out every client using it.

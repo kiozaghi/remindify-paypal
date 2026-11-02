@@ -1,6 +1,6 @@
 # PayPal AI Hackathon — build scope
 
-**Status: Gate 0 and Gate 2 passed (Oct 31, 2026). Building Gate 1.**
+**Status: PayPal implementation and regression suite are in place. The current demo recording and submission remain to be completed.**
 
 - Event: <https://paypalaihackathon.devpost.com/>
 - Deadline: **November 12, 2026, 12:00pm PST** — 23:00 EAT, Thursday.
@@ -16,7 +16,7 @@
 | Existing projects | "Projects can be new or existing, as long as you make meaningful progress on the project during the course of the hackathon." | We can submit Remindify, but the PayPal work must be real and dateable in git. |
 | Required tools | Must use PayPal developer tools (Orders, Payouts, etc.). | A PayPal rail is the whole build, not a badge. |
 | Repository | Must be **public and open source**, with a licence visible in the About section. | The repo flips from private to public. MIT is already in place. |
-| Demo video | Under 3 minutes, must show the project working end to end. | Re-cut from the existing 2:22 demo plus the new PayPal flow. |
+| Demo video | Under 3 minutes, must show the project working end to end. | Record the current build and show the real PayPal Sandbox flow; do not use the removed, outdated recording. |
 | Eligibility | Age of majority, standard excluded territories. Ethiopia is not excluded. | Eligible. PayPal *product* availability in Ethiopia is a separate question — see risks. |
 | Judging | Innovation/Idea 20%, Presentation 20%, plus execution and real-world applicability. | The story matters as much as the code. |
 
@@ -72,7 +72,7 @@ The seller desk already records payouts in a ledger and literally says *"Connect
 - No PayPal balance or custody.
 - No subscriptions or plan billing through PayPal (the plan/billing module stays as is).
 - No refunds UI in v1; refunds are handled in the PayPal dashboard and reconciled by hand.
-- No change to the proof receipt or auditor routes.
+- No change to the receipt integrity format or auditor verdict rules. The machine API may request an audit with `trust:audit`; escrow capture and payout remain human-authenticated app actions.
 - No claim of production PayPal availability.
 
 ---
@@ -80,17 +80,30 @@ The seller desk already records payouts in a ledger and literally says *"Connect
 ## 4. Architecture
 
 **New**
-- `server/paypal.mjs` — config, OAuth token cache, `createOrder`, `captureOrder`, `createPayout`, `verifyWebhook`, error mapping. No SDK; plain `fetch`, so tests can stub it.
+- `server/paypal.mjs` — REST client for PayPal configuration, token handling, payouts, invoicing, webhook verification and error mapping.
+- `server/paypal-sdk.mjs` — APIMatic-generated PayPal Server SDK for Orders v2 and authorization/capture primitives.
 - `server/payments.mjs` — ledger and state machine (`created → approved → captured → refunded/failed`), idempotency keys, amount guards.
 - `test/paypal.test.mjs` — mocked fetch: happy path, amount mismatch, double capture, webhook signature failure, payout failure.
 - `.env.example` — `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_ENV=sandbox`, `PAYPAL_BASE_URL`, `PAYPAL_PLATFORM_FEE_PERCENT`.
 
 **Changed**
-- `server/index.mjs` — six routes, all behind the existing session check and rate limiter.
+- `server/index.mjs` — session-authenticated product routes, scoped machine API routes, and the PayPal webhook verified outside the session gate.
 - `src/views/Obligations.tsx` — pay button, return banner, receipt link.
 - `src/views/Seller.tsx` — PayPal payout method.
 - `src/types.ts` — `Payment`, payout method union.
-- `README.md` — hackathon section and architecture note.
+- `README.md` — judge-focused run path, verified architecture, API access boundaries and honest prototype limits.
+
+### AG Grid / AG Studio register
+
+The Obligations view includes an AG Grid-powered AG Studio register with sorting, filtering and five custom cell renderers: obligation details, risk/deadline, agent passport, PayPal escrow state, and autonomy controls. A live summary aggregates authorized holds and captured amounts awaiting payout by risk band, so an operator can compare exposure across critical, high, watch and guarded work. The current build does not claim AG Grid Enterprise row grouping or cross-filtering.
+
+### APIMatic PayPal integration
+
+The APIMatic-generated PayPal Server SDK is used in the runtime path for Orders v2 and authorizations/captures. The server validates returned amounts and currency against stored obligations and uses idempotent request IDs. Payouts v1, Invoicing v2 and webhook verification use the REST client where the SDK path does not cover those operations.
+
+### MCP trust boundary
+
+The MCP server exposes `audit_proof_receipt` behind the dedicated `trust:audit` machine-key scope. It records an auditor verdict but cannot capture an authorization or issue a payout. The human-authenticated app remains the release boundary.
 
 **Routes**
 

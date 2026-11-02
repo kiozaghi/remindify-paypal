@@ -11,6 +11,7 @@ export const KEY_SCOPES = [
   "obligations:write",
   "risk:read",
   "agents:read",
+  "trust:audit",
 ];
 
 export function digestSecret(secret) {

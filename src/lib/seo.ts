@@ -3,7 +3,7 @@ import { routePath } from "./router";
 import { FAQS, PLANS } from "../landing/data";
 import { docsHref, docsMeta, docsPage } from "../docs/pages";
 
-export const SITE_ORIGIN = "https://remindify-xi.vercel.app";
+export const SITE_ORIGIN = "https://remindify-paypal.vercel.app";
 
 export const CONTENT_PAGES: Route[] = [
   "home", "pricing", "security", "about", "privacy", "terms",

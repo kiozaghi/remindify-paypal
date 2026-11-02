@@ -8,7 +8,7 @@ Money can move against an obligation in two ways, and they are deliberately sepa
 | PayPal Payouts | USD | A signed-in human, from the seller desk | On payout confirmation |
 | PayPal escrow hold | USD | A signed-in human, from the Trust page | On release, after verified proof |
 
-Every route on this page is a **session-cookie** route. A machine key cannot start a payment, capture one, place a hold or send a payout. An agent that needs to move money has to do it through its execution connector, under the ceiling you gave it.
+Payment and escrow actions on this page are **session-cookie** routes. A machine key cannot start a payment, capture one, place a hold, release escrow or send a payout. PayPal's `POST /api/paypal/webhook` callback is the exception: it does not require a Remindify session, and events are applied only after PayPal signature verification. An agent can request a proof audit with `trust:audit`; a human still releases the hold in the app.
 
 ## Paying an obligation with PayPal
 

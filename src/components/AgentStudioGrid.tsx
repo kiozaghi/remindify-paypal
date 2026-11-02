@@ -173,6 +173,25 @@ export default function AgentStudioGrid({
     [obligations, agents, escrows, nowMs]
   );
 
+  const exposureByBand = useMemo(() => {
+    const totals = new Map<string, { authorized: number; capturedAwaitingPayout: number }>(
+      ["critical", "high", "watch", "guarded"].map((band) => [
+        band,
+        { authorized: 0, capturedAwaitingPayout: 0 },
+      ])
+    );
+    const bandByObligation = new Map(obligations.map((ob) => [ob.id, ob.risk.band]));
+    for (const escrow of escrows) {
+      const band = totals.get(bandByObligation.get(escrow.obligation_id) || "");
+      if (!band) continue;
+      if (escrow.status === "authorized") band.authorized += escrow.amount;
+      if (escrow.status === "captured_awaiting_payout") {
+        band.capturedAwaitingPayout += escrow.amount;
+      }
+    }
+    return [...totals.entries()].map(([band, amounts]) => ({ band, ...amounts }));
+  }, [obligations, escrows]);
+
   const columns = useMemo<ColDef<StudioRow>[]>(
     () => [
       { field: "title", headerName: "Obligation", flex: 3, minWidth: 250, cellRenderer: ObligationCell },
@@ -201,11 +220,26 @@ export default function AgentStudioGrid({
     <div className="studio-card">
       <div className="studio-head">
         <div>
-          <span className="eyebrow">Agent Studio · AG Grid</span>
+          <span className="eyebrow">AG Grid · AG Studio register</span>
           <strong>{rows.length} live rows</strong>
         </div>
-        <p>Sort, filter and scan the same register the agents see. Custom cells for the obligation, risk meter, inline autonomy and PayPal escrow state.</p>
+        <p>Five custom renderers show the obligation, risk and deadline, agent passport, PayPal escrow, and autonomy controls. Sort and filter the register, then compare live PayPal exposure by risk band.</p>
       </div>
+      <section className="studio-exposure" aria-label="PayPal escrow exposure by risk band">
+        <div className="studio-exposure-head">
+          <strong>PayPal exposure by risk band</strong>
+          <span>Authorized holds and captured amounts awaiting payout</span>
+        </div>
+        <div className="studio-exposure-grid">
+          {exposureByBand.map(({ band, authorized, capturedAwaitingPayout }) => (
+            <div className="studio-exposure-band" key={band}>
+              <strong className={`studio-risk-band band-${band}`}>{band}</strong>
+              <span><b>{money(authorized)}</b> authorized</span>
+              <span><b>{money(capturedAwaitingPayout)}</b> payout pending</span>
+            </div>
+          ))}
+        </div>
+      </section>
       <div className="studio-grid">
         <AgGridReact<StudioRow>
           theme={studioTheme}

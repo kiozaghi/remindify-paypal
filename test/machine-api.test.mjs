@@ -86,6 +86,58 @@ test("machine API enforces idempotency, expiry, rotation and per-key rate limits
     assert.equal(register.obligations.filter((o) => o.title === input.title).length, 1);
     assert.equal(register.obligations.filter((o) => o.title === "A different renewal").length, 0);
 
+    const obligationResponse = await fetch(`${base}/api/obligations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: "Proof audit test",
+        due_at: "2026-12-01T09:00:00Z",
+        amount: 180,
+        currency: "USD",
+        proof_required: "Stamped filing receipt with confirmed payment",
+      }),
+    });
+    assert.equal(obligationResponse.status, 201);
+    const obligation = (await obligationResponse.json()).obligation;
+    const receiptResponse = await fetch(`${base}/api/trust/receipts`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        obligation_id: obligation.id,
+        proof: "Filing receipt",
+        artifact: {
+          name: "filing-receipt.pdf",
+          type: "application/pdf",
+          text: "STATE OF DELAWARE — FRANCHISE TAX PAYMENT RECEIPT\nConfirmation number: DL-2026-8841\nAmount paid: $180.00 USD\nThis stamped receipt confirms the filing was accepted with balance due of zero.",
+        },
+      }),
+    });
+    assert.equal(receiptResponse.status, 201);
+    const { receipt } = await receiptResponse.json();
+
+    const auditResponse = await call(key.secret, `/api/v1/trust/receipts/${receipt.id}/audit`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "audit-proof-1" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(auditResponse.status, 200);
+    assert.equal((await auditResponse.json()).receipt.status, "verified");
+    assert.equal((await call(key.secret, "/api/trust/escrows/not-an-escrow/release", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ proof_receipt_id: receipt.id }),
+    })).status, 401);
+
+    const readOnlyKey = await issueKey(cookie, "Read-only agent", { scopes: ["obligations:read"] });
+    const deniedAudit = await call(readOnlyKey.secret, `/api/v1/trust/receipts/${receipt.id}/audit`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(deniedAudit.status, 403);
+    assert.equal((await deniedAudit.json()).scope, "trust:audit");
+    assert.equal((await fetch(`${base}/api/keys/${readOnlyKey.id}`, { method: "DELETE", headers: { cookie } })).status, 200);
+
     // Rotation replaces the secret; the old one stops resolving.
     const rotating = await issueKey(cookie, "Rotating agent");
     const rotated = await fetch(`${base}/api/keys/${rotating.id}/rotate`, {

@@ -3,24 +3,23 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Remindify — product demo (3:00)</title>
-<meta name="description" content="A 3:00 walkthrough of Remindify: one register for vendor renewals, compliance filings, contractor deliverables and invoice collections. AI-first capture, the AG Grid register, agent sweeps, and a PayPal hold that releases only on verified proof." />
+<title>Remindify — product demo</title>
+<meta name="description" content="Explore Remindify's register for recurring obligations, scoped agents and proof-gated PayPal Sandbox payments. The walkthrough video is being updated." />
 <meta name="robots" content="index,follow,max-image-preview:large" />
 <meta name="theme-color" content="#ede9df" />
 <link rel="canonical" href="https://remindify-paypal.vercel.app/demo" />
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <link rel="stylesheet" href="/fonts/fonts.css" />
-<meta property="og:type" content="video.other" />
+<meta property="og:type" content="website" />
 <meta property="og:site_name" content="Remindify" />
-<meta property="og:title" content="Remindify — product demo (3:00)" />
-<meta property="og:description" content="One register for recurring business operations. AI-first capture, agent sweeps, and escrow that releases only on verified proof." />
+<meta property="og:title" content="Remindify — product demo" />
+<meta property="og:description" content="Explore the live product and read the quickstart while the walkthrough video is being updated." />
 <meta property="og:url" content="https://remindify-paypal.vercel.app/demo" />
 <meta property="og:image" content="https://remindify-paypal.vercel.app/og.png" />
-<meta property="og:video" content="https://remindify-paypal.vercel.app/demo/remindify-demo.mp4" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Remindify — product demo (3:00)" />
-<meta name="twitter:description" content="One register for vendor renewals, compliance filings, contractor deliverables and invoice collections." />
+<meta name="twitter:title" content="Remindify — product demo" />
+<meta name="twitter:description" content="Explore the live product and read the quickstart while the walkthrough video is being updated." />
 <meta name="twitter:image" content="https://remindify-paypal.vercel.app/og.png" />
 <style>
   :root {
@@ -118,43 +117,21 @@
   .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lime); border: 1px solid rgba(20,20,15,.25); }
   .chip.warn .dot { background: #ffb84d; }
 
-  .player {
-    margin: 36px 0 0; border-radius: var(--radius); overflow: hidden;
-    background: #0b0b09; border: 1px solid rgba(20, 20, 15, 0.2);
-    box-shadow: 0 24px 60px -28px rgba(20, 20, 15, 0.45);
-    position: relative;
+  .coming-soon {
+    margin: 36px 0 0; padding: 30px; border-radius: var(--radius);
+    border: 1px solid var(--line); background: rgba(255, 255, 255, 0.34);
   }
-  .player video {
-    display: block; width: 100%; aspect-ratio: 16 / 10;
-    background: #0b0b09; object-fit: cover;
+  .coming-soon h2 { margin: 0 0 10px; font-size: clamp(24px, 4vw, 36px); letter-spacing: -0.03em; }
+  .coming-soon p { max-width: 62ch; margin: 0; color: var(--ink-70); font-size: 16px; line-height: 1.55; }
+  .coming-soon nav { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+  .coming-soon nav a {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
+    padding: 0 16px; border-radius: 999px; background: var(--ink); color: var(--bone);
+    font-weight: 600; text-decoration: none;
   }
-  .play-overlay {
-    position: absolute; inset: 0; display: grid; place-items: center;
-    background: linear-gradient(180deg, rgba(11, 11, 9, 0.05), rgba(11, 11, 9, 0.35));
-    border: 0; cursor: pointer; transition: opacity 180ms ease;
-  }
-  .play-overlay span {
-    display: inline-flex; align-items: center; gap: 12px;
-    background: var(--lime); color: var(--ink);
-    font-weight: 650; font-size: 15px; padding: 14px 22px 14px 16px;
-    border-radius: 999px; box-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.6);
-  }
-  .play-overlay svg { width: 22px; height: 22px; }
-  .play-overlay:hover span { transform: translateY(-1px); }
-  .play-overlay[hidden] { display: none; }
+  .coming-soon nav a.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 
-  .caption {
-    display: flex; justify-content: space-between; gap: 16px; align-items: center;
-    padding: 14px 18px; background: #0f0f0c; color: rgba(237, 233, 223, 0.72);
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
-    border-top: 1px solid rgba(237, 233, 223, 0.1);
-  }
-  .caption a { color: var(--lime); text-decoration: none; }
-
-  .grid {
-    display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 22px;
-    margin: 34px 0 0; align-items: start;
-  }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; margin: 34px 0 0; align-items: start; max-width: 860px; }
   .card {
     border: 1px solid var(--line); border-radius: var(--radius);
     background: rgba(255, 255, 255, 0.34); padding: 26px;
@@ -213,7 +190,13 @@
   @media (max-width: 860px) {
     .grid { grid-template-columns: 1fr; }
     main { padding-top: 36px; }
-    .caption { flex-direction: column; align-items: flex-start; gap: 6px; }
+  }
+  @media (max-width: 600px) {
+    header.site .wrap { width: calc(100% - 32px); gap: 8px; }
+    nav.top { gap: 0; }
+    nav.top a:not(.cta) { display: none; }
+    nav.top a.cta { margin-left: 0; padding: 9px 12px; }
+    .coming-soon { padding: 22px; }
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
@@ -235,68 +218,39 @@
 </header>
 
 <main class="wrap">
-  <p class="eyebrow">Recorded product demo · 3 min</p>
+  <p class="eyebrow">Product walkthrough</p>
   <h1>Every obligation owned, backed up, finished — <em>with a receipt.</em></h1>
   <p class="lede">
     Remindify is one register for recurring business operations: vendor renewals, compliance
-    filings, contractor deliverables and invoice collections. This walkthrough shows the live
-    product — AI-first capture, the AG Grid register, agent sweeps through the time machine, and
-    a PayPal authorization hold that releases only on verified proof.
+    filings, contractor deliverables and invoice collections. Explore the live product and its
+    proof-gated PayPal Sandbox payment flow.
   </p>
   <div class="chips">
     <span class="chip"><span class="dot"></span><b>Live product</b> · not a mockup</span>
-    <span class="chip"><span class="dot"></span><b>1440×900</b> · captioned</span>
-    <span class="chip warn"><span class="dot"></span><b>PayPal sandbox</b> · test money · no live payouts</span>
+    <span class="chip warn"><span class="dot"></span><b>PayPal Sandbox</b> · test money only</span>
   </div>
 
-  <div class="player">
-    <video
-      id="demo"
-      src="/demo/remindify-demo.mp4"
-      poster="/demo/poster.jpg"
-      controls
-      playsinline
-      preload="metadata"
-      aria-label="Remindify product walkthrough, 3 minutes"
-    >
-      Your browser can't play this video.
-      <a href="/demo/remindify-demo.mp4">Download the MP4</a>.
-    </video>
-    <button class="play-overlay" id="play" type="button" aria-label="Play the walkthrough">
-      <span>
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor"/></svg>
-        Play the walkthrough
-      </span>
-    </button>
-    <div class="caption">
-      <span>Narrated · burned-in captions · no sign-in required</span>
-      <a href="/demo/remindify-demo.mp4" download>Download MP4</a>
-    </div>
-  </div>
+  <section class="coming-soon" aria-labelledby="video-update-title">
+    <p class="eyebrow">Video update in progress</p>
+    <h2 id="video-update-title">A current walkthrough is on the way.</h2>
+    <p>The previous recording no longer matches this build, so it has been removed. In the meantime, you can explore the app or follow the written quickstart.</p>
+    <nav aria-label="Demo resources">
+      <a href="/login">Open the live app</a>
+      <a class="secondary" href="/docs/quickstart">Read the quickstart</a>
+    </nav>
+  </section>
 
   <div class="grid">
-    <section class="card" aria-labelledby="chapters-h">
-      <h2 id="chapters-h">Chapters</h2>
-      <ul class="chapters" id="chapters">
-        <li><button type="button" data-t="0"><time>0:00</time><span><b>Today</b> — the hold, the W-9, the payroll filing</span></button></li>
-        <li><button type="button" data-t="25"><time>0:25</time><span><b>Capture + Agent Studio</b> — Gemini reads the notice; AG Grid governs the register</span></button></li>
-        <li><button type="button" data-t="65"><time>1:05</time><span><b>Time machine</b> — sweep, escalation, @ar-collector's invoice</span></button></li>
-        <li><button type="button" data-t="110"><time>1:50</time><span><b>Trust</b> — wrong PDF rejected, stamped receipt released</span></button></li>
-        <li><button type="button" data-t="160"><time>2:40</time><span><b>Agent access</b> — REST and MCP on the same register</span></button></li>
-      </ul>
-    </section>
-
     <section class="card" aria-labelledby="shots-h">
-      <h2 id="shots-h">What you're looking at</h2>
+      <h2 id="shots-h">What Remindify does</h2>
       <ul class="shots">
-        <li><span class="n">1</span><p><strong>One register, both sides of the operation.</strong> Work owed to a regulator or a contractor, and invoices that leave or arrive on a date. Every row has an owner and a named backup.</p></li>
-        <li><span class="n">2</span><p><strong>Autonomy is a ceiling, not a switch.</strong> An agent can prepare the work or execute it, per agent and per obligation. You approve anything above the ceiling, and the spend cap stays visible.</p></li>
-        <li><span class="n">3</span><p><strong>Capture is AI-first.</strong> Gemini 2.5 Flash returns structured obligations from a notice or an email; a deterministic parser takes over when no key is configured. You review every field before it is scheduled.</p></li>
-        <li><span class="n">4</span><p><strong>Proof plus escrow.</strong> Completed work files a signed receipt. The payer's funds sit on a PayPal authorization until the multimodal auditor passes the evidence — text, photo or scanned PDF — then capture and payout settle the net to the provider.</p></li>
+        <li><span class="n">1</span><p><strong>One register, both sides of the operation.</strong> Track recurring obligations and invoices with an owner, a risk level and a named backup.</p></li>
+        <li><span class="n">2</span><p><strong>Autonomy has limits.</strong> Scoped agents can prepare or execute work within assigned permissions and spend ceilings; higher-risk actions stay with a human.</p></li>
+        <li><span class="n">3</span><p><strong>Capture turns documents into work.</strong> The app structures notices and emails into proposed obligations for review before scheduling.</p></li>
+        <li><span class="n">4</span><p><strong>Payments require evidence.</strong> PayPal Sandbox authorizations can be captured after evidence review; this prototype does not handle live-money settlement.</p></li>
       </ul>
       <p class="note">
-        <b>Honest status.</b> The settlement path shown at 1:50 ran against the <b>PayPal sandbox</b>,
-        read back from the PayPal API, so no live money moves. The product is live; external usage is still early.
+        <b>Honest status.</b> The live app is a hackathon prototype. Payment and payout actions use PayPal Sandbox; the demo does not represent live settlement availability.
       </p>
     </section>
   </div>
@@ -315,31 +269,5 @@
   </div>
 </footer>
 
-<script>
-  (function () {
-    var video = document.getElementById("demo");
-    var overlay = document.getElementById("play");
-    if (!video || !overlay) return;
-
-    function hide() { overlay.hidden = true; }
-    function show() { if (video.paused) overlay.hidden = false; }
-
-    overlay.addEventListener("click", function () {
-      video.play().then(hide).catch(function () { hide(); });
-    });
-    video.addEventListener("play", hide);
-    video.addEventListener("pause", show);
-    video.addEventListener("ended", show);
-
-    document.querySelectorAll("#chapters button[data-t]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var t = Number(btn.getAttribute("data-t")) || 0;
-        video.currentTime = t;
-        video.play().then(hide).catch(function () {});
-        video.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
-    });
-  })();
-</script>
 </body>
 </html>

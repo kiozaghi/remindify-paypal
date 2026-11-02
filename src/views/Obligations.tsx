@@ -142,7 +142,7 @@ export default function Obligations() {
             Register
           </button>
           <button className={view === "studio" ? "on" : ""} onClick={() => setView("studio")}>
-            Agent Studio <span>AG Grid</span>
+            AG Studio <span>AG Grid</span>
           </button>
         </div>
         <label className="sort-select">

@@ -154,6 +154,27 @@ const TOOLS = [
       required: ["obligation_id", "proof"],
     },
   },
+  {
+    name: "audit_proof_receipt",
+    description:
+      "Run the proof auditor on a previously filed receipt, optionally replacing its artifact. This records a verified or rejected audit result but never captures funds or sends a payout; a human must release a PayPal escrow in the app.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        receipt_id: { type: "string", description: "Receipt ID returned by file_proof_receipt or list_trust." },
+        artifact: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            type: { type: "string", description: "MIME type, e.g. application/pdf or text/plain." },
+            text: { type: "string", description: "Extracted text of the evidence." },
+          },
+          required: ["text"],
+        },
+      },
+      required: ["receipt_id"],
+    },
+  },
 ];
 
 async function api(path, init = {}) {
@@ -334,6 +355,15 @@ async function callTool(name, args = {}) {
       }),
     });
     return data.receipt;
+  }
+
+  if (name === "audit_proof_receipt") {
+    if (!args.receipt_id) throw new Error("receipt_id is required");
+    const data = await api(`/api/v1/trust/receipts/${encodeURIComponent(args.receipt_id)}/audit`, {
+      method: "POST",
+      body: JSON.stringify({ artifact: args.artifact || undefined }),
+    });
+    return data;
   }
 
   throw new Error(`Unknown tool: ${name}`);

@@ -12,6 +12,8 @@ Never commit a real `.env`. On Vercel, set variables in Project Settings → Env
 
 Local `npm run dev` runs two processes: Vite on `5173` and the API on `4178`, with `/api` proxied. `npm start` after `npm run build` serves everything from `PORT`.
 
+Both commands use Node's native env-file parser to load PayPal settings from `.env` and `.env.local`; explicit shell environment values take precedence. Only `PAYPAL_*` values are loaded from these files, so a local `.env.local` database URL cannot accidentally direct local work to a hosted database. Configure other server variables in the shell.
+
 ## Database
 
 Local development uses SQLite through `node:sqlite`. Vercel has no persistent disk, so production must use Postgres.

@@ -1,7 +1,9 @@
-# Demo video — 3:00
+# Replacement demo video — 3:00
 
-The Devpost entry needs one public video, three minutes or less. This is the record plan for
-`public/demo/remindify-demo.mp4`, and the source for the chapter markers on `/demo`.
+The Devpost entry needs one public video, three minutes or less. This is the recording plan for
+the replacement video; the previous recording was removed because it no longer matches the
+current build. Add the new recording and rebuild `/demo` chapter markers only after it has been
+captured and reviewed.
 
 Everything on screen is the live product against a seeded workspace. PayPal runs in the
 **sandbox** and the video says so out loud. No staged success: if a beat cannot be recorded

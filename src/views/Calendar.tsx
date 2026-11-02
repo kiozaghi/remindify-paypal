@@ -7,7 +7,6 @@ import type { Risk } from "../types";
 
 type Entry = {
   key: string;
-  kind: "obligation" | "hold";
   obligationId: string;
   title: string;
   at: string;
@@ -44,12 +43,8 @@ export default function Calendar() {
   const autoSelected = useMemo(() => {
     if (!state) return todayKey;
     const monthKey = todayKey.slice(0, 7);
-    const dueDays = [
-      ...state.obligations.map((ob) => dayKey(new Date(ob.due_at))),
-      ...state.runs.flatMap((run) =>
-        run.result?.hold?.at ? [dayKey(new Date(run.result.hold.at))] : []
-      ),
-    ]
+    const dueDays = state.obligations
+      .map((ob) => dayKey(new Date(ob.due_at)))
       .filter((key) => key.startsWith(monthKey))
       .sort();
     return !dueDays.length || dueDays.includes(todayKey) ? todayKey : dueDays[0];
@@ -70,7 +65,6 @@ export default function Calendar() {
       const agent = state.agents.find((a) => a.id === ob.agent_id);
       out.push({
         key: `ob:${ob.id}`,
-        kind: "obligation",
         obligationId: ob.id,
         title: ob.title,
         at: ob.due_at,
@@ -82,31 +76,7 @@ export default function Calendar() {
         risk: ob.risk,
       });
     }
-
-    // Slots an agent already held show up on the day they were held, not on
-    // the obligation's deadline. Only the latest run per obligation counts.
-    const holds = new Map<string, Entry>();
-    for (const run of state.runs) {
-      const hold = run.result?.hold;
-      if (!hold?.at) continue;
-      const at = new Date(hold.at).getTime();
-      const existing = holds.get(run.obligation_id);
-      if (existing && new Date(existing.at).getTime() >= at) continue;
-      holds.set(run.obligation_id, {
-        key: `hold:${run.id}`,
-        kind: "hold",
-        obligationId: run.obligation_id,
-        title: `${hold.kind === "table" ? "Table held" : "Call held"} — ${hold.with}`,
-        at: hold.at,
-        tone: "violet",
-        category: "people",
-        status: hold.status,
-        agentName: run.agent?.name || "Agent",
-        amount: 0,
-        risk: null,
-      });
-    }
-    return [...out, ...holds.values()];
+    return out;
   }, [state]);
 
   const byDay = useMemo(() => {
@@ -134,12 +104,11 @@ export default function Calendar() {
     const date = new Date(entry.at);
     return date.getFullYear() === cursor.getFullYear() && date.getMonth() === cursor.getMonth();
   });
-  const heldCount = monthEntries.filter((entry) => entry.kind === "hold").length;
   const overdue = monthEntries.filter(
-    (entry) => entry.kind === "obligation" && entry.risk && entry.risk.days < 0 && entry.status === "active"
+    (entry) => entry.risk && entry.risk.days < 0 && entry.status === "active"
   ).length;
   const monthMoney = monthEntries.reduce(
-    (sum, entry) => sum + (entry.kind === "obligation" && entry.status !== "done" ? entry.amount : 0),
+    (sum, entry) => sum + (entry.status !== "done" ? entry.amount : 0),
     0
   );
 
@@ -170,9 +139,9 @@ export default function Calendar() {
     <div className="view calendar-view">
       <header className="view-head calendar-head">
         <div>
-          <span className="eyebrow">Every placement, one grid</span>
+          <span className="eyebrow">Every obligation, one grid</span>
           <h1>Calendar</h1>
-          <p>Every obligation on the day it lands, plus the slots agents already hold. Open any item to work it.</p>
+          <p>See due dates, ownership and proof in one calendar. Open any item to work it.</p>
         </div>
         <div className="view-head-actions">
           <button className="btn btn-ghost" onClick={() => navigate("activity")}>
@@ -197,7 +166,6 @@ export default function Calendar() {
           </div>
           <div className="calendar-summary">
             <span><b>{monthEntries.length}</b> placements</span>
-            <span><b>{heldCount}</b> held slots</span>
             <span className={overdue ? "warn" : ""}><b>{overdue}</b> overdue</span>
             <span><b>{money(monthMoney)}</b> in play</span>
           </div>
@@ -228,7 +196,7 @@ export default function Calendar() {
                   {visible.map((entry) => (
                     <button
                       key={entry.key}
-                      className={`calendar-chip tone-${entry.tone} ${entry.kind === "hold" ? "hold" : ""} ${entry.status === "done" ? "done" : ""}`}
+                      className={`calendar-chip tone-${entry.tone} ${entry.status === "done" ? "done" : ""}`}
                       title={`${entry.title} · ${entry.agentName}`}
                       onClick={() => { setPicked(key); openObligation(entry.obligationId); }}
                     >
@@ -252,7 +220,6 @@ export default function Calendar() {
           <span><i className="lg-work" /> Work &amp; compliance</span>
           <span><i className="lg-people" /> People</span>
           <span><i className="lg-identity" /> Identity &amp; facilities</span>
-          <span><i className="lg-hold" /> Slot held by an agent</span>
           <span><i className="lg-done" /> Done</span>
         </div>
       </section>
@@ -272,17 +239,14 @@ export default function Calendar() {
           <div className="day-list">
             {selectedEntries.map((entry) => (
               <button
-                className={`day-row ${entry.kind === "hold" ? "hold" : ""}`}
+                className="day-row"
                 key={entry.key}
                 onClick={() => openObligation(entry.obligationId)}
               >
-                <span className={`day-time ${entry.kind === "hold" ? "hold" : ""}`}>
-                  {entry.kind === "hold" ? <Icon name="calendar" size={12} /> : timeOf(entry.at)}
-                </span>
+                <span className="day-time">{timeOf(entry.at)}</span>
                 <span className="day-main">
                   <span className="day-title">
                     <strong>{entry.title}</strong>
-                    {entry.kind === "hold" && <em className="day-tag">held</em>}
                     {entry.status === "done" && <em className="day-tag done">done</em>}
                   </span>
                   <span className="day-meta">
@@ -292,11 +256,9 @@ export default function Calendar() {
                 </span>
                 {entry.risk ? <RiskMeter risk={entry.risk} /> : <span className="day-risk-empty" />}
                 <span className={`day-when ${entry.risk && entry.risk.days < 0 ? "late" : ""}`}>
-                  {entry.kind === "hold" ? "held" : dueLabel(entry.at, nowMs)}
+                  {dueLabel(entry.at, nowMs)}
                   <em>
-                    {entry.kind === "hold"
-                      ? "calendar"
-                      : AUTONOMY[state.obligations.find((o) => o.id === entry.obligationId)?.autonomy || "prepare"]?.label}
+                    {AUTONOMY[state.obligations.find((o) => o.id === entry.obligationId)?.autonomy || "prepare"]?.label}
                   </em>
                 </span>
                 <Icon name="chevronRight" size={15} className="day-chevron" />

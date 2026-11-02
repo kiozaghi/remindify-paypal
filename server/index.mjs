@@ -540,6 +540,26 @@ async function handleRequest(req, res) {
         return send(res, 201, payload);
       }
 
+      const machineReceiptAuditMatch = path.match(/^\/api\/v1\/trust\/receipts\/([^/]+)\/audit$/);
+      if (machineReceiptAuditMatch && req.method === "POST") {
+        if (!keyHasScope(key, "trust:audit")) return scopeDenied(res, "trust:audit");
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+        const result = await auditReceipt({
+          receipt_id: machineReceiptAuditMatch[1],
+          artifact: pending.input.artifact || undefined,
+        });
+        if (!result.ok) return send(res, 422, result);
+        logEvent({
+          actor_type: "automation", actor: key.name, actor_id: key.id,
+          verb: "requested a proof audit", object: result.receipt?.obligation_title || machineReceiptAuditMatch[1],
+          detail: `POST /v1/trust/receipts/${machineReceiptAuditMatch[1]}/audit`,
+          kind: "api", channel: "api",
+        });
+        rememberIdempotent(pending, 200, result);
+        return send(res, 200, result);
+      }
+
       if (path === "/api/v1/agents" && req.method === "GET") {
         if (!keyHasScope(key, "agents:read")) return scopeDenied(res, "agents:read");
         logEvent({
