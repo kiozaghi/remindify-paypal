@@ -11,3 +11,4 @@ data/*.db-wal
 *.log
 .vercel
 dist-ssr/
+.demo-cache/

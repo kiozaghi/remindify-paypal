@@ -94,3 +94,26 @@ never shorten 1:50 or 2:20.
   `Remindify — proof-gated agent payments (PayPal sandbox)`.
 - Copy the link into Devpost, `public/demo/index.html` (the `<video>` source or its caption),
   and the README demo section. Update the `/demo` chapter markers if the final cut moves.
+
+## Generate a narrated walkthrough
+
+The generator captures the deployed app at `DEMO_SITE_URL` (default:
+`https://remindify-paypal.vercel.app`) with a fresh, disposable account. It visits the real
+Today, Capture, Agent Studio, Agents, Trust, and Agent access screens; it does not create or
+release a PayPal payment. The Trust narration labels the seeded state as a demo and says that
+the recording moves no money. The account and its workspace are deleted after capture.
+
+Install dependencies, then set `GEMINI_API_KEY` in your local shell (never paste it into chat
+or commit it) and run:
+
+```bash
+npm run demo:generate
+```
+
+The script uses Gemini Flash TTS, records the live pages in Chrome, moves through the page
+details, adds animated feature cards and burned-in captions, and replaces
+`public/demo/remindify-demo.mp4` only after confirming the result is no longer than 3:00.
+Optional local settings: `DEMO_SITE_URL`, `CHROME_PATH`, `GEMINI_TTS_MODEL`, and
+`GEMINI_TTS_VOICE`. Completed narration is cached locally in the ignored `.demo-cache/`
+directory, so a quota or network interruption can be resumed with a replacement key.
+A failed run leaves the existing video untouched.
