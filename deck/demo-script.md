@@ -119,7 +119,10 @@ directory, so a quota or network interruption can be resumed with a replacement 
 A failed run leaves the existing video untouched.
 
 The current MP4 also includes a 31-second recorded PayPal sandbox checkout and captured
-ledger entry between the Trust and Agent Access scenes. Its added narration uses the local
-macOS Samantha voice; the demo generator does not recreate this insert. The clip's account
-identifiers and profile names are blurred, and it demonstrates test money only. Rerunning
-`npm run demo:generate` replaces the MP4 with the base walkthrough and removes this insert.
+ledger entry between the Trust and Agent Access scenes. The clip's account identifiers and
+profile names are blurred, and it demonstrates test money only. To replace only the
+transaction narration with Gemini TTS, set `GEMINI_API_KEY` in the shell and run
+`node scripts/update-demo-transaction-tts.mjs`. The script uses the Gemini Kore voice,
+preserves the video and captions, and replaces the MP4 only after validating the result.
+Rerunning `npm run demo:generate` replaces the MP4 with the base walkthrough and removes
+this insert.
