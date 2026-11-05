@@ -84,6 +84,9 @@
 .proof-box strong { display: block; font-size: 10.5px; }
 .proof-box em { display: block; font-style: normal; font-size: 9px; color: var(--faint); margin-top: 2px; }
 .proof-box svg { color: var(--faint); }
+.proof-box.restock-quote { border-style: solid; border-color: var(--teal); background: var(--teal-soft); }
+.restock-link { display: inline-block; margin-top: 5px; font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: 0.04em; color: #086b52; text-decoration: underline; }
+.restock-link:hover { color: var(--ink); }
 .drawer-timeline { display: flex; flex-direction: column; gap: 0; position: relative; }
 .drawer-event { display: flex; gap: 9px; padding: 7px 0; border-bottom: 1px solid rgba(20, 20, 15, 0.055); }
 .drawer-event:last-child { border: 0; }

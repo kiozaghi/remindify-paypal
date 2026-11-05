@@ -63,7 +63,33 @@ export interface Obligation {
   handover_reason?: string;
   handover_owner_kind?: "human" | "agent" | "team";
   handover_history?: { at: string; from: string; to: string; reason: string; reclaimed_at?: string }[];
+  procurement?: { queries: string[]; max_price: number; pick: string } | null;
+  restock?: RestockQuote | null;
   risk: Risk;
+}
+
+export interface RestockQuote {
+  sku: string;
+  title: string;
+  price: number;
+  currency: string;
+  merchant: string;
+  url: string;
+  image?: string;
+  rating?: number | null;
+  availability?: string;
+  verified?: boolean;
+  source: "channel3" | "fixture" | string;
+  query?: string;
+  ceiling?: number;
+  quoted_at?: string;
+  paypal_order_id?: string | null;
+  order_status?: string | null;
+  approve_url?: string | null;
+  order_created_at?: string | null;
+  payment_id?: string;
+  capture_id?: string | null;
+  paid_at?: string | null;
 }
 
 export interface Agent {
@@ -123,6 +149,14 @@ export interface Run {
   connector_status?: number | null;
   error?: string | null;
   created_at: string;
+  result?: {
+    hold?: {
+      at?: string | null;
+      kind?: string;
+      with?: string;
+      status?: string;
+    } | null;
+  } | null;
   agent?: Agent | null;
   obligation?: Obligation | null;
 }

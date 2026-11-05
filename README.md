@@ -33,7 +33,8 @@ This public repository is the hackathon entry. The licence is MIT. Everything on
 - **PayPal Invoicing v2** — `@ar-collector` creates and immediately sends invoices (never leaves them in `DRAFT`), then files the payer URL as proof.
 - **Signed webhooks** at `/api/paypal/webhook` verify the PayPal transmission signature first. When the Developer Dashboard simulator produces a `FAILURE`, `PAYPAL_ALLOW_WEBHOOK_SIMULATOR=true` plus transmission headers accepts the event and tags the log `sandbox_simulator`.
 - **Idempotent retries** — `PayPal-Request-Id` on orders and captures, `sender_batch_id` on payouts, so the durable outbox can retry safely.
-- **Spending ceilings** — every seeded agent (`@ar-collector` $2,500, `@pr-escrow-bot` $500, `@finops-guardian` $200) has an autonomy ceiling and a per-run spend cap. Anything above the cap escalates to `approve`.
+- **Spending ceilings** — every seeded agent (`@ar-collector` $2,500, `@pr-escrow-bot` $500, `@finops-guardian` $200, `@procurement-bot` $150) has an autonomy ceiling and a per-run spend cap. Anything above the cap escalates to `approve`.
+- **Channel3 procurement** — `@procurement-bot` searches Channel3 for the lowest-priced verified item under its $150 Passport ceiling, files the SKU and merchant URL as quote evidence, and asks for the PayPal order. The order is created server-side from the quote amount, so the agent never holds PayPal credentials and the human still approves the money. Without `CHANNEL3_API_KEY` the search runs against a clearly labelled sample catalog (`source: "fixture"`).
 - **A native executor** at `POST /api/internal/agent-executor`, pre-wired into the seeded agents, so one click exercises the HMAC-signed connector round-trip (run, proof, receipt) without pasting an external webhook.
 - **AG Studio register** — the Obligations table flips to an AG Grid view with custom cells for the obligation, risk meter, inline autonomy, agent passport and PayPal escrow status.
 - **Workspace-scoped Postgres locking** — `pg_advisory_xact_lock(hashtext(workspace_id))` replaces a single global lock, so concurrent workspaces never block each other.
@@ -80,10 +81,13 @@ Vercel functions do not have a persistent writable filesystem, so **SQLite canno
    DATABASE_URL=postgres://...        # Vercel also injects POSTGRES_URL automatically
    PUBLIC_ORIGIN=https://your-app.vercel.app
    COOKIE_SECURE=true
+   CHANNEL3_API_KEY=...               # optional: live Channel3 search for @procurement-bot
    ```
 
 4. Deploy. On the first API request the Postgres store creates its tables and seeds the demo workspace. Accounts, sessions and workspace data now survive redeploys and cold starts.
 5. If Google sign-in is enabled, register `https://your-app.vercel.app/api/auth/google/callback` as an authorized redirect URI and set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+`@procurement-bot` is hosted with the app. Its brain lives in `server/procurement.mjs` and the sweep calls it through a signed executor at `POST /api/procurement`, so the agent never holds PayPal credentials: the app creates the order and the human approves it in PayPal. To host the agent separately later, point its `executor_url` at the other deployment and keep the same HMAC envelope.
 
 Do **not** set `REMINDIFY_DB`, `DATABASE_SSL=false` or `PG_NO_LOCK=1` on Vercel. The Postgres store serializes each request's writes under an advisory lock; that bounds write throughput but every row is still partitioned by `workspace_id`, and each account resolves to its own workspace.
 

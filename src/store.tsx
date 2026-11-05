@@ -128,6 +128,9 @@ function makeActions(
         const res = await api.decide(id, decision, note);
         if (decision !== "approve") {
           toast("Declined", "The agent will wait for new instructions.", "default");
+        } else if (res?.approve_url) {
+          toast("PayPal order ready", res.message || "Approve it in PayPal to move the money.", "agent");
+          window.location.assign(res.approve_url);
         } else if (res?.executed) {
           toast("Approved and executed", res.message || "The action ran and proof was filed.", "agent");
         } else {

@@ -1,5 +1,6 @@
 // Remindify seed data — relative to "now" so the demo is always alive.
 import { randomBytes } from "node:crypto";
+import { buildProcurementAgent, buildProcurementObligation } from "./procurement-seed.mjs";
 
 const DAY = 86400000;
 const DEMO_EXECUTOR_PATH = "/api/internal/agent-executor";
@@ -529,6 +530,8 @@ export function buildSeed(now = Date.now()) {
     },
   ];
 
+  obligations.push(buildProcurementObligation(now));
+
   const agents = [
     {
       id: "ag_ledger",
@@ -718,6 +721,8 @@ export function buildSeed(now = Date.now()) {
       created_at: at(-75),
     },
   ];
+
+  agents.push(buildProcurementAgent(now));
 
   const approvals = [
     {

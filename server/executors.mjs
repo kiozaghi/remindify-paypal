@@ -227,6 +227,9 @@ async function sendAttempt({ agent, base, runId, attempt }) {
       ok: true,
       status: response.status,
       proof: String(proof).slice(0, 300),
+      // An executor can prepare work without finishing it. Procurement uses
+      // this so creating the PayPal order does not close the obligation.
+      complete: payload?.complete !== false,
       transient: false,
     };
   } catch (error) {

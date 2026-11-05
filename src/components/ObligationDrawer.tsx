@@ -23,12 +23,20 @@ export default function ObligationDrawer() {
   const payment = state.payments.find((p) => p.obligation_id === ob.id && p.rail === "paypal");
   const invoice = state.invoices.find((i) => i.obligation_id === ob.id) || null;
   const escrow = state.escrows.find((e) => e.obligation_id === ob.id) || null;
+  const restock = ob.restock || null;
+  const restockPaid = Boolean(
+    restock
+    && (restock.capture_id
+      || (payment?.capture_id && payment.order_id === restock.paypal_order_id))
+  );
+  const procurement = Boolean(ob.procurement);
   const invoicable = ob.amount > 0
     && ["active", "waiting"].includes(ob.status)
     && !ob.payee_paypal_email;
   const payable = ob.amount > 0
     && ["active", "waiting"].includes(ob.status)
     && !payment?.capture_id
+    && !procurement
     && state.paypal.configured;
   const close = () => setOverlays((o) => ({ ...o, drawer: null }));
 
@@ -218,6 +226,35 @@ export default function ObligationDrawer() {
               <h3>Settlement</h3>
               <span className="eyebrow">PayPal</span>
             </div>
+            {restock && (
+              <div className="proof-box restock-quote">
+                <div>
+                  <strong>{restock.title}</strong>
+                  <em>
+                    {money(restock.price)} · {restock.merchant} · SKU {restock.sku}
+                    {restock.source === "fixture" ? " · sample catalog" : " · Channel3"}
+                    {restock.ceiling ? ` · ${money(restock.ceiling)} ceiling` : ""}
+                  </em>
+                  <a className="restock-link" href={restock.url} target="_blank" rel="noreferrer">
+                    View verified listing
+                  </a>
+                </div>
+                <span className="mini-proof"><Icon name="shield" size={10} /> verified</span>
+              </div>
+            )}
+            {restock && (restockPaid ? (
+              <p className="ceiling-help">
+                Paid · capture {restock.capture_id || payment?.capture_id} · the next cycle re-quotes.
+              </p>
+            ) : restock.approve_url ? (
+              <a className="btn btn-lime btn-sm" href={restock.approve_url} target="_blank" rel="noreferrer">
+                <Icon name="receipt" size={14} /> Pay {money(restock.price)} in PayPal
+              </a>
+            ) : (
+              <p className="ceiling-help">
+                Quote only. Approve the pending request and PayPal creates the order.
+              </p>
+            ))}
             {invoice ? (
               <div className="proof-box invoice-box">
                 <div>
@@ -236,7 +273,7 @@ export default function ObligationDrawer() {
                   Remind
                 </button>
               </div>
-            ) : invoicable && ob.channel === "paypal" ? (
+            ) : !procurement && invoicable && ob.channel === "paypal" ? (
               <div className="complete-form invoice-form">
                 <input
                   value={payerEmail}
@@ -250,7 +287,7 @@ export default function ObligationDrawer() {
                   <Icon name="receipt" size={14} /> Send invoice
                 </button>
               </div>
-            ) : ob.payee_paypal_email ? null : (
+            ) : ob.payee_paypal_email || procurement ? null : (
               <p className="drawer-empty">No invoice on this obligation.</p>
             )}
             {escrow ? (

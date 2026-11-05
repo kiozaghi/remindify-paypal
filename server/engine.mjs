@@ -8,8 +8,10 @@ import { sellerSnapshot } from "./seller.mjs";
 import { listInvoices } from "./invoices.mjs";
 import { paypalConfigured, paypalMode } from "./paypal.mjs";
 import { expireStalePayments } from "./payments.mjs";
+import { isProcurementAgent, planProcurement } from "./procurement.mjs";
 
 const DAY = 86400000;
+const dollars = (value) => `$${Number(value || 0).toFixed(2)}`;
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 
 export function virtualNow() {
@@ -272,8 +274,16 @@ async function executeAction(agent, ob, { action, detail, note }) {
     detail: `${outcome.proof} · HTTP ${outcome.status}`,
     kind: "automation",
   });
-  completeObligation(ob.id, { proof: outcome.proof, note, by: agent.name, auto: true });
-  return { configured: true, ok: true, proof: outcome.proof, status: outcome.status };
+  if (outcome.complete !== false) {
+    completeObligation(ob.id, { proof: outcome.proof, note, by: agent.name, auto: true });
+  }
+  return {
+    configured: true,
+    ok: true,
+    proof: outcome.proof,
+    status: outcome.status,
+    complete: outcome.complete !== false,
+  };
 }
 
 let draining = false;
@@ -360,7 +370,9 @@ export async function drainOutbox({ now = Date.now(), limit = 5 } = {}) {
           detail: `${outcome.proof} · attempt ${job.attempts}/${job.max_attempts}`,
           kind: "automation",
         });
-        completeObligation(ob.id, { proof: outcome.proof, note: job.note, by: agent.name, auto: true });
+        if (outcome.complete !== false) {
+          completeObligation(ob.id, { proof: outcome.proof, note: job.note, by: agent.name, auto: true });
+        }
         results.push({ id: job.id, status: "done" });
         continue;
       }
@@ -656,6 +668,44 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
     const autonomy = effectiveAutonomy(o, agent);
     const capNote = autonomyCapNote(o, agent);
 
+    // @procurement-bot quotes Channel3 before anything is proposed. The quote
+    // is stored on the obligation so the approval card and the drawer show the
+    // exact SKU, merchant and price; the PayPal order waits for approval.
+    let procurementPlan = null;
+    if (isProcurementAgent(agent)) {
+      procurementPlan = await planProcurement({ agent, obligation: o });
+      if (!procurementPlan.ok) {
+        logRun({
+          agent_id: agent.id,
+          obligation_id: o.id,
+          action: "Could not quote a restock",
+          detail: procurementPlan.error,
+          status: "failed",
+          duration_ms: Date.now() - started,
+        });
+        logEvent({
+          actor_type: "agent",
+          actor_id: agent.id,
+          actor: agent.name,
+          verb: "could not quote a restock",
+          object: o.title,
+          detail: `${procurementPlan.error} Ceiling ${dollars(procurementPlan.ceiling)}.`,
+          kind: "automation",
+        });
+        failed += 1;
+        continue;
+      }
+      o.restock = {
+        ...procurementPlan.quote,
+        ceiling: procurementPlan.ceiling,
+        quoted_at: new Date().toISOString(),
+        paypal_order_id: null,
+        approve_url: null,
+        order_status: null,
+      };
+      put("obligations", o);
+    }
+
     if (autonomy === "autopilot") {
       if (!connectorConfigured(agent)) {
         logRun({
@@ -686,23 +736,48 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
       if (outcome.ok) executed += 1;
       else failed += 1;
     } else if (autonomy === "approve" && !pendingIds.has(o.id)) {
+      const quote = procurementPlan?.quote || null;
+      const summary = quote
+        ? `Buy ${quote.title} for ${dollars(quote.price)} at ${quote.merchant} (Channel3 ${quote.sku}).`
+        : proposalFor(o, agent);
+      const cost = quote ? quote.price : o.amount || 0;
+      const evidence = quote
+        ? [
+            {
+              label: "Channel3 quote",
+              detail: `${quote.title} · ${dollars(quote.price)} · ${quote.merchant} · SKU ${quote.sku}`,
+            },
+            {
+              label: "Verified listing",
+              detail: `${quote.url} · ${procurementPlan.source === "fixture" ? "sample catalog" : "live Channel3"} · ${procurementPlan.considered} offer${procurementPlan.considered === 1 ? "" : "s"} checked`,
+            },
+            {
+              label: "Passport ceiling",
+              detail: `${dollars(procurementPlan.ceiling)} per run · this quote is ${dollars(procurementPlan.ceiling - quote.price)} under`,
+            },
+            {
+              label: "Payment rail",
+              detail: "The PayPal order is created on approval; Remindify never holds funds.",
+            },
+          ]
+        : [
+            { label: "Risk assessment", detail: `${risk.band} · score ${risk.score} · ${Math.ceil(risk.days)} days out` },
+            {
+              label: "Execution channel",
+              detail: connectorConfigured(agent)
+                ? `Connected · ${executorHost(agent)}`
+                : "Not connected — approving records your decision, but nothing runs.",
+            },
+          ];
       const approval = {
         id: uid("ap"),
         obligation_id: o.id,
         agent_id: agent.id,
         title: `${o.title} — ready for your call`,
-        summary: proposalFor(o, agent),
+        summary,
         proposed_action: `${o.category}.execute`,
-        cost: o.amount || 0,
-        evidence: [
-          { label: "Risk assessment", detail: `${risk.band} · score ${risk.score} · ${Math.ceil(risk.days)} days out` },
-          {
-            label: "Execution channel",
-            detail: connectorConfigured(agent)
-              ? `Connected · ${executorHost(agent)}`
-              : "Not connected — approving records your decision, but nothing runs.",
-          },
-        ],
+        cost,
+        evidence,
         risk: o.consequence || "Missed deadline.",
         status: "pending",
         created_at: new Date().toISOString(),
@@ -712,8 +787,8 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
       logRun({
         agent_id: agent.id,
         obligation_id: o.id,
-        action: "Prepared an action",
-        detail: proposalFor(o, agent) + capNote,
+        action: quote ? "Quoted a restock" : "Prepared an action",
+        detail: summary + capNote,
         status: "proposed",
         duration_ms: Date.now() - started,
       });
@@ -721,9 +796,9 @@ export async function sweep({ actor = "Remy", silent = false } = {}) {
         actor_type: "agent",
         actor_id: agent.id,
         actor: agent.name,
-        verb: "requested approval",
+        verb: quote ? "quoted a verified restock" : "requested approval",
         object: o.title,
-        detail: `${o.amount ? `$${o.amount} · ` : ""}risk ${risk.score}${capNote}`,
+        detail: `${cost ? `${dollars(cost)} · ` : ""}risk ${risk.score}${capNote}`,
         kind: "approval",
       });
       proposed += 1;
@@ -850,14 +925,29 @@ export async function applyApproval(id, decision, note = "") {
   approval.executed = outcome.ok;
   if (!outcome.ok) approval.execution_error = outcome.error;
   put("approvals", approval);
+
+  // A procurement run prepares an order without closing the obligation, so
+  // the approval response carries the checkout link the payer needs next.
+  const settled = loadAll().obligations.find((item) => item.id === ob.id);
+  const restock = settled?.restock || null;
+  const approveUrl = restock?.approve_url || null;
+  const staged = outcome.ok && outcome.complete === false;
+
   return {
     ok: true,
     approval,
     executed: outcome.ok,
+    staged,
+    approve_url: approveUrl,
+    quote: restock,
     queued: outcome.ok ? undefined : Boolean(outcome.queued),
     error: outcome.ok ? undefined : outcome.error,
     message: outcome.ok
-      ? "The agent ran it through its connector and filed proof."
+      ? staged
+        ? approveUrl
+          ? "The agent prepared the PayPal order. Approve it in PayPal to move the money."
+          : "The agent filed a Channel3 quote. Connect PayPal to create the order."
+        : "The agent ran it through its connector and filed proof."
       : `Approved, but execution failed: ${outcome.error}${
           outcome.queued ? " The job is saved and will retry." : ""
         }`,

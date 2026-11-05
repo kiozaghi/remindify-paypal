@@ -5,6 +5,7 @@
 import { getMeta, setMeta, seedDatabase } from "./db.mjs";
 import { runWithWorkspace } from "./workspace.mjs";
 import { ensureTrustDemo } from "./trust.mjs";
+import { ensureProcurementDemo } from "./procurement.mjs";
 
 export function provisionWorkspace(user) {
   if (!user?.workspace_id) return user;
@@ -15,6 +16,7 @@ export function provisionWorkspace(user) {
     setMeta("user", user.name || "Operator");
     setMeta("plan", "Free");
     ensureTrustDemo();
+    ensureProcurementDemo();
   });
   return user;
 }

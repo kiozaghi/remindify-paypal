@@ -91,6 +91,32 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "search_products",
+    description:
+      "Search Channel3 for verified products under a price ceiling. Returns the product SKU, price, merchant and listing URL so a quote can carry evidence, not a guess.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Product search, e.g. 'printer toner cartridge'." },
+        max_price: { type: "number", description: "Per-item ceiling in USD. Defaults to 150." },
+        limit: { type: "number", description: "Max offers. Default 8, max 20." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "request_restock_order",
+    description:
+      "Ask @procurement-bot to quote an obligation and have Remindify create the PayPal order. The agent never holds PayPal credentials; a human approves the order in PayPal before any money moves.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        obligation_id: { type: "string", description: "Restock obligation, e.g. ob_restock." },
+      },
+      required: ["obligation_id"],
+    },
+  },
+  {
     name: "list_trust",
     description:
       "Read the trust rail: PayPal authorization holds, HMAC-signed proof receipts and the AI auditor threshold. Check a receipt's audit and settlement before claiming money moved.",
@@ -244,6 +270,22 @@ async function callTool(name, args = {}) {
 
   if (name === "list_agents") {
     return api("/api/v1/agents");
+  }
+
+  if (name === "search_products") {
+    if (!args.query) throw new Error("query is required");
+    const max = Number(args.max_price);
+    const limit = Math.min(20, Math.max(1, Number(args.limit) || 8));
+    const ceiling = Number.isFinite(max) && max > 0 ? `&max=${max}` : "";
+    return api(`/api/v1/procurement/search?q=${encodeURIComponent(args.query)}&limit=${limit}${ceiling}`);
+  }
+
+  if (name === "request_restock_order") {
+    if (!args.obligation_id) throw new Error("obligation_id is required");
+    return api(`/api/v1/obligations/${encodeURIComponent(args.obligation_id)}/procurement`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
   }
 
   if (name === "list_trust") {

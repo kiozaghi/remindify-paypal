@@ -29,6 +29,11 @@ import { digestSecret, publicKey, KEY_SCOPES, keyExpired } from "./keys.mjs";
 import {
   DEMO_EXECUTOR_PATH, LEGACY_EXECUTOR_PATH, newExecutorSecret, signExecutorRequest, validateExecutorUrl,
 } from "./executors.mjs";
+import {
+  PROCUREMENT_EXECUTOR_PATH, ensureProcurementDemo, ensureProcurementOrder,
+  isProcurementAgent, markRestockCaptured, planProcurement, procurementProof,
+} from "./procurement.mjs";
+import { searchChannel3 } from "./channel3.mjs";
 import { takeRateLimit } from "./ratelimit.mjs";
 import { REGION_BLOCKED_MESSAGE, regionBlocked } from "./jurisdiction.mjs";
 import {
@@ -380,6 +385,7 @@ async function handleRequest(req, res) {
       setWorkspace(resolved.workspace_id);
       seedDatabase();
       ensureTrustDemo();
+      ensureProcurementDemo();
       const key = resolved.key;
       if (keyExpired(key)) {
         return send(res, 401, {
@@ -557,6 +563,89 @@ async function handleRequest(req, res) {
         });
       }
 
+      if (path === "/api/v1/procurement/search" && req.method === "GET") {
+        if (!keyHasScope(key, "obligations:read")) return scopeDenied(res, "obligations:read");
+        const query = String(url.searchParams.get("q") || "").trim();
+        if (!query) {
+          return send(res, 422, { error: "query_required", message: "Pass ?q=<product search>." });
+        }
+        const max = Number(url.searchParams.get("max"));
+        const result = await searchChannel3({
+          query,
+          maxPrice: Number.isFinite(max) && max > 0 ? max : 150,
+          limit: Number(url.searchParams.get("limit")) || 8,
+        });
+        if (!result.ok) {
+          return send(res, 502, { error: "channel3_unavailable", message: result.error });
+        }
+        logEvent({
+          actor_type: "automation", actor: key.name, actor_id: key.id,
+          verb: "searched Channel3", object: query,
+          detail: `${result.offers.length} offers · ${result.source}`,
+          kind: "api", channel: "api",
+        });
+        return send(res, 200, {
+          source: result.source,
+          query,
+          count: result.offers.length,
+          offers: result.offers,
+          note: result.note || null,
+        });
+      }
+
+      const restockMatch = path.match(/^\/api\/v1\/obligations\/([^/]+)\/procurement$/);
+      if (restockMatch && req.method === "POST") {
+        if (!keyHasScope(key, "obligations:write")) return scopeDenied(res, "obligations:write");
+        const pending = await idempotencyGuard(req, key);
+        if (replayIdempotent(res, pending)) return;
+
+        const obligation = loadAll().obligations.find((item) => item.id === restockMatch[1]);
+        if (!obligation) return send(res, 404, { error: "obligation_not_found" });
+        const agent = loadAll().agents.find((item) => item.id === obligation.agent_id);
+        if (!agent || !isProcurementAgent(agent)) {
+          return send(res, 409, {
+            error: "not_procurement",
+            message: "This obligation is not owned by @procurement-bot.",
+          });
+        }
+
+        const plan = await planProcurement({ agent, obligation });
+        if (!plan.ok) {
+          return send(res, 409, { error: "no_quote", message: plan.error, ceiling: plan.ceiling });
+        }
+
+        let order = null;
+        if (paypalConfigured()) {
+          try {
+            order = await ensureProcurementOrder({
+              obligation,
+              quote: plan.quote,
+              origin: publicOrigin(req),
+            });
+          } catch (error) {
+            return paypalFailure(res, error);
+          }
+        }
+
+        logEvent({
+          actor_type: "automation", actor: key.name, actor_id: key.id,
+          verb: "prepared a restock order", object: obligation.title,
+          detail: `${plan.quote.sku} · $${Number(plan.quote.price).toFixed(2)} · ${order ? order.paypal_order_id : "quote only"}`,
+          kind: "api", channel: "api",
+        });
+
+        const payload = {
+          quote: plan.quote,
+          order: order
+            ? { id: order.paypal_order_id, status: order.order_status, approve_url: order.approve_url }
+            : null,
+          paypal_configured: paypalConfigured(),
+          proof: procurementProof(order || plan.quote, { orderId: order?.paypal_order_id }),
+        };
+        rememberIdempotent(pending, 201, payload);
+        return send(res, 201, payload);
+      }
+
       return send(res, 404, { error: "not_found", path });
     }
 
@@ -685,6 +774,90 @@ async function handleRequest(req, res) {
       return send(res, verdict.status, verdict.body);
     }
 
+    // @procurement-bot's executor. It accepts the same signed envelope as any
+    // external executor, quotes Channel3, and asks the workspace to create the
+    // PayPal order — the agent never holds PayPal credentials. The response
+    // sets complete:false so the obligation stays open until the payer
+    // approves and the capture lands.
+    if (path === PROCUREMENT_EXECUTOR_PATH && req.method === "POST") {
+      const event = await body(req);
+      const workspaceId = String(event?.workspace?.id || "").slice(0, 80);
+      const agentId = String(event?.agent?.id || "").slice(0, 80);
+      if (!workspaceId || !agentId) {
+        return send(res, 422, { error: "bad_executor_payload" });
+      }
+
+      const verdict = await runWithWorkspace(workspaceId, async () => {
+        const agent = loadAll().agents.find((item) => item.id === agentId);
+        if (!agent || agent.executor_url !== PROCUREMENT_EXECUTOR_PATH) {
+          return { status: 404, body: { error: "unknown_executor" } };
+        }
+        const issuedAt = Number(req.headers["x-remindify-timestamp"] || 0);
+        if (!Number.isFinite(issuedAt) || Math.abs(Date.now() - issuedAt) > 5 * 60_000) {
+          return { status: 401, body: { error: "stale_signature" } };
+        }
+        const expected = `sha256=${signExecutorRequest(agent.executor_secret, issuedAt, req.rawBody || "")}`;
+        if (!secretMatches(String(req.headers["x-remindify-signature"] || ""), expected)) {
+          return { status: 401, body: { error: "invalid_signature" } };
+        }
+
+        const obligation = loadAll().obligations.find((item) => item.id === event?.obligation?.id);
+        if (!obligation) return { status: 404, body: { error: "obligation_not_found" } };
+
+        const plan = await planProcurement({ agent, obligation });
+        if (!plan.ok) {
+          return {
+            status: 409,
+            body: { ok: false, error: plan.error, ceiling: plan.ceiling, source: plan.source },
+          };
+        }
+
+        let restock = plan.quote;
+        if (paypalConfigured()) {
+          try {
+            restock = await ensureProcurementOrder({
+              obligation,
+              quote: plan.quote,
+              origin: publicOrigin(req),
+            });
+          } catch (error) {
+            return {
+              status: 502,
+              body: {
+                ok: false,
+                error: error?.message || "PayPal did not create the order.",
+                details: error?.details || null,
+              },
+            };
+          }
+        } else {
+          put("obligations", {
+            ...obligation,
+            restock: { ...plan.quote, paypal_order_id: null, approve_url: null },
+          });
+        }
+
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            complete: false,
+            proof: procurementProof(restock, { orderId: restock.paypal_order_id }),
+            quote: restock,
+            order: restock.paypal_order_id
+              ? {
+                  id: restock.paypal_order_id,
+                  status: restock.order_status,
+                  approve_url: restock.approve_url,
+                }
+              : null,
+            paypal_configured: paypalConfigured(),
+          },
+        };
+      });
+      return send(res, verdict.status, verdict.body);
+    }
+
     // Everything below this line is the signed-in workspace. The machine API
     // above keeps its own Bearer-key auth; auth routes and health stay public.
     if (path.startsWith("/api/")) {
@@ -698,6 +871,7 @@ async function handleRequest(req, res) {
       setWorkspace(session.workspace_id);
       seedDatabase();
       ensureTrustDemo();
+      ensureProcurementDemo();
       req.auth = session;
     }
 
@@ -1078,6 +1252,7 @@ async function handleRequest(req, res) {
     if (path === "/api/demo/reset" && req.method === "POST") {
       seedDatabase(true);
       ensureTrustDemo();
+      ensureProcurementDemo();
       return send(res, 200, { state: buildState() });
     }
 
@@ -1347,6 +1522,7 @@ async function handleRequest(req, res) {
         const obligation = (fresh.obligations || []).find(
           (item) => item.id === payment.obligation_id
         );
+        markRestockCaptured(orderId, { captureId: capture.captureId });
         if (obligation && ["active", "waiting"].includes(obligation.status)) {
           completeObligation(obligation.id, {
             proof: `PayPal capture ${capture.captureId}`,
@@ -1687,7 +1863,10 @@ export async function handle(req, res) {
   const path = normalizedPath(req);
 
   if (!isPostgres) {
-    if (needsDatabase(path)) ensureTrustDemo();
+    if (needsDatabase(path)) {
+      ensureTrustDemo();
+      ensureProcurementDemo();
+    }
     return handleRequest(req, res);
   }
 
@@ -1707,6 +1886,7 @@ export async function handle(req, res) {
         seedDatabase();
         pruneAuth();
         ensureTrustDemo();
+        ensureProcurementDemo();
       } catch (error) {
         await abortRequest(store);
         console.error("Postgres request setup failed:", error);
