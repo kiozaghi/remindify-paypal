@@ -30,6 +30,12 @@ Build scope and gates: [PAYPAL-HACKATHON.md](./PAYPAL-HACKATHON.md).
 >
 > PayPal is the only money rail. Pay an obligation from its drawer: the server creates an Orders v2 order from the stored obligation, redirects to PayPal, verifies the amount on capture, marks the obligation paid and files a receipt referencing the capture. Receivables go out as PayPal invoices — created and then sent, never left as drafts — with reminders. Sellers get paid through Payouts v1 in a deliberate two-step flow, and the ledger only shows paid when PayPal confirms. Webhooks are signature-verified; forged events cannot close an obligation.
 
+**A concrete run**
+
+> **Escrow.** A $180 Delaware filing hold is authorized. The agent attaches a receipt; the auditor rejects a $1,800 draft as the wrong amount, then clears the stamped $180 receipt. PayPal captures $180, keeps $18, and pays $162 to the provider — with the backup owner and audit trail visible in the register.
+>
+> **Procurement.** A quarterly restock is due. The sweep has `@procurement-bot` search Channel3 for toner and a backup drive under its $150 passport ceiling: it normalises every offer, drops the ones without a purchasable `https://` merchant link or with no stock, dedupes by SKU and quotes the cheapest verified survivor — a $64.50 Brother TN-450 at Staples Business. The quote (SKU, merchant, listing URL, price) is filed on the obligation, not in a chat log. A human presses **Pay $64.50 in PayPal**; the server — never the agent — creates the Orders v2 order, the capture lands, and the row closes as `Paid` with the capture id while the quote and its source listing stay on the record. Lower the ceiling to $50 and the same request answers `409 no_quote` instead of buying over budget.
+
 **How I built it**
 
 > React 19 + Vite on the front, a plain Node HTTP server on the back, SQLite locally and Postgres on Vercel. The obligation grid is AG Grid with custom cells for the risk meter, inline autonomy, agent passport and PayPal escrow state. PayPal Orders and the authorize/capture primitives run through the APIMatic-generated `@paypal/paypal-server-sdk`; Payouts v1, Invoicing v2 and webhook verification stay on the REST client because the SDK does not cover them. Each request is idempotent (`PayPal-Request-Id`, `sender_batch_id`), and workspaces are isolated in Postgres behind a workspace-scoped advisory lock. Gemini 2.5 Flash is called with structured output for capture and proof audit, with deterministic fallbacks so the demo never depends on a model being reachable.
@@ -52,7 +58,15 @@ Build scope and gates: [PAYPAL-HACKATHON.md](./PAYPAL-HACKATHON.md).
 
 **Built with**
 
-> PayPal Orders v2, PayPal Authorizations v2, PayPal Payouts v1, PayPal Invoicing v2, PayPal Webhooks, APIMatic PayPal Server SDK, Gemini 2.5 Flash, AG Grid, Node.js 22, React 19, Vite 6, SQLite, Postgres (Neon).
+> PayPal Orders v2, PayPal Authorizations v2, PayPal Payouts v1, PayPal Invoicing v2, PayPal Webhooks, APIMatic PayPal Server SDK, Channel3 Product API, Gemini 2.5 Flash, AG Grid, Node.js 22, React 19, Vite 6, SQLite, Postgres (Neon).
+
+**Sponsor integrations**
+
+> **AG Grid (`ag-grid-react`).** Powers the **Agent Studio** register view (`/obligations`), combining custom cell renderers for composite risk meters, inline autonomy controls (`notify` → `prepare` → `approve` → `autopilot`), scoped Agent Passports with per-run spend caps, and live PayPal escrow status badges (`AUTHORIZED_HOLD`, `AI_AUDITED`, `PAYOUT_RELEASED`). The same grid renders the `@procurement-bot` quote row — price, merchant and SKU beside the ceiling and the PayPal order state — so a purchase is governed in the same surface as every other obligation.
+>
+> **APIMatic (`@paypal/paypal-server-sdk` & APIMatic Context).** We used APIMatic's PayPal Context specification and the APIMatic-generated `@paypal/paypal-server-sdk` to power our core PayPal Orders v2 (`intent: "AUTHORIZE"`) and Authorization Capture flows with strict schema validation and idempotency (`PayPal-Request-Id`), preventing payload hallucinations across both our Node.js executor and MCP server. Payouts v1, Invoicing v2 and webhook verification stay on the REST client because the SDK does not cover them.
+>
+> **Channel3 (`api.trychannel3.com`).** Powers `@procurement-bot`, the agent that spends money. The agent searches Channel3 (`POST /v1/search`, `x-api-key`, `filters.price.max`) for its obligation's line items, normalises every offer into one shape (SKU, title, price, currency, merchant, `https://` merchant URL, availability), and keeps only **verified** offers: a product id, a positive price, a purchasable link and stock that is not explicitly out of stock. Offers are de-duplicated by SKU, filtered to USD and at or under the lesser of the agent's $150 passport cap and the obligation budget, then ranked by price with rating as the tie-break. The cheapest survivor becomes the quote and the proof text (`Channel3 <sku> · <title> · $<price> at <merchant> · <url>`); the app — not the agent — creates the PayPal order for that exact amount, and a human approves it. When nothing fits the ceiling the call returns `409 no_quote` instead of overspending, and without `CHANNEL3_API_KEY` the same flow runs against a clearly labelled fixture catalog, so judges can exercise it with no credentials. The agent reaches Channel3 over REST (`GET /api/v1/procurement/search`) and MCP (`search_products`, `request_restock_order`).
 
 **Try it**
 
@@ -70,6 +84,8 @@ Build scope and gates: [PAYPAL-HACKATHON.md](./PAYPAL-HACKATHON.md).
 **What was new for the hackathon**
 
 > The entire PayPal rail — `server/paypal.mjs`, `server/paypal-sdk.mjs`, `server/payments.mjs`, the payment and escrow routes, AI capture, the proof auditor, the invoicing flow, the AG Studio grid, the escrow strip, the obligation pay button, the seller payout flow, the sandbox executor and backup handover — landed on **`feat/paypal-agentic-commerce`**, all after 1 October 2026. The register, agents, marketplace and receipts are the pre-existing product, MIT licensed.
+>
+> The Channel3 procurement agent is hackathon work too: `server/channel3.mjs` (search and normalisation), `server/procurement.mjs` (ceiling, verification, quote, PayPal order), the `POST /api/procurement` executor, the seeded `@procurement-bot` passport and the `ob_restock` quarterly obligation, plus the `search_products` and `request_restock_order` MCP tools.
 
 ---
 
@@ -101,6 +117,8 @@ The shot-by-shot plan, pre-flight checks and fallbacks live in [`deck/demo-scrip
 6. **Trust.** Open the Apex receipt and run **Audit** with the wrong file, then the verified one. Open the PayPal ledger.
 7. **Seller desk.** Set a payout method to PayPal, request a payout, press **Send with PayPal** (requires sandbox credentials).
 8. **Agent access.** Create a key, run `npm run mcp`, or hit `/api/v1/obligations` with the key to show agent parity.
+
+**Procurement (Channel3).** On **Today**, press **Run agent sweep**, then open **Obligations → Quarterly printer toner & backup drive replacement**. `@procurement-bot` has quoted the cheapest verified Channel3 item under its $150 ceiling; the drawer shows price, merchant, SKU and the source listing. **Pay $64.50 in PayPal** creates the order server-side and opens the sandbox; after the capture the row reads `Paid` with the capture id. The quote itself needs no PayPal credentials — without `CHANNEL3_API_KEY` it comes from the labelled fixture catalog. With a machine key, `GET /api/v1/procurement/search?q=toner` and `POST /api/v1/obligations/ob_restock/procurement` do the same over REST, and `search_products` / `request_restock_order` over MCP.
 
 Expected without any PayPal credentials: steps 2–6 and 8 work; step 7 explains that PayPal is not configured. With sandbox credentials, everything works end to end.
 

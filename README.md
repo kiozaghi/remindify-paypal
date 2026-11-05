@@ -62,7 +62,8 @@ To exercise the live PayPal sandbox rail, export `PAYPAL_ENV=sandbox`, `PAYPAL_C
 2. **Obligations → Agent Studio.** Flip the register to AG Grid: risk meter, inline autonomy, agent passport with its spend cap, and the PayPal escrow state.
 3. **Time machine +7 days → Run agent sweep.** Overdue work escalates to its backup and the agent wire fills with drafts. Open the Northwind retainer and **Send invoice**: `@ar-collector` creates and sends a PayPal Sandbox invoice, and the payer URL is filed as proof.
 4. **Trust → $180 Q4 filing.** File [`public/demo/proofs/unverified-wrong-amount.pdf`](public/demo/proofs/unverified-wrong-amount.pdf); the auditor rejects it and the hold stays locked. File [`public/demo/proofs/delaware-tax-receipt-verified.pdf`](public/demo/proofs/delaware-tax-receipt-verified.pdf); the auditor verifies it. Release then captures $180, retains the $18 fee and pays $162 through Payouts. The seeded row is a rehearsal with placeholder PayPal ids and says so; authorize a fresh sandbox hold from the filing to run the capture end to end.
-5. **Access → MCP.** The same register over REST and MCP, with scoped keys and the APIMatic-validated PayPal schema badge.
+5. **Obligations → quarterly restock.** After the sweep in step 1, `@procurement-bot` has quoted the cheapest verified Channel3 item under its $150 ceiling. Open **Quarterly printer toner & backup drive replacement**: **Pay $64.50 in PayPal** opens the sandbox order; after the capture the row reads `Paid · capture … · the next cycle re-quotes`.
+6. **Access → MCP.** The same register over REST and MCP, with scoped keys and the APIMatic-generated PayPal Server SDK.
 
 **Honest limits**
 
@@ -217,6 +218,62 @@ When `EMAIL_WEBHOOK_URL` is set, the same call sends a daily digest to every con
 Set `RETENTION_DAYS` to prune `events` and `runs` older than that many days from each swept workspace. Retention is off by default, workspaces without obligations are not visited, and receipts, escrows, obligations and user records are never pruned. A failed prune never fails the sweep.
 
 Without a connector the agent is draft-only: sweeps produce plans, approvals are recorded but nothing runs, and nothing is marked complete. Executor URLs are resolved and checked for a public address, and that address is pinned for the send, so a second DNS answer cannot bounce the call inward. Redirects are refused. `EXECUTOR_ALLOW_LOCAL=1` permits `http://localhost` for local development only. The signing secret is stored server-side, stripped from state, exports and API responses, and rotated whenever you reconnect.
+
+### The procurement agent
+
+`@procurement-bot` is the seeded agent that spends money — a small purchase, under a hard ceiling, through the same proof gate as everything else.
+
+| | |
+| --- | --- |
+| Passport | `ag_procurement` · handle `procurement-bot` · ceiling `approve` · spend cap **$150** · scopes `catalog:read`, `orders:draft`, `receipts:write` |
+| Obligation | `ob_restock` — “Quarterly printer toner & backup drive replacement”, quarterly, $150 budget |
+| Brain | [`server/procurement.mjs`](server/procurement.mjs) — `planProcurement()` and `pickLowestVerified()` |
+| Search | [`server/channel3.mjs`](server/channel3.mjs) — Channel3 `POST /v1/search`, 8 s timeout |
+| Executor | `POST /api/procurement` — the same HMAC-signed envelope as any external connector |
+| Order | PayPal Orders v2, created server-side; the agent never holds PayPal credentials |
+| Close-out | The capture flips the quote to `COMPLETED` (`markRestockCaptured`), so the drawer stops offering an order that is already paid |
+
+**How it decides.** For every query on the obligation (`printer toner cartridge`, `portable backup drive`) it asks Channel3 for up to eight offers, filtered by price. The ceiling is the lower of the agent's spend cap and the obligation's own budget — $150 here. Offers are de-duplicated by SKU (cheapest wins), filtered to verified, USD, in-stock items at or under the ceiling, then sorted by price with rating as the tie-break. The cheapest survivor is the quote.
+
+**What "verified" means.** A product id, a positive price, an `https://` merchant URL and availability that is not explicitly out of stock. A Channel3 price with no merchant link is not purchasable, so it never qualifies. Refusals are visible: when nothing fits, the call returns `409 no_quote` with the ceiling and the number of offers considered instead of quoting something over budget.
+
+**What it files.** The quote lands on the obligation (`sku`, `title`, `merchant`, `url`, `price`, `ceiling`, `source`, `quoted_at`) and becomes the proof text: `Channel3 <sku> · <title> · $<price> at <merchant> · <url> · PayPal <orderId>` — prefixed `sample · ` when the offer came from the sample catalog. The order is created for exactly the quoted price, and a fresh order is reused for two hours rather than stacking duplicates. The executor answers `complete: false`, so the obligation stays open until the payer approves in PayPal and the capture arrives.
+
+```json
+{
+  "ok": true,
+  "source": "fixture",
+  "ceiling": 150,
+  "queries": ["printer toner cartridge", "portable backup drive"],
+  "considered": 4,
+  "quote": {
+    "sku": "CH3-TN450-1PK",
+    "title": "Brother TN-450 Toner Cartridge (single)",
+    "price": 64.5,
+    "currency": "USD",
+    "merchant": "Staples Business",
+    "url": "https://staples.com/p/ch3-tn450-1pk",
+    "rating": 4.4,
+    "availability": "in_stock",
+    "verified": true,
+    "source": "fixture",
+    "query": "printer toner cartridge",
+    "ceiling": 150,
+    "quoted_at": "2026-11-05T09:00:00.000Z"
+  }
+}
+```
+
+```bash
+# same flow from a machine key; retry-safe
+curl -X POST http://localhost:4178/api/v1/obligations/ob_restock/procurement \
+  -H "Authorization: Bearer $REMINDIFY_KEY" \
+  -H "Idempotency-Key: restock-nov"
+```
+
+**Where you see it.** Obligations → the quarterly restock row → the drawer shows the quote row (`price · merchant · SKU · ceiling`), the merchant link and **Pay $64.50 in PayPal**; after the capture it reads `Paid · capture <id> · the next cycle re-quotes`.
+
+`CHANNEL3_API_KEY` switches search from the sample catalog to the live Channel3 API; `CHANNEL3_BASE_URL` points at a different host. Without a key the flow still runs end to end: offers come from a five-item sample catalog and every surface that shows them says `sample catalog` or `source: "fixture"`.
 
 ---
 
@@ -494,6 +551,8 @@ Mutating machine calls accept an `Idempotency-Key` header. A retry with the same
 | `GET` | `/api/v1/agents` | `agents:read` | Roster with scopes and autonomy ceilings. |
 | `GET` | `/api/v1/trust` | `risk:read` | Rail, receipts, escrows and trust stats. |
 | `POST` | `/api/v1/trust/receipts` | `obligations:write` | File a proof receipt from an agent. Idempotent. |
+| `GET` | `/api/v1/procurement/search` | `obligations:read` | Channel3 product search (`?q=`, `&max=`, `&limit=`), normalised offers. |
+| `POST` | `/api/v1/obligations/:id/procurement` | `obligations:write` | Quote the cheapest verified item under the ceiling and create the PayPal order. Idempotent. |
 
 App endpoints require a signed-in session cookie: `/api/state`, `/api/capture`, `/api/obligations`, `/api/approvals/:id/decide`, `/api/agents`, `/api/agents/:id/executor`, `/api/hire`, `/api/keys`, `/api/trust/*`, `/api/billing`, `/api/demo/{sweep,advance,reset}`. Public app endpoints are limited to `/api/auth/*`, `/api/health` and the Bearer-authenticated `/api/v1/*` machine API and `/api/cron/*` schedulers.
 
@@ -541,7 +600,9 @@ npm run mcp
 }
 ```
 
-Tools: `list_obligations`, `get_obligation`, `create_obligation`, `complete_obligation`, `portfolio_risk`, `list_agents`, `list_trust`, `list_escrows`, `get_proof_receipt`, `file_proof_receipt`.
+Tools: `list_obligations`, `get_obligation`, `create_obligation`, `complete_obligation`, `portfolio_risk`, `list_agents`, `list_trust`, `list_escrows`, `get_proof_receipt`, `file_proof_receipt`, `search_products`, `request_restock_order`.
+
+`search_products` queries Channel3 through the same ceiling rules and returns normalised offers; `request_restock_order` quotes the obligation and has Remindify create the PayPal order, refusing any obligation that is not owned by `@procurement-bot`.
 
 The default key is the seeded demo key. Issue a fresh one in **Agent access** and set `REMINDIFY_KEY` for anything real.
 
